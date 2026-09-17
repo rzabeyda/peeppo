@@ -1,0 +1,16 @@
+[Unit]
+Description=Peeppo FastAPI backend (webapp API)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/peeppo
+EnvironmentFile=/root/peeppo/.env
+# Port here must match API_PORT in .env and the proxy_pass port in nginx_peeppo.conf
+ExecStart=/root/peeppo/venv/bin/uvicorn api:app --host 127.0.0.1 --port 8010
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

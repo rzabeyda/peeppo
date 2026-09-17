@@ -1,0 +1,15 @@
+[Unit]
+Description=Peeppo Telegram bot (aiogram polling)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/peeppo
+EnvironmentFile=/root/peeppo/.env
+ExecStart=/root/peeppo/venv/bin/python3 /root/peeppo/bot.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
