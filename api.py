@@ -90,7 +90,7 @@ def _authenticate(init_data: str) -> dict:
         except ValueError:
             ref_by = None
 
-    row = db.get_or_create_user(
+    row, _is_new = db.get_or_create_user(
         telegram_id=tg_user["id"],
         username=tg_user.get("username"),
         first_name=tg_user.get("first_name"),
@@ -143,6 +143,15 @@ class OfferBody(InitDataBody):
     price_gems: int
 
 
+class SwapListBody(InitDataBody):
+    user_card_id: int
+
+
+class SwapOfferBody(InitDataBody):
+    user_card_id: int
+    offered_user_card_ids: list[int]
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -166,15 +175,32 @@ def stats():
     return {"total_farmed": db.get_total_farmed()}
 
 
+@app.get("/api/cards")
+def all_cards():
+    """Public, no auth needed — the full catalog, for the farm animation's cycling
+    preview and the 'Модели' gallery."""
+    return {"cards": db.get_all_cards()}
+
+
+@app.get("/api/leaderboard")
+def leaderboard():
+    """Public, no auth needed — the 'Топы' screen, ranked by total cards owned."""
+    return {"players": db.get_leaderboard()}
+
+
 @app.post("/api/farm")
 def farm(body: InitDataBody):
     user = _authenticate(body.initData)
-    result = db.farm(user["telegram_id"])
+    try:
+        result = db.farm(user["telegram_id"])
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
     if result is None:
         raise HTTPException(503, "card catalog is empty — add images first")
     # user_cards.id is a plain global AUTOINCREMENT, so it doubles as this drop's serial number
     result["farm_number"] = result["user_card_id"]
     result["total_farmed"] = db.get_total_farmed()
+    result["gems"] = db.get_gems(user["telegram_id"])
     return result
 
 
@@ -320,5 +346,58 @@ async def market_offer(body: OfferBody):
     photo_path = os.path.join(STATIC_DIR, "cards", result["filename"])
     await bot_module.notify_new_offer(
         result["seller_id"], result["offer_id"], buyer_name, result["name"], photo_path, body.price_gems
+    )
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Swap / barter market
+# ---------------------------------------------------------------------------
+
+@app.post("/api/swap/listings")
+def swap_listings(body: InitDataBody):
+    """Anonymous, same as /api/market/listings — only is_mine leaves the server."""
+    user = _authenticate(body.initData)
+    listings = db.get_swap_listings()
+    for item in listings:
+        item["is_mine"] = item["seller_id"] == user["telegram_id"]
+        del item["seller_id"]
+    return {"listings": listings}
+
+
+@app.post("/api/swap/list")
+def swap_list(body: SwapListBody):
+    user = _authenticate(body.initData)
+    ok = db.list_for_swap(body.user_card_id, user["telegram_id"])
+    if not ok:
+        raise HTTPException(400, "card not found in your inventory, or already listed for sale/swap")
+    return {"ok": True}
+
+
+@app.post("/api/swap/unlist")
+def swap_unlist(body: SwapListBody):
+    user = _authenticate(body.initData)
+    ok = db.unlist_swap(body.user_card_id, user["telegram_id"])
+    if not ok:
+        raise HTTPException(404, "listing not found")
+    return {"ok": True}
+
+
+@app.post("/api/swap/offer")
+async def swap_offer(body: SwapOfferBody):
+    user = _authenticate(body.initData)
+    if not body.offered_user_card_ids:
+        raise HTTPException(400, "offer at least one card")
+    result = db.propose_swap(body.user_card_id, user["telegram_id"], body.offered_user_card_ids)
+    if result is None:
+        raise HTTPException(400, "listing unavailable, or you don't own one of the offered cards")
+
+    import bot as bot_module
+
+    buyer_name = f"@{user['username']}" if user.get("username") else (user.get("first_name") or "Игрок")
+    photo_path = os.path.join(STATIC_DIR, "cards", result["listing_filename"])
+    await bot_module.notify_new_swap_offer(
+        result["seller_id"], result["offer_id"], buyer_name,
+        result["listing_name"], photo_path, result["offered_names"],
     )
     return {"ok": True}

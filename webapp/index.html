@@ -91,6 +91,7 @@
     text-align:center;
   }
   #farm-screen.active{display:flex;}
+  #farm-screen{position:relative;}
   .farm-stage{
     width:220px; height:220px;
     border-radius:24px;
@@ -105,19 +106,49 @@
     width:100%; height:100%; object-fit:cover;
     animation:pop .35s ease;
   }
-  .farm-stage .placeholder{font-size:48px; opacity:.25;}
+  .farm-stage .placeholder{font-size:88px; font-weight:800; color:rgba(255,255,255,.14); line-height:1;}
   @keyframes pop{from{opacity:0; transform:scale(.7);} to{opacity:1; transform:scale(1);}}
+  #farm-progress-wrap{
+    width:220px; height:8px;
+    background:rgba(255,255,255,.08);
+    border-radius:999px;
+    overflow:hidden;
+    margin-bottom:18px;
+    visibility:hidden;
+    opacity:0;
+    transition:opacity .15s;
+  }
+  #farm-progress-wrap.active{visibility:visible; opacity:1;}
+  #farm-progress-bar{
+    height:100%; width:0%;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    border-radius:999px;
+  }
   #farm-result-name{font-size:15px; color:#ccc; min-height:20px;}
   #farm-result-number{font-size:12px; color:var(--accent2); font-weight:700; min-height:16px; margin-bottom:18px;}
+  .models-btn{
+    position:absolute; top:0; left:0;
+    background:rgba(255,255,255,.06);
+    color:#ccc;
+    border:1px solid var(--card-border);
+    border-radius:999px;
+    padding:8px 14px;
+    font-size:12px; font-weight:700;
+    cursor:pointer;
+  }
+  .models-btn:active{transform:scale(.95);}
+  .tops-btn{left:auto; right:0;}
   .farm-total-badge{
     font-size:12px; color:#999;
     background:rgba(255,255,255,.05);
     border:1px solid var(--card-border);
     padding:6px 14px;
     border-radius:999px;
+    margin-top:40px;
     margin-bottom:22px;
   }
   .farm-total-badge b{color:#fff; font-weight:800;}
+  .farm-btn-wrap{position:relative; display:inline-block;}
   #farm-btn{
     border:1px solid rgba(139,92,246,.5);
     padding:18px 56px;
@@ -125,6 +156,7 @@
     font-size:18px;
     font-weight:800;
     letter-spacing:.6px;
+    text-align:center;
     color:#fff;
     background:linear-gradient(160deg,#1c1c1c,#050505);
     box-shadow:0 10px 28px rgba(139,92,246,.3), inset 0 1px 0 rgba(255,255,255,.06);
@@ -132,7 +164,19 @@
   }
   #farm-btn:active{transform:scale(.96);}
   #farm-btn:disabled{opacity:.5;}
-  #farm-hint{margin-top:14px; font-size:12px; color:#666;}
+  .farm-cost-badge{
+    position:absolute; top:-10px; right:-6px;
+    display:flex; align-items:center; gap:3px;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-radius:999px;
+    padding:4px 10px;
+    font-size:12px; font-weight:800;
+    color:var(--accent2);
+    box-shadow:0 4px 10px rgba(0,0,0,.4);
+  }
+  .farm-cost-badge img{width:13px; height:13px; border-radius:0;}
+  #farm-hint{margin-top:14px; font-size:12px; color:#666; min-height:16px;}
 
   /* ---------- Profile ---------- */
   .profile-card{
@@ -185,6 +229,21 @@
     text-transform:uppercase; letter-spacing:.6px;
     margin:2px 2px 10px;
   }
+  .section-label-row{
+    display:flex; align-items:center; justify-content:space-between;
+    margin:2px 2px 10px;
+  }
+  .section-label-row .section-label{margin:0;}
+  #profile-sort-btn{
+    background:rgba(255,255,255,.06);
+    color:#ccc;
+    border:1px solid var(--card-border);
+    border-radius:999px;
+    padding:5px 12px;
+    font-size:11px; font-weight:800;
+    cursor:pointer;
+  }
+  #profile-sort-btn:active{transform:scale(.95);}
   .grid{
     display:grid;
     grid-template-columns:repeat(3,1fr);
@@ -221,16 +280,37 @@
   /* ---------- Market ---------- */
   #market-screen .empty-state{padding:100px 20px;}
   #market-screen .emoji{font-size:40px; display:block; margin-bottom:10px;}
+  .market-header-row{display:flex; gap:8px; margin-bottom:10px;}
   #market-sort{
-    width:100%; box-sizing:border-box;
+    flex:1; box-sizing:border-box;
     background:var(--card-bg); color:#fff;
     border:1px solid var(--card-border);
     border-radius:12px;
     padding:9px 10px;
     font-size:12px; font-weight:700;
-    margin-bottom:10px;
     -webkit-appearance:none; appearance:none;
   }
+  #market-sort.hidden{visibility:hidden; pointer-events:none;}
+  .mode-switch{
+    flex-shrink:0;
+    display:flex;
+    gap:2px;
+    background:rgba(255,255,255,.05);
+    border:1px solid var(--card-border);
+    border-radius:12px;
+    padding:3px;
+  }
+  .mode-switch-btn{
+    border:none; background:none;
+    color:#888;
+    font-size:11px; font-weight:800;
+    padding:7px 12px;
+    border-radius:9px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .mode-switch-btn.active{background:rgba(139,92,246,.18); color:var(--accent);}
+  .mode-switch-btn:active{transform:scale(.95);}
   .market-item{
     display:flex; align-items:center; gap:12px;
     background:var(--card-bg);
@@ -251,7 +331,145 @@
   .btn-buy{background:var(--accent2); color:#000;}
   .btn-offer{background:rgba(255,255,255,.08); color:#fff; border:1px solid var(--card-border) !important;}
   .btn-unlist{background:rgba(239,68,68,.15); color:var(--danger); border:1px solid rgba(239,68,68,.3) !important;}
+  .btn-propose{background:rgba(139,92,246,.18); color:var(--accent); border:1px solid rgba(139,92,246,.35) !important;}
   .market-mine-tag{font-size:10px; color:#666; text-transform:uppercase; letter-spacing:.4px;}
+  .market-price-tag{
+    position:absolute; bottom:6px; left:6px;
+    background:rgba(0,0,0,.75);
+    color:var(--accent2);
+    font-size:10px; font-weight:800;
+    padding:3px 7px; border-radius:8px;
+    display:flex; align-items:center; gap:3px;
+  }
+  .market-price-tag img{width:10px; height:10px; border-radius:0;}
+  .market-mine-badge{
+    position:absolute; top:6px; right:6px;
+    background:rgba(139,92,246,.9);
+    color:#fff;
+    font-size:9px; font-weight:800;
+    text-transform:uppercase; letter-spacing:.3px;
+    padding:3px 7px; border-radius:8px;
+  }
+
+  /* ---------- Market item quick-action popup ---------- */
+  #market-item-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.85);
+    display:none;
+    align-items:center; justify-content:center;
+    z-index:55;
+    padding:24px;
+  }
+  #market-item-overlay.active{display:flex;}
+  #market-item-card{
+    width:100%; max-width:300px;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-radius:20px;
+    padding:18px;
+    text-align:center;
+    position:relative;
+  }
+  #market-item-card img{width:100%; border-radius:14px; margin-bottom:14px; aspect-ratio:1/1; object-fit:cover;}
+  #market-item-name{font-weight:700; margin-bottom:8px;}
+  #market-item-price-row{
+    font-size:14px; font-weight:800; color:var(--accent2);
+    margin-bottom:14px;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+  }
+  #market-item-price-row img{width:16px; height:16px; border-radius:0;}
+  #market-item-actions{display:flex; flex-direction:column; gap:10px;}
+  #market-item-actions button{padding:12px; border-radius:12px; border:none; font-weight:700; font-size:13px; cursor:pointer; width:100%;}
+
+  /* ---------- Swap picker overlay ---------- */
+  #swap-picker-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.9);
+    display:none;
+    align-items:center; justify-content:center;
+    z-index:70;
+    padding:24px;
+  }
+  #swap-picker-overlay.active{display:flex;}
+  #swap-picker-card{
+    width:100%; max-width:340px; max-height:80vh;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-radius:20px;
+    padding:18px;
+    display:flex; flex-direction:column;
+  }
+  #swap-picker-title{font-weight:700; margin-bottom:14px; text-align:center;}
+  #swap-picker-grid{
+    overflow-y:auto;
+    max-height:44vh;
+    margin-bottom:14px;
+  }
+  .picker-item .check{
+    position:absolute; top:6px; right:6px;
+    width:20px; height:20px; border-radius:50%;
+    background:rgba(0,0,0,.55); border:2px solid rgba(255,255,255,.6);
+    display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:800; color:transparent;
+  }
+  .picker-item.selected{outline:3px solid var(--accent);}
+  .picker-item.selected .check{background:var(--accent); border-color:var(--accent); color:#fff;}
+
+  /* ---------- Models (full catalog) overlay ---------- */
+  #models-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.94);
+    display:none;
+    z-index:65;
+    padding:20px 16px calc(20px + env(safe-area-inset-bottom));
+    overflow-y:auto;
+  }
+  #models-overlay.active{display:block;}
+  #models-card{position:relative; padding-top:44px;}
+  #models-title{font-size:12px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:.6px; margin:0 30px 14px 2px;}
+  #models-grid .grid-item{cursor:default;}
+  .model-name-tag{
+    position:absolute; bottom:0; left:0; right:0;
+    background:linear-gradient(transparent, rgba(0,0,0,.85));
+    color:#fff; font-size:10px; font-weight:700;
+    padding:14px 6px 6px; text-align:center;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+
+  /* ---------- Leaderboard ("Топы") overlay ---------- */
+  #tops-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.94);
+    display:none;
+    z-index:65;
+    padding:20px 16px calc(20px + env(safe-area-inset-bottom));
+    overflow-y:auto;
+  }
+  #tops-overlay.active{display:block;}
+  #tops-card{position:relative; padding-top:44px; max-width:480px; margin:0 auto;}
+  #tops-title{font-size:12px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:.6px; margin:0 30px 14px 2px;}
+  .tops-row{
+    display:flex; align-items:center; gap:12px;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-radius:14px;
+    padding:10px 14px;
+    margin-bottom:8px;
+  }
+  .tops-rank{width:24px; text-align:center; font-weight:800; font-size:13px; color:#666; flex-shrink:0;}
+  .tops-rank.top1{color:#facc15;}
+  .tops-rank.top2{color:#c0c0c0;}
+  .tops-rank.top3{color:#cd7f32;}
+  .tops-avatar{
+    width:32px; height:32px; border-radius:50%;
+    background:#141414; border:1px solid var(--card-border);
+    display:flex; align-items:center; justify-content:center;
+    font-weight:800; font-size:13px; color:#fff;
+    overflow:hidden; flex-shrink:0;
+  }
+  .tops-avatar img{width:100%; height:100%; object-fit:cover;}
+  .tops-name{flex:1; font-weight:700; font-size:13px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .tops-count{font-size:12px; font-weight:800; color:var(--accent2); flex-shrink:0;}
 
   /* ---------- Input modal (buy gems / list price / offer) ---------- */
   #input-overlay{
@@ -327,19 +545,22 @@
     padding:18px;
     text-align:center;
   }
-  #modal-card img{width:100%; border-radius:14px; margin-bottom:12px; aspect-ratio:1/1; object-fit:cover;}
-  #modal-card .modal-name{font-weight:700; margin-bottom:2px;}
-  #modal-card .modal-count{font-size:12px; color:#888; margin-bottom:16px;}
+  #modal-card img{width:100%; border-radius:14px; margin-bottom:16px; aspect-ratio:1/1; object-fit:cover; touch-action:pan-y;}
+  #modal-card .modal-name{font-weight:700; margin-bottom:16px;}
   .modal-actions{display:flex; flex-direction:column; gap:10px;}
   .modal-actions-row{display:flex; gap:10px;}
   .modal-actions button{
     flex:1; padding:12px; border-radius:12px; border:none; font-weight:700; font-size:13px; cursor:pointer;
   }
   .btn-share{background:var(--accent); color:#fff;}
-  .btn-give{background:var(--accent2); color:#000;}
+  .btn-give{background:#3b82f6; color:#fff;}
   .btn-sell{background:#1f1f1f; color:#666; width:100%;}
-  .btn-sell.active{background:rgba(139,92,246,.18); color:var(--accent); cursor:pointer;}
+  .btn-sell.active{background:#22c55e; color:#fff; cursor:pointer;}
   .btn-sell.listed{background:rgba(239,68,68,.15); color:var(--danger); cursor:pointer;}
+  .btn-swap{background:#1f1f1f; color:#666; width:100%;}
+  .btn-swap.active{background:rgba(139,92,246,.18); color:var(--accent); cursor:pointer;}
+  .btn-swap.listed{background:rgba(239,68,68,.15); color:var(--danger); cursor:pointer;}
+  .btn-back{background:#161616; color:#999; width:100%;}
   .btn-close{
     position:absolute; top:10px; right:10px;
     background:none; border:none; color:#888; font-size:22px; cursor:pointer;
@@ -370,23 +591,35 @@
   <main>
     <!-- FARM -->
     <section id="farm-screen" class="screen">
+      <button class="models-btn" id="models-btn">Модели</button>
+      <button class="models-btn tops-btn" id="tops-btn">Топы</button>
       <div class="farm-total-badge">Сфармлено карточек всего: <b id="total-farmed">0</b></div>
-      <div class="farm-stage" id="farm-stage"><div class="placeholder">🎁</div></div>
+      <div class="farm-stage" id="farm-stage"><div class="placeholder">?</div></div>
+      <div id="farm-progress-wrap"><div id="farm-progress-bar"></div></div>
       <div id="farm-result-name"></div>
       <div id="farm-result-number"></div>
-      <button id="farm-btn">ФАРМ</button>
-      <div id="farm-hint">Жми и получай случайную карточку</div>
+      <div class="farm-btn-wrap">
+        <button id="farm-btn">ФАРМ</button>
+        <div class="farm-cost-badge">25<img src="/static/icons/diamond.png" alt=""></div>
+      </div>
+      <div id="farm-hint"></div>
     </section>
 
     <!-- MARKET -->
     <section id="market-screen" class="screen">
-      <select id="market-sort">
-        <option value="price_asc" selected>Цена: сначала дешёвые</option>
-        <option value="price_desc">Цена: сначала дорогие</option>
-        <option value="new">Сначала новые</option>
-        <option value="old">Сначала старые</option>
-        <option value="name">По названию (А-Я)</option>
-      </select>
+      <div class="market-header-row">
+        <select id="market-sort">
+          <option value="price_asc" selected>Цена: сначала дешёвые</option>
+          <option value="price_desc">Цена: сначала дорогие</option>
+          <option value="new">Сначала новые</option>
+          <option value="old">Сначала старые</option>
+          <option value="number">По номеру</option>
+        </select>
+        <div class="mode-switch" id="market-mode-switch">
+          <button class="mode-switch-btn active" data-mode="trade">Торговля</button>
+          <button class="mode-switch-btn" data-mode="swap">Обмен</button>
+        </div>
+      </div>
       <div id="market-list"></div>
     </section>
 
@@ -408,7 +641,10 @@
           </div>
         </div>
       </div>
-      <div class="section-label">Коллекция</div>
+      <div class="section-label-row">
+        <div class="section-label">Коллекция</div>
+        <button id="profile-sort-btn">№ ↓</button>
+      </div>
       <div class="grid" id="profile-grid"></div>
     </section>
   </main>
@@ -424,13 +660,14 @@
       <button class="btn-close" id="modal-close">✕</button>
       <img id="modal-img" src="" alt="">
       <div class="modal-name" id="modal-name"></div>
-      <div class="modal-count" id="modal-count"></div>
       <div class="modal-actions">
         <div class="modal-actions-row">
           <button class="btn-share" id="modal-share">Поделиться</button>
           <button class="btn-give" id="modal-give">Передать</button>
         </div>
         <button class="btn-sell" id="modal-sell">Продать</button>
+        <button class="btn-swap" id="modal-swap">Обменять</button>
+        <button class="btn-back" id="modal-back">Назад</button>
       </div>
     </div>
   </div>
@@ -446,6 +683,43 @@
     </div>
   </div>
 
+  <div id="market-item-overlay">
+    <div id="market-item-card">
+      <button class="btn-close" id="market-item-close">✕</button>
+      <img id="market-item-img" src="" alt="">
+      <div id="market-item-name"></div>
+      <div id="market-item-price-row"></div>
+      <div id="market-item-actions"></div>
+    </div>
+  </div>
+
+  <div id="swap-picker-overlay">
+    <div id="swap-picker-card">
+      <div id="swap-picker-title">Выбери свои карты для обмена</div>
+      <div class="grid" id="swap-picker-grid"></div>
+      <div id="input-actions">
+        <button id="swap-picker-cancel">Отмена</button>
+        <button id="swap-picker-confirm">Предложить</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="models-overlay">
+    <div id="models-card">
+      <button class="btn-close" id="models-close">✕</button>
+      <div id="models-title">Все модели (<span id="models-count">0</span>)</div>
+      <div class="grid" id="models-grid"></div>
+    </div>
+  </div>
+
+  <div id="tops-overlay">
+    <div id="tops-card">
+      <button class="btn-close" id="tops-close">✕</button>
+      <div id="tops-title">Топ игроков</div>
+      <div id="tops-list"></div>
+    </div>
+  </div>
+
   <div id="toast"></div>
 </div>
 
@@ -454,6 +728,7 @@ const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 
 const API_BASE = "/api";
+const FARM_COST_GEMS = 25;
 let initData = tg?.initData || "";
 let inventory = [];
 let selectedUserCardId = null;
@@ -465,6 +740,16 @@ function toast(msg){
   el.classList.add("show");
   clearTimeout(el._hideTimer);
   el._hideTimer = setTimeout(()=>el.classList.remove("show"), 3000);
+}
+function toastHTML(html){
+  const el = document.getElementById("toast");
+  el.innerHTML = html;
+  el.classList.add("show");
+  clearTimeout(el._hideTimer);
+  el._hideTimer = setTimeout(()=>el.classList.remove("show"), 3000);
+}
+function notEnoughGemsToast(){
+  toastHTML(`Не хватает гемов — нужно ${FARM_COST_GEMS} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
 }
 
 // ---------- Generic input modal (buy gems / list price / offer / gift username) ----------
@@ -521,16 +806,16 @@ async function api(path, body={}){
 }
 
 // ---------- Navigation ----------
+function switchScreen(screenId){
+  document.querySelectorAll(".nav-btn").forEach(b=>b.classList.remove("active"));
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+  document.querySelector(`.nav-btn[data-screen="${screenId}"]`)?.classList.add("active");
+  document.getElementById(screenId).classList.add("active");
+  if(screenId === "profile-screen") loadProfile();
+  if(screenId === "market-screen") refreshMarketScreen();
+}
 document.querySelectorAll(".nav-btn").forEach(btn=>{
-  btn.addEventListener("click", ()=>{
-    document.querySelectorAll(".nav-btn").forEach(b=>b.classList.remove("active"));
-    document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
-    btn.classList.add("active");
-    const screen = document.getElementById(btn.dataset.screen);
-    screen.classList.add("active");
-    if(btn.dataset.screen === "profile-screen") loadProfile();
-    if(btn.dataset.screen === "market-screen") loadMarket();
-  });
+  btn.addEventListener("click", ()=>switchScreen(btn.dataset.screen));
 });
 document.getElementById("farm-screen").classList.add("active");
 
@@ -595,6 +880,7 @@ document.getElementById("market-sort").addEventListener("change", renderMarket);
 function renderMarket(){
   const list = document.getElementById("market-list");
   if(marketListings.length === 0){
+    list.className = "";
     list.innerHTML = `<div class="empty-state"><span class="emoji">🛒</span>Пока никто ничего не продаёт.<br>Выстави свою картинку в профиле!</div>`;
     return;
   }
@@ -605,70 +891,365 @@ function renderMarket(){
       case "old": return a.user_card_id - b.user_card_id;
       case "new": return b.user_card_id - a.user_card_id;
       case "price_desc": return b.listed_price - a.listed_price;
-      case "name": return (a.name || "").localeCompare(b.name || "", "ru");
+      case "number": return a.card_id - b.card_id;
       case "price_asc":
       default: return a.listed_price - b.listed_price;
     }
   });
 
+  list.className = "grid";
   list.innerHTML = sorted.map(l => `
-      <div class="market-item" data-uc="${l.user_card_id}">
+      <div class="grid-item" data-uc="${l.user_card_id}">
         <img src="/static/cards/${l.filename}" alt="${l.name||''}">
-        <div class="market-item-info">
-          <div class="market-item-name">${l.name || "Без названия"}</div>
-          <div class="market-item-price"><img src="/static/icons/diamond.png" alt="">${l.listed_price}</div>
-        </div>
-        <div class="market-item-actions">
-          ${l.is_mine
-            ? `<div class="market-mine-tag">Твой лот</div><button class="btn-unlist" data-action="unlist">Снять</button>`
-            : `<button class="btn-buy" data-action="buy">Купить</button><button class="btn-offer" data-action="offer">Оценить</button>`}
-        </div>
+        <div class="market-price-tag"><img src="/static/icons/diamond.png" alt="">${l.listed_price}</div>
+        ${l.is_mine ? `<div class="market-mine-badge">Твой</div>` : ""}
       </div>
     `).join("");
 
-    list.querySelectorAll(".market-item").forEach(el=>{
-      const ucId = parseInt(el.dataset.uc);
-      el.querySelector('[data-action="buy"]')?.addEventListener("click", async ()=>{
+  list.querySelectorAll(".grid-item").forEach(el=>{
+    el.addEventListener("click", ()=>openMarketItem(parseInt(el.dataset.uc), "trade"));
+  });
+}
+
+// ---------- Market: swap / barter mode ----------
+let marketMode = "trade"; // "trade" | "swap"
+let swapListings = [];
+
+function refreshMarketScreen(){
+  if(marketMode === "swap") loadSwapListings();
+  else loadMarket();
+}
+
+function setMarketMode(mode){
+  marketMode = mode;
+  document.querySelectorAll(".mode-switch-btn").forEach(b=>{
+    b.classList.toggle("active", b.dataset.mode === mode);
+  });
+  document.getElementById("market-sort").classList.toggle("hidden", mode === "swap");
+}
+
+// Called right after successfully listing a card for swap, so the player lands
+// straight on the listing they just created instead of wondering if it worked.
+function goToMarketSwapTab(){
+  setMarketMode("swap");
+  switchScreen("market-screen");
+}
+
+document.querySelectorAll(".mode-switch-btn").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    if(btn.dataset.mode === marketMode) return;
+    setMarketMode(btn.dataset.mode);
+    refreshMarketScreen();
+  });
+});
+
+async function loadSwapListings(){
+  try{
+    const data = await api("/swap/listings");
+    swapListings = data.listings;
+    renderSwapListings();
+  }catch(e){
+    toast("Не удалось загрузить обмен: " + e.message);
+  }
+}
+
+function renderSwapListings(){
+  const list = document.getElementById("market-list");
+  if(swapListings.length === 0){
+    list.className = "";
+    list.innerHTML = `<div class="empty-state"><span class="emoji">🔄</span>Пока никто не выставил карты на обмен.<br>Выстави свою в профиле!</div>`;
+    return;
+  }
+
+  list.className = "grid";
+  list.innerHTML = swapListings.map(l => `
+      <div class="grid-item" data-uc="${l.user_card_id}">
+        <img src="/static/cards/${l.filename}" alt="${l.name||''}">
+        ${l.is_mine ? `<div class="market-mine-badge">Твой</div>` : ""}
+      </div>
+    `).join("");
+
+  list.querySelectorAll(".grid-item").forEach(el=>{
+    el.addEventListener("click", ()=>openMarketItem(parseInt(el.dataset.uc), "swap"));
+  });
+}
+
+// ---------- Market item quick-action popup (shared by both Торговля and Обмен grids) ----------
+function findListing(ucId, mode){
+  const arr = mode === "swap" ? swapListings : marketListings;
+  return arr.find(l => l.user_card_id === ucId);
+}
+
+function closeMarketItem(){
+  document.getElementById("market-item-overlay").classList.remove("active");
+}
+
+function openMarketItem(ucId, mode){
+  const item = findListing(ucId, mode);
+  if(!item) return;
+  document.getElementById("market-item-img").src = `/static/cards/${item.filename}`;
+  document.getElementById("market-item-name").textContent = item.name || "Без названия";
+  const priceRow = document.getElementById("market-item-price-row");
+  const actions = document.getElementById("market-item-actions");
+
+  if(mode === "trade"){
+    priceRow.style.display = "flex";
+    priceRow.innerHTML = `<img src="/static/icons/diamond.png" alt="">${item.listed_price}`;
+    if(item.is_mine){
+      actions.innerHTML = `<button class="btn-unlist" id="mi-unlist">Снять с продажи</button>`;
+      document.getElementById("mi-unlist").addEventListener("click", async ()=>{
+        try{
+          await api("/market/unlist", { user_card_id: ucId });
+          toast("Снято с продажи");
+          closeMarketItem();
+          loadMarket();
+        }catch(e){ toast("Не получилось: " + e.message); }
+      });
+    }else{
+      actions.innerHTML = `<button class="btn-buy" id="mi-buy">Купить</button><button class="btn-offer" id="mi-offer">Оценить</button>`;
+      document.getElementById("mi-buy").addEventListener("click", async ()=>{
         try{
           await api("/market/buy", { user_card_id: ucId });
           toast("Куплено! Смотри в профиле.");
+          closeMarketItem();
           loadMarket();
           refreshGems();
         }catch(e){ toast("Не получилось купить: " + e.message); }
       });
-      el.querySelector('[data-action="offer"]')?.addEventListener("click", async ()=>{
+      document.getElementById("mi-offer").addEventListener("click", async ()=>{
         const price = await promptNumber("Сколько гемов предложить?");
         if(!price) return;
         try{
           await api("/market/offer", { user_card_id: ucId, price_gems: price });
           toast("Предложение отправлено продавцу");
+          closeMarketItem();
         }catch(e){ toast("Не получилось: " + e.message); }
       });
-      el.querySelector('[data-action="unlist"]')?.addEventListener("click", async ()=>{
+    }
+  }else{
+    priceRow.style.display = "none";
+    priceRow.innerHTML = "";
+    if(item.is_mine){
+      actions.innerHTML = `<button class="btn-unlist" id="mi-unlist-swap">Снять с обмена</button>`;
+      document.getElementById("mi-unlist-swap").addEventListener("click", async ()=>{
         try{
-          await api("/market/unlist", { user_card_id: ucId });
-          toast("Снято с продажи");
-          loadMarket();
+          await api("/swap/unlist", { user_card_id: ucId });
+          toast("Снято с обмена");
+          closeMarketItem();
+          loadSwapListings();
         }catch(e){ toast("Не получилось: " + e.message); }
       });
+    }else{
+      actions.innerHTML = `<button class="btn-propose" id="mi-propose">Предложить обмен</button>`;
+      document.getElementById("mi-propose").addEventListener("click", ()=>{
+        closeMarketItem();
+        openSwapPicker(ucId);
+      });
+    }
+  }
+
+  document.getElementById("market-item-overlay").classList.add("active");
+}
+
+document.getElementById("market-item-close").addEventListener("click", closeMarketItem);
+document.getElementById("market-item-overlay").addEventListener("click", (e)=>{
+  if(e.target.id === "market-item-overlay") closeMarketItem();
+});
+
+// ---------- Swap picker (choose which of your own cards to offer) ----------
+let swapPickerTargetId = null;
+let swapPickerSelected = new Set();
+
+function openSwapPicker(targetUserCardId){
+  swapPickerTargetId = targetUserCardId;
+  swapPickerSelected = new Set();
+  renderSwapPickerGrid();
+  document.getElementById("swap-picker-overlay").classList.add("active");
+}
+
+function renderSwapPickerGrid(){
+  const grid = document.getElementById("swap-picker-grid");
+  if(inventory.length === 0){
+    grid.innerHTML = `<div class="empty-state">Нечего предложить — иди фармить 🌱</div>`;
+    return;
+  }
+  grid.innerHTML = inventory.map(c => `
+    <div class="grid-item picker-item ${swapPickerSelected.has(c.user_card_id) ? 'selected' : ''}" data-uc="${c.user_card_id}">
+      <img src="/static/cards/${c.filename}" alt="${c.name||''}">
+      <div class="check">✓</div>
+      ${c.count > 1 ? `<div class="count">x${c.count}</div>` : ""}
+    </div>
+  `).join("");
+  grid.querySelectorAll(".picker-item").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      const ucId = parseInt(el.dataset.uc);
+      if(swapPickerSelected.has(ucId)) swapPickerSelected.delete(ucId);
+      else swapPickerSelected.add(ucId);
+      el.classList.toggle("selected");
     });
+  });
+}
+
+document.getElementById("swap-picker-cancel").addEventListener("click", ()=>{
+  document.getElementById("swap-picker-overlay").classList.remove("active");
+});
+
+document.getElementById("swap-picker-confirm").addEventListener("click", async ()=>{
+  if(swapPickerSelected.size === 0){ toast("Выбери хотя бы одну карту"); return; }
+  try{
+    await api("/swap/offer", { user_card_id: swapPickerTargetId, offered_user_card_ids: [...swapPickerSelected] });
+    toast("Предложение отправлено владельцу");
+    document.getElementById("swap-picker-overlay").classList.remove("active");
+  }catch(e){
+    toast("Не получилось: " + e.message);
+  }
+});
+
+// ---------- Card catalog (all models — used by the farm animation and the gallery) ----------
+let allCardsCache = null;
+async function ensureAllCards(){
+  if(allCardsCache) return allCardsCache;
+  try{
+    const res = await fetch(API_BASE + "/cards");
+    const data = await res.json();
+    allCardsCache = data.cards;
+  }catch(e){
+    allCardsCache = [];
+  }
+  return allCardsCache;
+}
+
+document.getElementById("models-btn").addEventListener("click", async ()=>{
+  const cards = await ensureAllCards();
+  document.getElementById("models-count").textContent = cards.length;
+  document.getElementById("models-grid").innerHTML = cards.map(c => `
+    <div class="grid-item">
+      <img src="/static/cards/${c.filename}" alt="${c.name||''}">
+      <div class="model-name-tag">${c.name || ""}</div>
+    </div>
+  `).join("");
+  document.getElementById("models-overlay").classList.add("active");
+});
+document.getElementById("models-close").addEventListener("click", ()=>{
+  document.getElementById("models-overlay").classList.remove("active");
+});
+document.getElementById("models-overlay").addEventListener("click", (e)=>{
+  if(e.target.id === "models-overlay"){
+    document.getElementById("models-overlay").classList.remove("active");
+  }
+});
+
+// ---------- Leaderboard ("Топы") ----------
+document.getElementById("tops-btn").addEventListener("click", async ()=>{
+  try{
+    const res = await fetch(API_BASE + "/leaderboard");
+    const data = await res.json();
+    const players = data.players || [];
+    const list = document.getElementById("tops-list");
+    if(players.length === 0){
+      list.innerHTML = `<div class="empty-state">Пока никто не сфармил ни одной карточки</div>`;
+    }else{
+      list.innerHTML = players.map((p, i) => `
+        <div class="tops-row">
+          <div class="tops-rank ${i===0?'top1':i===1?'top2':i===2?'top3':''}">${i+1}</div>
+          <div class="tops-avatar">${p.photo_url ? `<img src="${p.photo_url}" alt="">` : (p.username || p.first_name || "?")[0].toUpperCase()}</div>
+          <div class="tops-name">${p.username ? "@"+p.username : (p.first_name || "Игрок")}</div>
+          <div class="tops-count">${p.total_cards}</div>
+        </div>
+      `).join("");
+    }
+    document.getElementById("tops-overlay").classList.add("active");
+  }catch(e){
+    toast("Не удалось загрузить топы: " + e.message);
+  }
+});
+document.getElementById("tops-close").addEventListener("click", ()=>{
+  document.getElementById("tops-overlay").classList.remove("active");
+});
+document.getElementById("tops-overlay").addEventListener("click", (e)=>{
+  if(e.target.id === "tops-overlay"){
+    document.getElementById("tops-overlay").classList.remove("active");
+  }
+});
+
+// ---------- Farm animation: a 10s "drawing" suspense with a progress bar and cycling art ----------
+let farmCycleTimer = null;
+let farmProgressTimer = null;
+
+function startFarmAnimation(cards){
+  const stage = document.getElementById("farm-stage");
+  const progressWrap = document.getElementById("farm-progress-wrap");
+  const progressBar = document.getElementById("farm-progress-bar");
+  document.getElementById("farm-result-name").textContent = "";
+  document.getElementById("farm-result-number").textContent = "";
+  progressWrap.classList.add("active");
+  progressBar.style.width = "0%";
+
+  const pool = cards && cards.length ? cards : [];
+  let cycleIdx = 0;
+  clearInterval(farmCycleTimer);
+  if(pool.length){
+    stage.innerHTML = `<img id="farm-cycle-img" src="/static/cards/${pool[0].filename}" alt="">`;
+    farmCycleTimer = setInterval(()=>{
+      cycleIdx = (cycleIdx + 1) % pool.length;
+      const img = document.getElementById("farm-cycle-img");
+      if(img) img.src = `/static/cards/${pool[cycleIdx].filename}`;
+    }, 180);
+  }
+
+  const duration = 10000;
+  const start = Date.now();
+  return new Promise(resolve=>{
+    clearInterval(farmProgressTimer);
+    farmProgressTimer = setInterval(()=>{
+      const elapsed = Date.now() - start;
+      const pct = Math.min(100, (elapsed / duration) * 100);
+      progressBar.style.width = pct + "%";
+      if(elapsed >= duration){
+        clearInterval(farmProgressTimer);
+        clearInterval(farmCycleTimer);
+        progressWrap.classList.remove("active");
+        resolve();
+      }
+    }, 100);
+  });
 }
 
 document.getElementById("farm-btn").addEventListener("click", async ()=>{
   const btn = document.getElementById("farm-btn");
+  if(btn.disabled) return;
+
+  const currentGems = parseInt(document.getElementById("gems-amount").textContent, 10) || 0;
+  if(currentGems < FARM_COST_GEMS){
+    notEnoughGemsToast();
+    return;
+  }
+
   btn.disabled = true;
+  const hint = document.getElementById("farm-hint");
+  hint.textContent = "Идёт фарм...";
   try{
-    const card = await api("/farm");
+    const cards = await ensureAllCards();
+    const [card] = await Promise.all([ api("/farm"), startFarmAnimation(cards) ]);
     const stage = document.getElementById("farm-stage");
     stage.innerHTML = `<img src="/static/cards/${card.filename}" alt="${card.name||''}">`;
     document.getElementById("farm-result-name").textContent = card.name || "Новая картинка!";
     document.getElementById("farm-result-number").textContent = `№${card.farm_number}`;
     document.getElementById("total-farmed").textContent = card.total_farmed;
+    document.getElementById("gems-amount").textContent = card.gems;
     tg?.HapticFeedback?.notificationOccurred("success");
   }catch(e){
-    toast("Ошибка фарма: " + e.message);
+    document.getElementById("farm-progress-wrap").classList.remove("active");
+    clearInterval(farmCycleTimer);
+    clearInterval(farmProgressTimer);
+    if(String(e.message).includes("not enough gems")){
+      notEnoughGemsToast();
+    }else{
+      toast("Ошибка фарма: " + e.message);
+    }
   }finally{
     btn.disabled = false;
+    hint.textContent = "";
   }
 });
 
@@ -692,42 +1273,69 @@ async function loadProfile(){
     const total = inventory.reduce((s,c)=>s+c.count, 0);
     document.getElementById("stat-total").textContent = total;
 
-    const grid = document.getElementById("profile-grid");
-    if(inventory.length === 0){
-      grid.innerHTML = "";
-      grid.insertAdjacentHTML("afterend", `<div class="empty-state" id="empty-hint">Пока пусто — иди фармить 🌱</div>`);
-      return;
-    }
-    document.getElementById("empty-hint")?.remove();
-    grid.innerHTML = inventory.map(c => `
-      <div class="grid-item" data-card-id="${c.card_id}">
-        <img src="/static/cards/${c.filename}" alt="${c.name||''}">
-        <div class="drop-number">#${c.user_card_id}</div>
-        ${c.count > 1 ? `<div class="count">x${c.count}</div>` : ""}
-      </div>
-    `).join("");
-
-    grid.querySelectorAll(".grid-item").forEach(el=>{
-      el.addEventListener("click", ()=>openModal(parseInt(el.dataset.cardId)));
-    });
+    sortInventoryAndRender();
   }catch(e){
     toast("Не удалось загрузить профиль: " + e.message);
   }
 }
 
+// ---------- Collection sort (by drop number) ----------
+let profileSortAsc = false; // false = biggest number (newest) first, matching the old default
+
+document.getElementById("profile-sort-btn").addEventListener("click", ()=>{
+  profileSortAsc = !profileSortAsc;
+  sortInventoryAndRender();
+});
+
+function sortInventoryAndRender(){
+  inventory.sort((a, b) => profileSortAsc ? a.user_card_id - b.user_card_id : b.user_card_id - a.user_card_id);
+  document.getElementById("profile-sort-btn").textContent = profileSortAsc ? "№ ↑" : "№ ↓";
+  renderProfileGrid();
+}
+
+function renderProfileGrid(){
+  const grid = document.getElementById("profile-grid");
+  if(inventory.length === 0){
+    grid.innerHTML = "";
+    grid.insertAdjacentHTML("afterend", `<div class="empty-state" id="empty-hint">Пока пусто — иди фармить 🌱</div>`);
+    return;
+  }
+  document.getElementById("empty-hint")?.remove();
+  grid.innerHTML = inventory.map(c => `
+    <div class="grid-item" data-card-id="${c.card_id}">
+      <img src="/static/cards/${c.filename}" alt="${c.name||''}">
+      <div class="drop-number">#${c.user_card_id}</div>
+      ${c.count > 1 ? `<div class="count">x${c.count}</div>` : ""}
+    </div>
+  `).join("");
+
+  grid.querySelectorAll(".grid-item").forEach(el=>{
+    el.addEventListener("click", ()=>openModal(parseInt(el.dataset.cardId)));
+  });
+}
+
+let modalIndex = -1;
+
 function openModal(cardId){
-  const item = inventory.find(c => c.card_id === cardId);
-  if(!item) return;
+  const index = inventory.findIndex(c => c.card_id === cardId);
+  if(index === -1) return;
+  openModalAt(index);
+}
+
+function openModalAt(index){
+  if(index < 0 || index >= inventory.length) return;
   // database.get_inventory() includes one real user_cards.id per card group (the most
   // recently obtained copy) specifically so the modal can share a concrete owned row.
+  modalIndex = index;
+  const item = inventory[index];
   selectedUserCardId = item.user_card_id;
   selectedItem = item;
   document.getElementById("modal-img").src = `/static/cards/${item.filename}`;
   document.getElementById("modal-name").textContent = `${item.name || "Без названия"} #${item.user_card_id}`;
-  document.getElementById("modal-count").textContent = `У тебя: ${item.count}`;
   document.getElementById("modal-overlay").classList.add("active");
   document.getElementById("modal-card").dataset.filename = item.filename;
   updateSellButton(item);
+  updateSwapButton(item);
 }
 
 function updateSellButton(item){
@@ -742,17 +1350,59 @@ function updateSellButton(item){
   }
 }
 
+function updateSwapButton(item){
+  const btn = document.getElementById("modal-swap");
+  btn.classList.remove("active", "listed");
+  if(item.swap_listed){
+    btn.textContent = "Снять с обмена";
+    btn.classList.add("listed");
+  }else{
+    btn.textContent = "Обменять";
+    btn.classList.add("active");
+  }
+}
+
+// Swipe left/right on the card to browse the rest of the collection.
+let touchStartX = 0, touchStartY = 0;
+const modalCardEl = document.getElementById("modal-card");
+modalCardEl.addEventListener("touchstart", (e)=>{
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+}, { passive: true });
+modalCardEl.addEventListener("touchend", (e)=>{
+  if(inventory.length <= 1) return;
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  if(Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)){
+    if(dx < 0) openModalAt((modalIndex + 1) % inventory.length);
+    else openModalAt((modalIndex - 1 + inventory.length) % inventory.length);
+  }
+}, { passive: true });
+
 document.getElementById("modal-close").addEventListener("click", ()=>{
   document.getElementById("modal-overlay").classList.remove("active");
 });
 
-document.getElementById("modal-share").addEventListener("click", async ()=>{
-  try{
-    await api("/share", { user_card_id: selectedUserCardId });
-    toast("Отправлено в чат с ботом — перешли друзьям! 🎉");
+document.getElementById("modal-back").addEventListener("click", ()=>{
+  document.getElementById("modal-overlay").classList.remove("active");
+});
+
+// Tap anywhere outside the card itself (the dark backdrop) closes the modal.
+document.getElementById("modal-overlay").addEventListener("click", (e)=>{
+  if(e.target.id === "modal-overlay"){
     document.getElementById("modal-overlay").classList.remove("active");
-  }catch(e){
-    toast("Не удалось поделиться: " + e.message);
+  }
+});
+
+document.getElementById("modal-share").addEventListener("click", ()=>{
+  if(!selectedUserCardId) return;
+  if(tg?.switchInlineQuery){
+    // Opens Telegram's native chat picker; whoever gets picked receives the card
+    // photo directly (see bot.py's handle_inline_share) — no manual forwarding.
+    tg.switchInlineQuery(`share:${selectedUserCardId}`, ["users"]);
+    document.getElementById("modal-overlay").classList.remove("active");
+  }else{
+    toast("Открой через Телеграм, чтобы поделиться");
   }
 });
 
@@ -788,6 +1438,31 @@ document.getElementById("modal-sell").addEventListener("click", async ()=>{
       selectedItem.listed_price = price;
       updateSellButton(selectedItem);
       toast("Выставлено на рынок!");
+    }catch(e){
+      toast("Не получилось выставить: " + e.message);
+    }
+  }
+});
+
+document.getElementById("modal-swap").addEventListener("click", async ()=>{
+  if(!selectedItem) return;
+  if(selectedItem.swap_listed){
+    try{
+      await api("/swap/unlist", { user_card_id: selectedUserCardId });
+      selectedItem.swap_listed = 0;
+      updateSwapButton(selectedItem);
+      toast("Снято с обмена");
+    }catch(e){
+      toast("Не получилось: " + e.message);
+    }
+  }else{
+    try{
+      await api("/swap/list", { user_card_id: selectedUserCardId });
+      selectedItem.swap_listed = 1;
+      updateSwapButton(selectedItem);
+      toast("Выставлено на обмен!");
+      document.getElementById("modal-overlay").classList.remove("active");
+      goToMarketSwapTab();
     }catch(e){
       toast("Не получилось выставить: " + e.message);
     }
