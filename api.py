@@ -28,7 +28,11 @@ import database as db
 load_dotenv()
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
+BOT_USERNAME = os.environ.get("BOT_USERNAME", "Peeppobot")
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+
+# 1 Telegram Star buys 1 gem. Change this in one place if the exchange rate ever needs to move.
+GEMS_PER_STAR = 1
 
 app = FastAPI(title="Peeppo API")
 
@@ -108,6 +112,37 @@ class ShareBody(InitDataBody):
     user_card_id: int
 
 
+class TransferBody(InitDataBody):
+    user_card_id: int
+
+
+class TransferToUsernameBody(InitDataBody):
+    user_card_id: int
+    username: str
+
+
+class GemsInvoiceBody(InitDataBody):
+    gems: int
+
+
+class ListBody(InitDataBody):
+    user_card_id: int
+    price_gems: int
+
+
+class UnlistBody(InitDataBody):
+    user_card_id: int
+
+
+class BuyBody(InitDataBody):
+    user_card_id: int
+
+
+class OfferBody(InitDataBody):
+    user_card_id: int
+    price_gems: int
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -121,7 +156,14 @@ def auth(body: InitDataBody):
         "first_name": user["first_name"],
         "photo_url": user["photo_url"],
         "referrals": db.get_referral_count(user["telegram_id"]),
+        "gems": db.get_gems(user["telegram_id"]),
     }
+
+
+@app.get("/api/stats")
+def stats():
+    """Public, no auth needed — just the running total of drops across everyone."""
+    return {"total_farmed": db.get_total_farmed()}
 
 
 @app.post("/api/farm")
@@ -130,6 +172,9 @@ def farm(body: InitDataBody):
     result = db.farm(user["telegram_id"])
     if result is None:
         raise HTTPException(503, "card catalog is empty — add images first")
+    # user_cards.id is a plain global AUTOINCREMENT, so it doubles as this drop's serial number
+    result["farm_number"] = result["user_card_id"]
+    result["total_farmed"] = db.get_total_farmed()
     return result
 
 
@@ -150,4 +195,130 @@ async def share(body: ShareBody):
 
     photo_path = os.path.join(STATIC_DIR, "cards", uc["filename"])
     await bot_module.send_share_message(user["telegram_id"], photo_path, uc["name"])
+    return {"ok": True}
+
+
+@app.post("/api/transfer/start")
+def transfer_start(body: TransferBody):
+    """
+    Owner marks one owned copy as giveable and gets back a one-time claim link.
+    The frontend hands that link to Telegram's native share sheet so the owner
+    picks a specific friend to send it to — no username lookup needed.
+    """
+    user = _authenticate(body.initData)
+    ok = db.start_transfer(body.user_card_id, user["telegram_id"])
+    if not ok:
+        raise HTTPException(404, "card not found in your inventory")
+    return {"claim_link": f"https://t.me/{BOT_USERNAME}?start=claim{body.user_card_id}"}
+
+
+@app.post("/api/transfer/to_username")
+async def transfer_to_username(body: TransferToUsernameBody):
+    """Direct gift by @username — the recipient must have opened the bot at least once
+    so we already have their telegram_id on file (Bot API can't resolve a bare username)."""
+    user = _authenticate(body.initData)
+    target = db.find_user_by_username(body.username)
+    if target is None:
+        raise HTTPException(404, "этот пользователь ещё не запускал бота")
+    if target["telegram_id"] == user["telegram_id"]:
+        raise HTTPException(400, "нельзя подарить самому себе")
+
+    result = db.transfer_card_to(body.user_card_id, user["telegram_id"], target["telegram_id"])
+    if result is None:
+        raise HTTPException(404, "card not found in your inventory")
+
+    import bot as bot_module
+
+    from_name = f"@{user['username']}" if user.get("username") else (user.get("first_name") or "Игрок")
+    photo_path = os.path.join(STATIC_DIR, "cards", result["filename"])
+    await bot_module.notify_gift_received(target["telegram_id"], from_name, result["name"], photo_path)
+    return {"ok": True, "to_name": target["username"] or target["first_name"]}
+
+
+# ---------------------------------------------------------------------------
+# Gems (bought with Telegram Stars)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/gems/invoice")
+async def gems_invoice(body: GemsInvoiceBody):
+    """Returns a Telegram Stars invoice link for the requested amount of gems.
+    The frontend opens it in-app with tg.openInvoice(); a successful payment is
+    credited by bot.py's successful_payment handler (gems are never granted from here)."""
+    user = _authenticate(body.initData)
+    if body.gems <= 0:
+        raise HTTPException(400, "gems must be positive")
+
+    import bot as bot_module
+
+    stars = max(1, body.gems // GEMS_PER_STAR)
+    link = await bot_module.create_gems_invoice(user["telegram_id"], body.gems, stars)
+    return {"invoice_link": link, "stars": stars}
+
+
+# ---------------------------------------------------------------------------
+# Market
+# ---------------------------------------------------------------------------
+
+@app.post("/api/market/listings")
+def market_listings(body: InitDataBody):
+    """Listings are anonymous — the seller's identity never leaves the server
+    beyond the is_mine flag needed to show "Твой лот" on the buyer's own listing."""
+    user = _authenticate(body.initData)
+    listings = db.get_market_listings()
+    for item in listings:
+        item["is_mine"] = item["seller_id"] == user["telegram_id"]
+        del item["seller_id"], item["username"], item["first_name"]
+    return {"listings": listings, "gems": db.get_gems(user["telegram_id"])}
+
+
+@app.post("/api/market/list")
+def market_list(body: ListBody):
+    user = _authenticate(body.initData)
+    if body.price_gems <= 0:
+        raise HTTPException(400, "price must be positive")
+    ok = db.list_card(body.user_card_id, user["telegram_id"], body.price_gems)
+    if not ok:
+        raise HTTPException(404, "card not found in your inventory")
+    return {"ok": True}
+
+
+@app.post("/api/market/unlist")
+def market_unlist(body: UnlistBody):
+    user = _authenticate(body.initData)
+    ok = db.unlist_card(body.user_card_id, user["telegram_id"])
+    if not ok:
+        raise HTTPException(404, "listing not found")
+    return {"ok": True}
+
+
+@app.post("/api/market/buy")
+async def market_buy(body: BuyBody):
+    user = _authenticate(body.initData)
+    result = db.buy_listing(body.user_card_id, user["telegram_id"])
+    if result is None:
+        raise HTTPException(400, "listing unavailable or not enough gems")
+
+    import bot as bot_module
+
+    buyer_name = f"@{user['username']}" if user.get("username") else (user.get("first_name") or "Игрок")
+    await bot_module.notify_card_sold(result["seller_id"], buyer_name, result["name"], result["price"])
+    return {"ok": True}
+
+
+@app.post("/api/market/offer")
+async def market_offer(body: OfferBody):
+    user = _authenticate(body.initData)
+    if body.price_gems <= 0:
+        raise HTTPException(400, "price must be positive")
+    result = db.make_offer(body.user_card_id, user["telegram_id"], body.price_gems)
+    if result is None:
+        raise HTTPException(400, "listing unavailable")
+
+    import bot as bot_module
+
+    buyer_name = f"@{user['username']}" if user.get("username") else (user.get("first_name") or "Игрок")
+    photo_path = os.path.join(STATIC_DIR, "cards", result["filename"])
+    await bot_module.notify_new_offer(
+        result["seller_id"], result["offer_id"], buyer_name, result["name"], photo_path, body.price_gems
+    )
     return {"ok": True}

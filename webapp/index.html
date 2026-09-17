@@ -41,9 +41,36 @@
     align-items:center;
     justify-content:space-between;
   }
-  header .brand{font-weight:800; font-size:20px; letter-spacing:.5px;}
-  header .brand span{color:var(--accent);}
+  header{gap:8px;}
+  header .brand{font-weight:800; font-size:20px; letter-spacing:.5px; margin-right:auto;}
+  header .brand span{color:#fff;}
   header .refs{font-size:12px; color:#888;}
+  #gems-pill{
+    cursor:pointer;
+    height:34px;
+    padding:0 10px;
+    border-radius:999px;
+    background:rgba(250,204,21,.1);
+    border:1px solid rgba(250,204,21,.35);
+    display:flex; align-items:center; gap:5px;
+    color:var(--accent2);
+  }
+  #gems-pill img{width:16px; height:16px; object-fit:contain;}
+  #gems-pill span{font-size:12px; font-weight:800;}
+  #gems-pill:active{transform:scale(.94);}
+  #invite-btn{
+    cursor:pointer;
+    height:34px;
+    padding:0 12px 0 8px;
+    border-radius:999px;
+    background:rgba(255,255,255,.06);
+    border:1px solid var(--card-border);
+    display:flex; align-items:center; gap:5px;
+    color:#fff;
+  }
+  #invite-btn img{width:18px; height:18px; object-fit:contain;}
+  #invite-btn span{font-size:11px; font-weight:800; letter-spacing:.3px;}
+  #invite-btn:active{transform:scale(.94);}
   main{
     flex:1;
     overflow-y:auto;
@@ -92,14 +119,15 @@
   }
   .farm-total-badge b{color:#fff; font-weight:800;}
   #farm-btn{
-    border:none;
+    border:1px solid rgba(139,92,246,.5);
     padding:18px 56px;
     border-radius:999px;
     font-size:18px;
-    font-weight:700;
-    color:#000;
-    background:linear-gradient(135deg,var(--accent2),#f59e0b);
-    box-shadow:0 8px 24px rgba(250,204,21,.25);
+    font-weight:800;
+    letter-spacing:.6px;
+    color:#fff;
+    background:linear-gradient(160deg,#1c1c1c,#050505);
+    box-shadow:0 10px 28px rgba(139,92,246,.3), inset 0 1px 0 rgba(255,255,255,.06);
     cursor:pointer;
   }
   #farm-btn:active{transform:scale(.96);}
@@ -110,8 +138,8 @@
   .profile-card{
     position:relative;
     text-align:center;
-    padding:30px 20px 20px;
-    margin-bottom:22px;
+    padding:22px 20px 15px;
+    margin-bottom:16px;
     background:linear-gradient(160deg,#181818 0%,#0a0a0a 100%);
     border:1px solid var(--card-border);
     border-radius:26px;
@@ -124,35 +152,34 @@
     pointer-events:none;
   }
   .avatar-ring{
-    width:88px; height:88px;
+    width:66px; height:66px;
     border-radius:50%;
     background:linear-gradient(135deg,var(--accent2),var(--accent));
     padding:3px;
-    margin:0 auto 14px;
+    margin:0 auto 10px;
     position:relative;
   }
   .avatar{
     width:100%; height:100%; border-radius:50%;
     background:#141414;
-    border:3px solid #0a0a0a;
+    border:2px solid #0a0a0a;
     display:flex; align-items:center; justify-content:center;
-    font-weight:800; font-size:26px;
+    font-weight:800; font-size:20px;
     overflow:hidden;
   }
   .avatar img{width:100%; height:100%; object-fit:cover;}
-  .profile-name{position:relative; font-size:20px; font-weight:800; margin-bottom:3px;}
-  .profile-username{position:relative; font-size:13px; font-weight:700; color:var(--accent2); margin-bottom:4px;}
-  .profile-id{position:relative; font-size:11px; color:#555; font-family:ui-monospace,Menlo,monospace; margin-bottom:20px;}
+  .profile-name{position:relative; font-size:18px; font-weight:800; margin-bottom:2px;}
+  .profile-username{position:relative; font-size:12px; font-weight:700; color:var(--accent2); margin-bottom:14px;}
   .profile-stats{position:relative; display:flex; gap:8px;}
   .stat-tile{
     flex:1;
     background:rgba(255,255,255,.045);
     border:1px solid var(--card-border);
     border-radius:14px;
-    padding:10px 4px 9px;
+    padding:7px 4px 6px;
   }
-  .stat-value{font-size:19px; font-weight:800; line-height:1.1;}
-  .stat-label{font-size:10px; color:#777; margin-top:3px; text-transform:uppercase; letter-spacing:.5px;}
+  .stat-value{font-size:16px; font-weight:800; line-height:1.1;}
+  .stat-label{font-size:10px; color:#777; margin-top:2px; text-transform:uppercase; letter-spacing:.5px;}
   .section-label{
     font-size:12px; font-weight:700; color:#666;
     text-transform:uppercase; letter-spacing:.6px;
@@ -179,6 +206,13 @@
     font-size:11px; font-weight:700;
     padding:2px 6px; border-radius:8px;
   }
+  .grid-item .drop-number{
+    position:absolute; bottom:6px; left:6px;
+    background:rgba(0,0,0,.7);
+    color:var(--accent2);
+    font-size:10px; font-weight:700;
+    padding:2px 6px; border-radius:8px;
+  }
   .empty-state{
     text-align:center; color:#666; font-size:13px;
     padding:60px 20px;
@@ -187,6 +221,67 @@
   /* ---------- Market ---------- */
   #market-screen .empty-state{padding:100px 20px;}
   #market-screen .emoji{font-size:40px; display:block; margin-bottom:10px;}
+  #market-sort{
+    width:100%; box-sizing:border-box;
+    background:var(--card-bg); color:#fff;
+    border:1px solid var(--card-border);
+    border-radius:12px;
+    padding:9px 10px;
+    font-size:12px; font-weight:700;
+    margin-bottom:10px;
+    -webkit-appearance:none; appearance:none;
+  }
+  .market-item{
+    display:flex; align-items:center; gap:12px;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-radius:16px;
+    padding:10px;
+    margin-bottom:10px;
+  }
+  .market-item img{width:56px; height:56px; border-radius:12px; object-fit:cover; flex-shrink:0;}
+  .market-item-info{flex:1; min-width:0;}
+  .market-item-name{font-weight:700; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .market-item-price{font-size:13px; font-weight:800; color:var(--accent2); margin-top:4px; display:flex; align-items:center; gap:4px;}
+  .market-item-price img{width:14px; height:14px; border-radius:0;}
+  .market-item-actions{display:flex; flex-direction:column; gap:6px; flex-shrink:0;}
+  .market-item-actions button{
+    border:none; border-radius:10px; padding:7px 12px; font-size:11px; font-weight:700; cursor:pointer; white-space:nowrap;
+  }
+  .btn-buy{background:var(--accent2); color:#000;}
+  .btn-offer{background:rgba(255,255,255,.08); color:#fff; border:1px solid var(--card-border) !important;}
+  .btn-unlist{background:rgba(239,68,68,.15); color:var(--danger); border:1px solid rgba(239,68,68,.3) !important;}
+  .market-mine-tag{font-size:10px; color:#666; text-transform:uppercase; letter-spacing:.4px;}
+
+  /* ---------- Input modal (buy gems / list price / offer) ---------- */
+  #input-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.85);
+    display:none;
+    align-items:center; justify-content:center;
+    z-index:60;
+    padding:24px;
+  }
+  #input-overlay.active{display:flex;}
+  #input-card{
+    width:100%; max-width:300px;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-radius:20px;
+    padding:20px;
+    text-align:center;
+  }
+  #input-title{font-weight:700; margin-bottom:14px;}
+  #input-field{
+    width:100%; box-sizing:border-box;
+    background:#0a0a0a; border:1px solid var(--card-border); border-radius:12px;
+    color:#fff; font-size:18px; font-weight:700; text-align:center;
+    padding:12px; margin-bottom:14px;
+  }
+  #input-actions{display:flex; gap:10px;}
+  #input-actions button{flex:1; padding:12px; border-radius:12px; border:none; font-weight:700; font-size:13px; cursor:pointer;}
+  #input-cancel{background:#1f1f1f; color:#999;}
+  #input-confirm{background:var(--accent); color:#fff;}
 
   /* ---------- Bottom nav ---------- */
   nav{
@@ -235,23 +330,32 @@
   #modal-card img{width:100%; border-radius:14px; margin-bottom:12px; aspect-ratio:1/1; object-fit:cover;}
   #modal-card .modal-name{font-weight:700; margin-bottom:2px;}
   #modal-card .modal-count{font-size:12px; color:#888; margin-bottom:16px;}
-  .modal-actions{display:flex; gap:10px;}
+  .modal-actions{display:flex; flex-direction:column; gap:10px;}
+  .modal-actions-row{display:flex; gap:10px;}
   .modal-actions button{
     flex:1; padding:12px; border-radius:12px; border:none; font-weight:700; font-size:13px; cursor:pointer;
   }
   .btn-share{background:var(--accent); color:#fff;}
-  .btn-sell{background:#1f1f1f; color:#666;}
+  .btn-give{background:var(--accent2); color:#000;}
+  .btn-sell{background:#1f1f1f; color:#666; width:100%;}
+  .btn-sell.active{background:rgba(139,92,246,.18); color:var(--accent); cursor:pointer;}
+  .btn-sell.listed{background:rgba(239,68,68,.15); color:var(--danger); cursor:pointer;}
   .btn-close{
     position:absolute; top:10px; right:10px;
     background:none; border:none; color:#888; font-size:22px; cursor:pointer;
   }
   #toast{
-    position:absolute; left:50%; bottom:100px; transform:translateX(-50%);
-    background:#1f1f1f; color:#fff; padding:10px 18px; border-radius:999px;
-    font-size:13px; opacity:0; transition:opacity .25s; pointer-events:none;
-    white-space:nowrap;
+    position:absolute; left:50%; bottom:100px; transform:translateX(-50%) translateY(6px);
+    max-width:78%;
+    background:rgba(24,24,24,.96);
+    backdrop-filter:blur(6px);
+    border:1px solid var(--card-border);
+    color:#fff; padding:12px 18px; border-radius:16px;
+    font-size:13px; font-weight:600; line-height:1.35; text-align:center;
+    box-shadow:0 8px 24px rgba(0,0,0,.4);
+    opacity:0; transition:opacity .25s, transform .25s; pointer-events:none;
   }
-  #toast.show{opacity:1;}
+  #toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
 </style>
 </head>
 <body>
@@ -259,25 +363,31 @@
 
   <header>
     <div class="brand">PEEP<span>PO</span></div>
+    <button id="gems-pill" title="Купить гемы"><img src="/static/icons/diamond.png" alt=""><span id="gems-amount">0</span></button>
+    <button id="invite-btn" title="Позвать друзей"><img src="/static/icons/share.png" alt=""><span>ПОДЕЛИТЬСЯ</span></button>
   </header>
 
   <main>
     <!-- FARM -->
     <section id="farm-screen" class="screen">
-      <div class="farm-total-badge">Всего собрано картинок: <b id="total-farmed">0</b></div>
+      <div class="farm-total-badge">Сфармлено карточек всего: <b id="total-farmed">0</b></div>
       <div class="farm-stage" id="farm-stage"><div class="placeholder">🎁</div></div>
       <div id="farm-result-name"></div>
       <div id="farm-result-number"></div>
       <button id="farm-btn">ФАРМ</button>
-      <div id="farm-hint">Жми и получай случайную картинку</div>
+      <div id="farm-hint">Жми и получай случайную карточку</div>
     </section>
 
     <!-- MARKET -->
     <section id="market-screen" class="screen">
-      <div class="empty-state">
-        <span class="emoji">🚧</span>
-        Рынок скоро откроется.<br>Пока фарми и собирай коллекцию.
-      </div>
+      <select id="market-sort">
+        <option value="price_asc" selected>Цена: сначала дешёвые</option>
+        <option value="price_desc">Цена: сначала дорогие</option>
+        <option value="new">Сначала новые</option>
+        <option value="old">Сначала старые</option>
+        <option value="name">По названию (А-Я)</option>
+      </select>
+      <div id="market-list"></div>
     </section>
 
     <!-- PROFILE -->
@@ -287,7 +397,6 @@
         <div class="avatar-ring"><div class="avatar" id="profile-avatar">?</div></div>
         <div class="profile-name" id="profile-name">...</div>
         <div class="profile-username" id="profile-username"></div>
-        <div class="profile-id" id="profile-id"></div>
         <div class="profile-stats">
           <div class="stat-tile">
             <div class="stat-value" id="stat-total">0</div>
@@ -295,7 +404,7 @@
           </div>
           <div class="stat-tile">
             <div class="stat-value" id="stat-refs">0</div>
-            <div class="stat-label">рефералов</div>
+            <div class="stat-label">Рефералы</div>
           </div>
         </div>
       </div>
@@ -317,8 +426,22 @@
       <div class="modal-name" id="modal-name"></div>
       <div class="modal-count" id="modal-count"></div>
       <div class="modal-actions">
-        <button class="btn-share" id="modal-share">Поделиться</button>
-        <button class="btn-sell" disabled>Скоро</button>
+        <div class="modal-actions-row">
+          <button class="btn-share" id="modal-share">Поделиться</button>
+          <button class="btn-give" id="modal-give">Передать</button>
+        </div>
+        <button class="btn-sell" id="modal-sell">Продать</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="input-overlay">
+    <div id="input-card">
+      <div id="input-title">Введи число</div>
+      <input id="input-field" type="number" inputmode="numeric" min="1" placeholder="0">
+      <div id="input-actions">
+        <button id="input-cancel">Отмена</button>
+        <button id="input-confirm">ОК</button>
       </div>
     </div>
   </div>
@@ -334,13 +457,55 @@ const API_BASE = "/api";
 let initData = tg?.initData || "";
 let inventory = [];
 let selectedUserCardId = null;
+let selectedItem = null;
 
 function toast(msg){
   const el = document.getElementById("toast");
   el.textContent = msg;
   el.classList.add("show");
-  setTimeout(()=>el.classList.remove("show"), 2200);
+  clearTimeout(el._hideTimer);
+  el._hideTimer = setTimeout(()=>el.classList.remove("show"), 3000);
 }
+
+// ---------- Generic input modal (buy gems / list price / offer / gift username) ----------
+let inputResolve = null;
+let inputNumeric = true;
+function promptInput(title, {numeric=true, placeholder=""}={}){
+  return new Promise(resolve=>{
+    inputResolve = resolve;
+    inputNumeric = numeric;
+    document.getElementById("input-title").textContent = title;
+    const field = document.getElementById("input-field");
+    field.type = numeric ? "number" : "text";
+    field.setAttribute("inputmode", numeric ? "numeric" : "text");
+    field.placeholder = placeholder;
+    field.value = "";
+    document.getElementById("input-overlay").classList.add("active");
+    setTimeout(()=>field.focus(), 50);
+  });
+}
+function promptNumber(title){
+  return promptInput(title, { numeric: true });
+}
+function promptText(title, placeholder=""){
+  return promptInput(title, { numeric: false, placeholder });
+}
+function closeInputModal(value){
+  document.getElementById("input-overlay").classList.remove("active");
+  if(inputResolve) inputResolve(value);
+  inputResolve = null;
+}
+document.getElementById("input-cancel").addEventListener("click", ()=>closeInputModal(null));
+document.getElementById("input-confirm").addEventListener("click", ()=>{
+  const field = document.getElementById("input-field");
+  if(inputNumeric){
+    const val = parseInt(field.value, 10);
+    closeInputModal(Number.isFinite(val) && val > 0 ? val : null);
+  }else{
+    const val = field.value.trim().replace(/^@/, "");
+    closeInputModal(val ? val : null);
+  }
+});
 
 async function api(path, body={}){
   const res = await fetch(API_BASE + path, {
@@ -364,6 +529,7 @@ document.querySelectorAll(".nav-btn").forEach(btn=>{
     const screen = document.getElementById(btn.dataset.screen);
     screen.classList.add("active");
     if(btn.dataset.screen === "profile-screen") loadProfile();
+    if(btn.dataset.screen === "market-screen") loadMarket();
   });
 });
 document.getElementById("farm-screen").classList.add("active");
@@ -377,6 +543,116 @@ async function loadStats(){
   }catch(e){ /* non-critical, just skip */ }
 }
 loadStats();
+
+// ---------- Gems ----------
+async function refreshGems(){
+  try{
+    const auth = await api("/auth");
+    document.getElementById("gems-amount").textContent = auth.gems;
+  }catch(e){ /* non-critical */ }
+}
+refreshGems();
+
+document.getElementById("gems-pill").addEventListener("click", async ()=>{
+  const gems = await promptNumber("Сколько гемов купить? (1 гем = 1 ⭐)");
+  if(!gems) return;
+  try{
+    const res = await api("/gems/invoice", { gems });
+    if(tg?.openInvoice){
+      tg.openInvoice(res.invoice_link, (status)=>{
+        if(status === "paid"){
+          toast("Оплачено! Зачисляем гемы...");
+          setTimeout(refreshGems, 1500);
+        }else if(status === "failed"){
+          toast("Платёж не прошёл");
+        }
+      });
+    }else{
+      window.open(res.invoice_link, "_blank");
+      toast("Открой ссылку оплаты и вернись сюда");
+    }
+  }catch(e){
+    toast("Не удалось создать счёт: " + e.message);
+  }
+});
+
+// ---------- Market ----------
+let marketListings = [];
+
+async function loadMarket(){
+  try{
+    const data = await api("/market/listings");
+    document.getElementById("gems-amount").textContent = data.gems;
+    marketListings = data.listings;
+    renderMarket();
+  }catch(e){
+    toast("Не удалось загрузить рынок: " + e.message);
+  }
+}
+
+document.getElementById("market-sort").addEventListener("change", renderMarket);
+
+function renderMarket(){
+  const list = document.getElementById("market-list");
+  if(marketListings.length === 0){
+    list.innerHTML = `<div class="empty-state"><span class="emoji">🛒</span>Пока никто ничего не продаёт.<br>Выстави свою картинку в профиле!</div>`;
+    return;
+  }
+
+  const sortMode = document.getElementById("market-sort").value;
+  const sorted = [...marketListings].sort((a, b) => {
+    switch(sortMode){
+      case "old": return a.user_card_id - b.user_card_id;
+      case "new": return b.user_card_id - a.user_card_id;
+      case "price_desc": return b.listed_price - a.listed_price;
+      case "name": return (a.name || "").localeCompare(b.name || "", "ru");
+      case "price_asc":
+      default: return a.listed_price - b.listed_price;
+    }
+  });
+
+  list.innerHTML = sorted.map(l => `
+      <div class="market-item" data-uc="${l.user_card_id}">
+        <img src="/static/cards/${l.filename}" alt="${l.name||''}">
+        <div class="market-item-info">
+          <div class="market-item-name">${l.name || "Без названия"}</div>
+          <div class="market-item-price"><img src="/static/icons/diamond.png" alt="">${l.listed_price}</div>
+        </div>
+        <div class="market-item-actions">
+          ${l.is_mine
+            ? `<div class="market-mine-tag">Твой лот</div><button class="btn-unlist" data-action="unlist">Снять</button>`
+            : `<button class="btn-buy" data-action="buy">Купить</button><button class="btn-offer" data-action="offer">Оценить</button>`}
+        </div>
+      </div>
+    `).join("");
+
+    list.querySelectorAll(".market-item").forEach(el=>{
+      const ucId = parseInt(el.dataset.uc);
+      el.querySelector('[data-action="buy"]')?.addEventListener("click", async ()=>{
+        try{
+          await api("/market/buy", { user_card_id: ucId });
+          toast("Куплено! Смотри в профиле.");
+          loadMarket();
+          refreshGems();
+        }catch(e){ toast("Не получилось купить: " + e.message); }
+      });
+      el.querySelector('[data-action="offer"]')?.addEventListener("click", async ()=>{
+        const price = await promptNumber("Сколько гемов предложить?");
+        if(!price) return;
+        try{
+          await api("/market/offer", { user_card_id: ucId, price_gems: price });
+          toast("Предложение отправлено продавцу");
+        }catch(e){ toast("Не получилось: " + e.message); }
+      });
+      el.querySelector('[data-action="unlist"]')?.addEventListener("click", async ()=>{
+        try{
+          await api("/market/unlist", { user_card_id: ucId });
+          toast("Снято с продажи");
+          loadMarket();
+        }catch(e){ toast("Не получилось: " + e.message); }
+      });
+    });
+}
 
 document.getElementById("farm-btn").addEventListener("click", async ()=>{
   const btn = document.getElementById("farm-btn");
@@ -402,7 +678,6 @@ async function loadProfile(){
     const auth = await api("/auth");
     document.getElementById("profile-name").textContent = auth.first_name || auth.username || "Игрок";
     document.getElementById("profile-username").textContent = auth.username ? `@${auth.username}` : "";
-    document.getElementById("profile-id").textContent = `ID: ${auth.telegram_id}`;
     const avatarEl = document.getElementById("profile-avatar");
     if(auth.photo_url){
       avatarEl.innerHTML = `<img src="${auth.photo_url}" alt="">`;
@@ -410,6 +685,7 @@ async function loadProfile(){
       avatarEl.textContent = (auth.first_name||auth.username||"?")[0].toUpperCase();
     }
     document.getElementById("stat-refs").textContent = auth.referrals || 0;
+    document.getElementById("gems-amount").textContent = auth.gems || 0;
 
     const data = await api("/profile");
     inventory = data.inventory;
@@ -426,6 +702,7 @@ async function loadProfile(){
     grid.innerHTML = inventory.map(c => `
       <div class="grid-item" data-card-id="${c.card_id}">
         <img src="/static/cards/${c.filename}" alt="${c.name||''}">
+        <div class="drop-number">#${c.user_card_id}</div>
         ${c.count > 1 ? `<div class="count">x${c.count}</div>` : ""}
       </div>
     `).join("");
@@ -444,11 +721,25 @@ function openModal(cardId){
   // database.get_inventory() includes one real user_cards.id per card group (the most
   // recently obtained copy) specifically so the modal can share a concrete owned row.
   selectedUserCardId = item.user_card_id;
+  selectedItem = item;
   document.getElementById("modal-img").src = `/static/cards/${item.filename}`;
-  document.getElementById("modal-name").textContent = item.name || "Без названия";
+  document.getElementById("modal-name").textContent = `${item.name || "Без названия"} #${item.user_card_id}`;
   document.getElementById("modal-count").textContent = `У тебя: ${item.count}`;
   document.getElementById("modal-overlay").classList.add("active");
   document.getElementById("modal-card").dataset.filename = item.filename;
+  updateSellButton(item);
+}
+
+function updateSellButton(item){
+  const btn = document.getElementById("modal-sell");
+  btn.classList.remove("active", "listed");
+  if(item.listed_price){
+    btn.textContent = `Убрать с продажи (${item.listed_price} 💎)`;
+    btn.classList.add("listed");
+  }else{
+    btn.textContent = "Продать";
+    btn.classList.add("active");
+  }
 }
 
 document.getElementById("modal-close").addEventListener("click", ()=>{
@@ -458,11 +749,69 @@ document.getElementById("modal-close").addEventListener("click", ()=>{
 document.getElementById("modal-share").addEventListener("click", async ()=>{
   try{
     await api("/share", { user_card_id: selectedUserCardId });
-    toast("Отправил картинку тебе в чат с ботом — переслай её друзьям!");
+    toast("Отправлено в чат с ботом — перешли друзьям! 🎉");
     document.getElementById("modal-overlay").classList.remove("active");
   }catch(e){
     toast("Не удалось поделиться: " + e.message);
   }
+});
+
+document.getElementById("modal-give").addEventListener("click", async ()=>{
+  const username = await promptText("Username друга (без @)", "username");
+  if(!username) return;
+  try{
+    const res = await api("/transfer/to_username", { user_card_id: selectedUserCardId, username });
+    toast(`Подарено пользователю @${res.to_name}!`);
+    document.getElementById("modal-overlay").classList.remove("active");
+    loadProfile();
+  }catch(e){
+    toast("Не удалось передать: " + e.message);
+  }
+});
+
+document.getElementById("modal-sell").addEventListener("click", async ()=>{
+  if(!selectedItem) return;
+  if(selectedItem.listed_price){
+    try{
+      await api("/market/unlist", { user_card_id: selectedUserCardId });
+      selectedItem.listed_price = null;
+      updateSellButton(selectedItem);
+      toast("Снято с продажи");
+    }catch(e){
+      toast("Не получилось: " + e.message);
+    }
+  }else{
+    const price = await promptNumber("Цена в гемах");
+    if(!price) return;
+    try{
+      await api("/market/list", { user_card_id: selectedUserCardId, price_gems: price });
+      selectedItem.listed_price = price;
+      updateSellButton(selectedItem);
+      toast("Выставлено на рынок!");
+    }catch(e){
+      toast("Не получилось выставить: " + e.message);
+    }
+  }
+});
+
+// ---------- Invite friends (header button, visible on every tab) ----------
+function openShareSheet(url, text){
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+  if(tg?.openTelegramLink){
+    tg.openTelegramLink(shareUrl);
+  }else{
+    window.open(shareUrl, "_blank");
+  }
+}
+
+document.getElementById("invite-btn").addEventListener("click", ()=>{
+  const myId = tg?.initDataUnsafe?.user?.id;
+  if(!myId){
+    toast("Открой через Телеграм, чтобы поделиться");
+    return;
+  }
+  const refLink = `https://t.me/Peeppobot?start=ref${myId}`;
+  openShareSheet(refLink, "Залетай в Peeppo — фарми картинки, собирай коллекцию! 🎮");
 });
 
 // initial load
