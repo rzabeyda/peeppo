@@ -16,7 +16,7 @@ Design notes (per project decisions):
 import sqlite3
 import random
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "peeppo.db"
@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS users (
     photo_url     TEXT,
     ref_by        INTEGER REFERENCES users(telegram_id),
     gems          INTEGER NOT NULL DEFAULT 0,
+    gems_earned   INTEGER NOT NULL DEFAULT 0,
+    last_daily_bonus TEXT,
     created_at    TEXT NOT NULL
 );
 
@@ -37,6 +39,7 @@ CREATE TABLE IF NOT EXISTS cards (
     filename      TEXT NOT NULL,
     name          TEXT,
     is_active     INTEGER NOT NULL DEFAULT 1,
+    rarity        TEXT NOT NULL DEFAULT 'rare',
     created_at    TEXT NOT NULL
 );
 
@@ -47,7 +50,8 @@ CREATE TABLE IF NOT EXISTS user_cards (
     obtained_at       TEXT NOT NULL,
     transfer_pending  INTEGER NOT NULL DEFAULT 0,
     listed_price      INTEGER,
-    swap_listed       INTEGER NOT NULL DEFAULT 0
+    swap_listed       INTEGER NOT NULL DEFAULT 0,
+    staked_at         TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_cards_user ON user_cards(user_id);
@@ -119,8 +123,23 @@ def init_db():
         u_cols = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
         if "gems" not in u_cols:
             conn.execute("ALTER TABLE users ADD COLUMN gems INTEGER NOT NULL DEFAULT 0")
+        # migration for DBs created before gems_earned existed (lifetime gems earned, for the Топы screen)
+        if "gems_earned" not in u_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN gems_earned INTEGER NOT NULL DEFAULT 0")
+        # migration for DBs created before staking existed
+        if "staked_at" not in uc_cols:
+            conn.execute("ALTER TABLE user_cards ADD COLUMN staked_at TEXT")
+        # migration for DBs created before card rarity existed
+        c_cols = {row["name"] for row in conn.execute("PRAGMA table_info(cards)")}
+        if "rarity" not in c_cols:
+            conn.execute("ALTER TABLE cards ADD COLUMN rarity TEXT NOT NULL DEFAULT 'rare'")
+            conn.execute("UPDATE users SET gems_earned = gems WHERE gems_earned = 0")
+        # migration for DBs created before the daily login bonus existed
+        if "last_daily_bonus" not in u_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN last_daily_bonus TEXT")
 
 
+DAILY_BONUS_GEMS = 5
 REFERRAL_REWARD_GEMS = 25
 MAX_REWARDED_REFERRALS = 10  # after this many, referrals still count but stop paying out
 SIGNUP_BONUS_GEMS = 50
@@ -157,22 +176,40 @@ def get_or_create_user(telegram_id: int, username: str | None, first_name: str |
                     "SELECT COUNT(*) AS n FROM users WHERE ref_by = ?", (ref_by,)
                 ).fetchone()["n"]
 
+        today = datetime.now(timezone.utc).date().isoformat()
         conn.execute(
-            "INSERT INTO users (telegram_id, username, first_name, photo_url, ref_by, gems, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (telegram_id, username, first_name, photo_url, ref_by, SIGNUP_BONUS_GEMS, _now()),
+            "INSERT INTO users (telegram_id, username, first_name, photo_url, ref_by, gems, gems_earned, last_daily_bonus, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (telegram_id, username, first_name, photo_url, ref_by, SIGNUP_BONUS_GEMS, SIGNUP_BONUS_GEMS, today, _now()),
         )
         if ref_by is not None and prior_referrals < MAX_REWARDED_REFERRALS:
             # signup bonus to whoever invited this brand-new player — but only for their
             # first MAX_REWARDED_REFERRALS invites; referrals beyond that still count
             # (get_referral_count keeps growing) but no longer pay out gems
-            conn.execute("UPDATE users SET gems = gems + ? WHERE telegram_id = ?", (REFERRAL_REWARD_GEMS, ref_by))
+            conn.execute("UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?", (REFERRAL_REWARD_GEMS, REFERRAL_REWARD_GEMS, ref_by))
         return conn.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone(), True
 
 
 def get_user(telegram_id: int) -> sqlite3.Row | None:
     with get_conn() as conn:
         return conn.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+
+
+def claim_daily_bonus(user_id: int) -> int:
+    """Credits DAILY_BONUS_GEMS once per calendar day (UTC) the user opens the app —
+    returns the amount credited (0 if they already claimed today, or the signup day,
+    since new users already get SIGNUP_BONUS_GEMS and last_daily_bonus is pre-set
+    to that day in get_or_create_user)."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    with get_conn() as conn:
+        row = conn.execute("SELECT last_daily_bonus FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        if row is None or row["last_daily_bonus"] == today:
+            return 0
+        conn.execute(
+            "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ?, last_daily_bonus = ? WHERE telegram_id = ?",
+            (DAILY_BONUS_GEMS, DAILY_BONUS_GEMS, today, user_id),
+        )
+        return DAILY_BONUS_GEMS
 
 
 def add_card_to_catalog(filename: str, name: str | None = None) -> int:
@@ -190,18 +227,29 @@ def get_all_cards() -> list[dict]:
     (so it reads as a sorted list) and the farm animation's cycling preview."""
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT id AS card_id, filename, name FROM cards WHERE is_active = 1 ORDER BY name COLLATE NOCASE"
+            "SELECT id AS card_id, filename, name, rarity FROM cards WHERE is_active = 1 ORDER BY name COLLATE NOCASE"
         ).fetchall()
         return [dict(r) for r in rows]
 
 
+RARITY_WEIGHTS = {"rare": 80, "epic": 15, "legend": 5}
+
+
 def draw_random_card() -> sqlite3.Row | None:
-    """Pick one active card with equal probability. Returns None if the catalog is empty."""
+    """Pick one active card, weighted by rarity (RARITY_WEIGHTS) — most drops are RARE,
+    EPIC and LEGEND are progressively less common. Returns None if the catalog is empty.
+    Falls back gracefully (equal weight) if a tier has no active cards yet."""
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM cards WHERE is_active = 1").fetchall()
         if not rows:
             return None
-        return random.choice(rows)
+        by_rarity: dict[str, list] = {}
+        for r in rows:
+            by_rarity.setdefault(r["rarity"] or "rare", []).append(r)
+        tiers = list(by_rarity.keys())
+        weights = [RARITY_WEIGHTS.get(t, 1) for t in tiers]
+        chosen_tier = random.choices(tiers, weights=weights, k=1)[0]
+        return random.choice(by_rarity[chosen_tier])
 
 
 def grant_card(user_id: int, card_id: int) -> int:
@@ -243,6 +291,7 @@ def farm(user_id: int) -> dict | None:
         "card_id": card["id"],
         "filename": card["filename"],
         "name": card["name"],
+        "rarity": card["rarity"],
     }
 
 
@@ -254,7 +303,7 @@ def get_inventory(user_id: int) -> list[dict]:
         rows = conn.execute(
             """
             WITH agg AS (
-                SELECT c.id AS card_id, c.filename, c.name, COUNT(*) AS count,
+                SELECT c.id AS card_id, c.filename, c.name, c.rarity, COUNT(*) AS count,
                        MAX(uc.obtained_at) AS last_obtained_at,
                        (SELECT uc2.id FROM user_cards uc2
                         WHERE uc2.user_id = uc.user_id AND uc2.card_id = c.id
@@ -264,7 +313,7 @@ def get_inventory(user_id: int) -> list[dict]:
                 WHERE uc.user_id = ?
                 GROUP BY c.id
             )
-            SELECT agg.*, ucx.listed_price, ucx.swap_listed
+            SELECT agg.*, ucx.listed_price, ucx.swap_listed, ucx.staked_at
             FROM agg JOIN user_cards ucx ON ucx.id = agg.user_card_id
             ORDER BY agg.last_obtained_at DESC
             """,
@@ -332,6 +381,8 @@ def add_gems(user_id: int, amount: int) -> int:
     """Credits (or, with a negative amount, debits) gems. Returns the new balance."""
     with get_conn() as conn:
         conn.execute("UPDATE users SET gems = gems + ? WHERE telegram_id = ?", (amount, user_id))
+        if amount > 0:
+            conn.execute("UPDATE users SET gems_earned = gems_earned + ? WHERE telegram_id = ?", (amount, user_id))
         row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
         return row["gems"]
 
@@ -339,16 +390,17 @@ def add_gems(user_id: int, amount: int) -> int:
 def list_card(user_card_id: int, seller_id: int, price_gems: int) -> bool:
     """Owner puts one specific owned copy up for sale (or re-prices an existing listing).
     Blocked while that same copy is already listed for swap — a card can only be in one
-    kind of lot at a time (list_for_swap enforces the same rule in the other direction)."""
+    kind of lot at a time (list_for_swap enforces the same rule in the other direction).
+    Also blocked while the copy is staked — it has to be pulled out of staking first."""
     if price_gems <= 0:
         return False
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT user_id, swap_listed FROM user_cards WHERE id = ?", (user_card_id,)
+            "SELECT user_id, swap_listed, staked_at FROM user_cards WHERE id = ?", (user_card_id,)
         ).fetchone()
         if row is None or row["user_id"] != seller_id:
             return False
-        if row["swap_listed"]:
+        if row["swap_listed"] or row["staked_at"] is not None:
             return False
         conn.execute("UPDATE user_cards SET listed_price = ? WHERE id = ?", (price_gems, user_card_id))
         return True
@@ -373,7 +425,7 @@ def get_market_listings() -> list[dict]:
         rows = conn.execute(
             """
             SELECT uc.id AS user_card_id, uc.listed_price, uc.user_id AS seller_id,
-                   c.id AS card_id, c.filename, c.name, u.username, u.first_name
+                   c.id AS card_id, c.filename, c.name, c.rarity, u.username, u.first_name
             FROM user_cards uc
             JOIN cards c ON c.id = uc.card_id
             JOIN users u ON u.telegram_id = uc.user_id
@@ -403,7 +455,7 @@ def buy_listing(user_card_id: int, buyer_id: int) -> dict | None:
         if buyer is None or buyer["gems"] < price:
             return None
         conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (price, buyer_id))
-        conn.execute("UPDATE users SET gems = gems + ? WHERE telegram_id = ?", (price, row["seller_id"]))
+        conn.execute("UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?", (price, price, row["seller_id"]))
         conn.execute(
             "UPDATE user_cards SET user_id = ?, listed_price = NULL WHERE id = ?",
             (buyer_id, user_card_id),
@@ -483,7 +535,7 @@ def accept_offer(offer_id: int, seller_id: int) -> dict | None:
             (offer["user_card_id"],),
         ).fetchone()
         conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (offer["price_gems"], offer["buyer_id"]))
-        conn.execute("UPDATE users SET gems = gems + ? WHERE telegram_id = ?", (offer["price_gems"], seller_id))
+        conn.execute("UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?", (offer["price_gems"], offer["price_gems"], seller_id))
         conn.execute(
             "UPDATE user_cards SET user_id = ?, listed_price = NULL WHERE id = ?",
             (offer["buyer_id"], offer["user_card_id"]),
@@ -525,14 +577,15 @@ def decline_offer(offer_id: int, seller_id: int) -> dict | None:
 
 def list_for_swap(user_card_id: int, seller_id: int) -> bool:
     """Owner marks one specific owned copy as available to swap. A card can't be
-    listed for swap while it's also listed for gems sale (or already up for swap)."""
+    listed for swap while it's also listed for gems sale (or already up for swap).
+    Also blocked while the copy is staked — it has to be pulled out of staking first."""
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT user_id, listed_price, swap_listed FROM user_cards WHERE id = ?", (user_card_id,)
+            "SELECT user_id, listed_price, swap_listed, staked_at FROM user_cards WHERE id = ?", (user_card_id,)
         ).fetchone()
         if row is None or row["user_id"] != seller_id:
             return False
-        if row["listed_price"] is not None or row["swap_listed"]:
+        if row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None:
             return False
         conn.execute("UPDATE user_cards SET swap_listed = 1 WHERE id = ?", (user_card_id,))
         return True
@@ -555,7 +608,7 @@ def get_swap_listings() -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT uc.id AS user_card_id, uc.user_id AS seller_id, c.id AS card_id, c.filename, c.name
+            SELECT uc.id AS user_card_id, uc.user_id AS seller_id, c.id AS card_id, c.filename, c.name, c.rarity
             FROM user_cards uc
             JOIN cards c ON c.id = uc.card_id
             WHERE uc.swap_listed = 1
@@ -563,6 +616,73 @@ def get_swap_listings() -> list[dict]:
             """
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+STAKE_REWARD_GEMS_PER_DAY = 5
+STAKE_PERIOD_SECONDS = 24 * 60 * 60
+
+
+def settle_staking(user_id: int) -> int:
+    """Credits STAKE_REWARD_GEMS_PER_DAY gems for every full 24h period elapsed since
+    each of the user's staked cards was staked (or last paid out), advancing that card's
+    clock forward by exactly that many whole days so partial progress toward the next
+    payout is never lost or double-paid. Called from _authenticate() on every API request
+    so staking pays out passively with no background job. Returns gems credited this call."""
+    now = datetime.now(timezone.utc)
+    total_credited = 0
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, staked_at FROM user_cards WHERE user_id = ? AND staked_at IS NOT NULL",
+            (user_id,),
+        ).fetchall()
+        for row in rows:
+            staked_at = datetime.fromisoformat(row["staked_at"])
+            elapsed = (now - staked_at).total_seconds()
+            full_days = int(elapsed // STAKE_PERIOD_SECONDS)
+            if full_days >= 1:
+                new_staked_at = staked_at + timedelta(seconds=full_days * STAKE_PERIOD_SECONDS)
+                conn.execute(
+                    "UPDATE user_cards SET staked_at = ? WHERE id = ?",
+                    (new_staked_at.isoformat(), row["id"]),
+                )
+                total_credited += full_days * STAKE_REWARD_GEMS_PER_DAY
+        if total_credited:
+            conn.execute(
+                "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
+                (total_credited, total_credited, user_id),
+            )
+    return total_credited
+
+
+def stake_card(user_card_id: int, owner_id: int) -> bool:
+    """Puts one owned copy into staking. Blocked if it's already staked, or currently
+    listed for sale/swap (unlist first)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT user_id, listed_price, swap_listed, staked_at FROM user_cards WHERE id = ?",
+            (user_card_id,),
+        ).fetchone()
+        if row is None or row["user_id"] != owner_id:
+            return False
+        if row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None:
+            return False
+        conn.execute("UPDATE user_cards SET staked_at = ? WHERE id = ?", (_now(), user_card_id))
+        return True
+
+
+def unstake_card(user_card_id: int, owner_id: int) -> bool:
+    """Pulls one copy out of staking. Settles (and pays out) any completed full days
+    first — whatever's left of the current, still-incomplete day is simply dropped,
+    same as leaving early on a bank term deposit."""
+    settle_staking(owner_id)
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT user_id, staked_at FROM user_cards WHERE id = ?", (user_card_id,)
+        ).fetchone()
+        if row is None or row["user_id"] != owner_id or row["staked_at"] is None:
+            return False
+        conn.execute("UPDATE user_cards SET staked_at = NULL WHERE id = ?", (user_card_id,))
+        return True
 
 
 def propose_swap(user_card_id: int, buyer_id: int, offered_user_card_ids: list[int]) -> dict | None:
@@ -734,21 +854,22 @@ def get_total_farmed() -> int:
         return row["n"]
 
 
-def get_leaderboard(limit: int = 50) -> list[dict]:
-    """Players ranked by total cards owned (descending) — for the 'Топы' screen.
-    Unlike the market, identities are shown here on purpose: that's the whole point
-    of a leaderboard."""
+def get_leaderboard() -> list[dict]:
+    """Players ranked by total cards owned and by lifetime gems earned — for the 'Топы'
+    screen, which lets the player switch between the two rankings client-side. Unlike
+    the market, identities are shown here on purpose: that's the whole point of a
+    leaderboard. Returns everyone (no LIMIT) since the two rankings can surface different
+    people; the frontend slices each to its own top 50."""
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT u.telegram_id, u.username, u.first_name, u.photo_url, COUNT(uc.id) AS total_cards
+            SELECT u.telegram_id, u.username, u.first_name, u.photo_url,
+                   COUNT(uc.id) AS total_cards, u.gems_earned
             FROM users u
             LEFT JOIN user_cards uc ON uc.user_id = u.telegram_id
             GROUP BY u.telegram_id
             ORDER BY total_cards DESC, u.telegram_id ASC
-            LIMIT ?
-            """,
-            (limit,),
+            """
         ).fetchall()
         return [dict(r) for r in rows]
 

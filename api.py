@@ -90,14 +90,17 @@ def _authenticate(init_data: str) -> dict:
         except ValueError:
             ref_by = None
 
-    row, _is_new = db.get_or_create_user(
+    row, is_new = db.get_or_create_user(
         telegram_id=tg_user["id"],
         username=tg_user.get("username"),
         first_name=tg_user.get("first_name"),
         photo_url=tg_user.get("photo_url"),
         ref_by=ref_by,
     )
-    return dict(row)
+    result = dict(row)
+    result["_is_new"] = is_new
+    db.settle_staking(result["telegram_id"])
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +150,10 @@ class SwapListBody(InitDataBody):
     user_card_id: int
 
 
+class StakeBody(InitDataBody):
+    user_card_id: int
+
+
 class SwapOfferBody(InitDataBody):
     user_card_id: int
     offered_user_card_ids: list[int]
@@ -159,6 +166,7 @@ class SwapOfferBody(InitDataBody):
 @app.post("/api/auth")
 def auth(body: InitDataBody):
     user = _authenticate(body.initData)
+    daily_bonus = db.claim_daily_bonus(user["telegram_id"])
     return {
         "telegram_id": user["telegram_id"],
         "username": user["username"],
@@ -166,6 +174,8 @@ def auth(body: InitDataBody):
         "photo_url": user["photo_url"],
         "referrals": db.get_referral_count(user["telegram_id"]),
         "gems": db.get_gems(user["telegram_id"]),
+        "is_new": user["_is_new"],
+        "daily_bonus": daily_bonus,
     }
 
 
@@ -380,6 +390,24 @@ def swap_unlist(body: SwapListBody):
     ok = db.unlist_swap(body.user_card_id, user["telegram_id"])
     if not ok:
         raise HTTPException(404, "listing not found")
+    return {"ok": True}
+
+
+@app.post("/api/stake/list")
+def stake_list(body: StakeBody):
+    user = _authenticate(body.initData)
+    ok = db.stake_card(body.user_card_id, user["telegram_id"])
+    if not ok:
+        raise HTTPException(400, "card not found in your inventory, or already staked/listed for sale or swap")
+    return {"ok": True}
+
+
+@app.post("/api/stake/unstake")
+def stake_unstake(body: StakeBody):
+    user = _authenticate(body.initData)
+    ok = db.unstake_card(body.user_card_id, user["telegram_id"])
+    if not ok:
+        raise HTTPException(404, "card isn't staked")
     return {"ok": True}
 
 

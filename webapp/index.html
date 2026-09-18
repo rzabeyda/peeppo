@@ -14,6 +14,8 @@
     --danger:#ef4444;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  button{transition:transform .1s ease;}
+  button:active{transform:scale(.94);}
   html,body{height:100%;}
   body{
     margin:0;
@@ -27,8 +29,9 @@
   #app{
     width:100%;
     max-width:480px;
-    min-height:100vh;
-    min-height:100dvh;
+    height:100vh;
+    height:100dvh;
+    height:var(--tg-vh, 100dvh);
     background:#000;
     position:relative;
     display:flex;
@@ -73,8 +76,9 @@
   #invite-btn:active{transform:scale(.94);}
   main{
     flex:1;
+    min-height:0;
     overflow-y:auto;
-    padding:8px 16px 90px;
+    padding:8px 16px calc(150px + env(safe-area-inset-bottom));
   }
   .screen{display:none; animation:fade .2s ease;}
   .screen.active{display:block;}
@@ -98,6 +102,7 @@
     background:var(--card-bg);
     border:1px solid var(--card-border);
     display:flex; align-items:center; justify-content:center;
+    margin-top:46px;
     margin-bottom:28px;
     overflow:hidden;
     position:relative;
@@ -138,16 +143,18 @@
   }
   .models-btn:active{transform:scale(.95);}
   .tops-btn{left:auto; right:0;}
-  .farm-total-badge{
+  .farm-total-pill{
+    position:absolute; top:0; left:50%; transform:translateX(-50%);
     font-size:12px; color:#999;
     background:rgba(255,255,255,.05);
     border:1px solid var(--card-border);
-    padding:6px 14px;
+    padding:8px 14px;
     border-radius:999px;
-    margin-top:40px;
-    margin-bottom:22px;
+    white-space:nowrap;
   }
-  .farm-total-badge b{color:#fff; font-weight:800;}
+  .farm-total-pill b{color:#fff; font-weight:800;}
+  .farm-total-pill{cursor:pointer;}
+  .farm-total-pill:active{transform:translateX(-50%) scale(.95);}
   .farm-btn-wrap{position:relative; display:inline-block;}
   #farm-btn{
     border:1px solid rgba(139,92,246,.5);
@@ -257,7 +264,9 @@
     position:relative;
     overflow:hidden;
     cursor:pointer;
+    transition:transform .1s ease;
   }
+  .grid-item:active{transform:scale(.95);}
   .grid-item img{width:100%; height:100%; object-fit:cover;}
   .grid-item .count{
     position:absolute; top:6px; right:6px;
@@ -271,6 +280,31 @@
     color:var(--accent2);
     font-size:10px; font-weight:700;
     padding:2px 6px; border-radius:8px;
+  }
+  .grid-item .profile-sale-tag{
+    position:absolute; bottom:6px; right:6px;
+    background:rgba(0,0,0,.75);
+    color:var(--accent2);
+    font-size:10px; font-weight:800;
+    padding:3px 7px; border-radius:8px;
+    display:flex; align-items:center; gap:3px;
+  }
+  .grid-item .profile-sale-tag img{width:10px; height:10px; border-radius:0;}
+  .grid-item .profile-swap-tag{
+    position:absolute; bottom:6px; right:6px;
+    background:var(--accent2);
+    color:#1a1400;
+    font-size:9px; font-weight:800;
+    text-transform:uppercase; letter-spacing:.3px;
+    padding:3px 7px; border-radius:8px;
+  }
+  .grid-item .profile-stake-tag{
+    position:absolute; bottom:6px; right:6px;
+    background:#22c55e;
+    color:#fff;
+    font-size:9px; font-weight:800;
+    text-transform:uppercase; letter-spacing:.3px;
+    padding:3px 7px; border-radius:8px;
   }
   .empty-state{
     text-align:center; color:#666; font-size:13px;
@@ -426,8 +460,31 @@
   }
   #models-overlay.active{display:block;}
   #models-card{position:relative; padding-top:44px;}
-  #models-title{font-size:12px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:.6px; margin:0 30px 14px 2px;}
-  #models-grid .grid-item{cursor:default;}
+  #models-header-row{display:flex; align-items:center; gap:8px; margin:0 30px 14px 2px;}
+  #models-title{font-size:12px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:.6px; margin:0; flex:1; white-space:nowrap;}
+  #models-sort{
+    flex-shrink:0; box-sizing:border-box;
+    background:var(--card-bg); color:#fff;
+    border:1px solid var(--card-border);
+    border-radius:10px;
+    padding:6px 8px;
+    font-size:11px; font-weight:700;
+    -webkit-appearance:none; appearance:none;
+  }
+  #models-grid .grid-item{cursor:zoom-in;}
+  #zoom-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.96);
+    display:none;
+    align-items:center; justify-content:center;
+    z-index:90;
+    padding:16px;
+    touch-action:pan-y;
+  }
+  #zoom-overlay.active{display:flex;}
+  #zoom-content{display:flex; flex-direction:column; align-items:center; gap:12px; max-width:100%; max-height:100%;}
+  #zoom-content img{max-width:100%; max-height:78vh; object-fit:contain; border-radius:12px;}
+  #zoom-name{color:#fff; font-size:14px; font-weight:700; text-align:center;}
   .model-name-tag{
     position:absolute; bottom:0; left:0; right:0;
     background:linear-gradient(transparent, rgba(0,0,0,.85));
@@ -435,6 +492,24 @@
     padding:14px 6px 6px; text-align:center;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
+  .rarity-tag{
+    position:absolute; top:6px; left:6px;
+    font-size:7px; font-weight:800;
+    padding:2px 5px; border-radius:6px;
+    text-transform:uppercase; letter-spacing:.3px;
+  }
+  .rarity-tag.rare{background:rgba(59,130,246,.85); color:#fff;}
+  .rarity-tag.epic{background:rgba(139,92,246,.9); color:#fff;}
+  .rarity-tag.legend{background:linear-gradient(135deg,#facc15,#fff3b0); color:#1a1400; box-shadow:0 0 8px rgba(250,204,21,.55);}
+  #farm-result-rarity{font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.4px; min-height:14px; margin-bottom:4px;}
+  #farm-result-rarity.rare{color:#3b82f6;}
+  #farm-result-rarity.epic{color:#a78bfa;}
+  #farm-result-rarity.legend{color:var(--accent2);}
+  #farm-result-name.chance-hint{font-size:11px; font-weight:700; color:#888; letter-spacing:.2px;}
+  #farm-result-name.chance-hint b{font-weight:800;}
+  #farm-result-name.chance-hint .legend{color:var(--accent2);}
+  #farm-result-name.chance-hint .epic{color:#a78bfa;}
+  #farm-result-name.chance-hint .rare{color:#3b82f6;}
 
   /* ---------- Leaderboard ("Топы") overlay ---------- */
   #tops-overlay{
@@ -469,7 +544,16 @@
   }
   .tops-avatar img{width:100%; height:100%; object-fit:cover;}
   .tops-name{flex:1; font-weight:700; font-size:13px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .tops-count{font-size:12px; font-weight:800; color:var(--accent2); flex-shrink:0;}
+  .tops-count{font-size:12px; font-weight:800; color:var(--accent2); flex-shrink:0; display:flex; align-items:center; gap:3px;}
+  .tops-count img{width:13px; height:13px;}
+  .tops-switch{display:flex; gap:6px; margin:0 30px 14px 2px;}
+  .tops-switch-btn{
+    flex:1; padding:8px 0; border-radius:10px; border:1px solid var(--card-border);
+    background:var(--card-bg); color:#999; font-size:12px; font-weight:700;
+    cursor:pointer; transition:background .15s, color .15s;
+  }
+  .tops-switch-btn.active{background:rgba(139,92,246,.18); color:var(--accent);}
+  .tops-switch-btn:active{transform:scale(.95);}
 
   /* ---------- Input modal (buy gems / list price / offer) ---------- */
   #input-overlay{
@@ -558,13 +642,133 @@
   .btn-sell.active{background:#22c55e; color:#fff; cursor:pointer;}
   .btn-sell.listed{background:rgba(239,68,68,.15); color:var(--danger); cursor:pointer;}
   .btn-swap{background:#1f1f1f; color:#666; width:100%;}
-  .btn-swap.active{background:rgba(139,92,246,.18); color:var(--accent); cursor:pointer;}
+  .btn-swap.active{background:var(--accent2); color:#1a1400; cursor:pointer;}
   .btn-swap.listed{background:rgba(239,68,68,.15); color:var(--danger); cursor:pointer;}
+  .btn-stake{background:#1f1f1f; color:#666; width:100%; display:flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap; overflow:hidden;}
+  .btn-stake .stake-bonus{display:inline-flex; align-items:center; gap:2px; white-space:nowrap;}
+  #modal-card .btn-stake .stake-bonus img{width:12px; height:12px; aspect-ratio:auto; object-fit:contain; margin-bottom:0; flex-shrink:0; display:block;}
+  .btn-stake.active{background:#ec4899; color:#fff; cursor:pointer;}
+  .btn-stake.staked{background:rgba(239,68,68,.15); color:var(--danger); cursor:pointer;}
   .btn-back{background:#161616; color:#999; width:100%;}
   .btn-close{
     position:absolute; top:10px; right:10px;
     background:none; border:none; color:#888; font-size:22px; cursor:pointer;
   }
+  #welcome-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.9);
+    display:none;
+    align-items:center; justify-content:center;
+    z-index:75;
+    padding:24px;
+  }
+  #welcome-overlay.active{display:flex;}
+  #welcome-card{
+    width:100%; max-width:300px;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-radius:20px;
+    padding:26px 20px 20px;
+    text-align:center;
+  }
+  #welcome-title{font-size:19px; font-weight:800; margin-bottom:10px;}
+  #welcome-text{font-size:13px; color:#ccc; line-height:1.55; margin-bottom:20px;}
+  #welcome-text img{width:14px; height:14px; vertical-align:-2px; margin:0 1px;}
+  #welcome-ok{width:100%; padding:13px; border-radius:12px; border:none; background:var(--accent); color:#fff; font-weight:700; font-size:14px; cursor:pointer;}
+  #welcome-ok:active{transform:scale(.97);}
+
+  #alert-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.9);
+    display:none;
+    align-items:center; justify-content:center;
+    z-index:76;
+    padding:24px;
+  }
+  #alert-overlay.active{display:flex;}
+  #alert-card{
+    width:100%; max-width:300px;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-radius:20px;
+    padding:22px 20px 18px;
+    text-align:center;
+  }
+  #alert-text{font-size:14px; color:#eee; line-height:1.5; margin-bottom:18px; font-weight:600;}
+  #alert-ok{width:100%; padding:13px; border-radius:12px; border:none; background:var(--accent); color:#fff; font-weight:700; font-size:14px; cursor:pointer;}
+  #alert-ok:active{transform:scale(.97);}
+
+  #referral-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.9);
+    display:none;
+    align-items:center; justify-content:center;
+    z-index:77;
+    padding:24px;
+  }
+  #referral-overlay.active{display:flex;}
+  #referral-card{
+    position:relative;
+    width:100%; max-width:300px;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-radius:20px;
+    padding:26px 20px 20px;
+    text-align:center;
+  }
+  #referral-title{font-size:18px; font-weight:800; margin-bottom:10px;}
+  #referral-text{font-size:13px; color:#ccc; line-height:1.55; margin-bottom:20px;}
+  #referral-text img{width:14px; height:14px; vertical-align:-2px; margin:0 1px;}
+  #referral-share-btn{width:100%; padding:13px; border-radius:12px; border:none; background:var(--accent); color:#fff; font-weight:700; font-size:14px; cursor:pointer;}
+  .stat-tile.clickable{cursor:pointer;}
+
+  #daily-bonus-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.9);
+    display:none;
+    align-items:center; justify-content:center;
+    z-index:78;
+    padding:24px;
+  }
+  #daily-bonus-overlay.active{display:flex;}
+  #daily-bonus-card{
+    width:100%; max-width:300px;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-radius:20px;
+    padding:26px 20px 20px;
+    text-align:center;
+  }
+  #daily-bonus-title{font-size:19px; font-weight:800; margin-bottom:10px;}
+  #daily-bonus-text{font-size:13px; color:#ccc; line-height:1.55; margin-bottom:20px;}
+  #daily-bonus-text img{width:14px; height:14px; vertical-align:-2px; margin:0 1px;}
+  #daily-bonus-ok{width:100%; padding:13px; border-radius:12px; border:none; background:var(--accent); color:#fff; font-weight:700; font-size:14px; cursor:pointer;}
+  #daily-bonus-ok:active{transform:scale(.97);}
+
+  #chance-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.9);
+    display:none;
+    align-items:center; justify-content:center;
+    z-index:79;
+    padding:24px;
+  }
+  #chance-overlay.active{display:flex;}
+  #chance-card{
+    position:relative;
+    width:100%; max-width:280px;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-radius:20px;
+    padding:22px 20px 20px;
+    text-align:center;
+  }
+  #chance-title{font-size:16px; font-weight:800; margin-bottom:16px;}
+  .chance-row{display:flex; align-items:center; justify-content:space-between; padding:10px 4px; border-bottom:1px solid var(--card-border);}
+  .chance-row:last-child{border-bottom:none;}
+  .chance-row .rarity-tag{position:static; font-size:10px; padding:4px 8px;}
+  .chance-pct{font-weight:800; font-size:14px; color:#fff;}
+
   #toast{
     position:absolute; left:50%; bottom:100px; transform:translateX(-50%) translateY(6px);
     max-width:78%;
@@ -592,10 +796,11 @@
     <!-- FARM -->
     <section id="farm-screen" class="screen">
       <button class="models-btn" id="models-btn">Модели</button>
+      <div class="farm-total-pill" id="farm-total-pill">Всего: <b id="total-farmed">0</b></div>
       <button class="models-btn tops-btn" id="tops-btn">Топы</button>
-      <div class="farm-total-badge">Сфармлено карточек всего: <b id="total-farmed">0</b></div>
       <div class="farm-stage" id="farm-stage"><div class="placeholder">?</div></div>
       <div id="farm-progress-wrap"><div id="farm-progress-bar"></div></div>
+      <div id="farm-result-rarity"></div>
       <div id="farm-result-name"></div>
       <div id="farm-result-number"></div>
       <div class="farm-btn-wrap">
@@ -635,7 +840,7 @@
             <div class="stat-value" id="stat-total">0</div>
             <div class="stat-label">Карты</div>
           </div>
-          <div class="stat-tile">
+          <div class="stat-tile clickable" id="stat-refs-tile">
             <div class="stat-value" id="stat-refs">0</div>
             <div class="stat-label">Рефералы</div>
           </div>
@@ -655,6 +860,55 @@
     <button class="nav-btn" data-screen="profile-screen"><img class="icon-img" src="/static/icons/profile_red.png" alt="">Профиль</button>
   </nav>
 
+  <div id="welcome-overlay">
+    <div id="welcome-card">
+      <div id="welcome-title">Добро пожаловать!</div>
+      <div id="welcome-text">Вам начислено 50 <img src="/static/icons/diamond.png" alt="">, можете фармить карты!<br>А ещё за каждого приглашённого друга вы получаете 25 <img src="/static/icons/diamond.png" alt="">.</div>
+      <button id="welcome-ok">Начать</button>
+    </div>
+  </div>
+
+  <div id="referral-overlay">
+    <div id="referral-card">
+      <button class="btn-close" id="referral-close">✕</button>
+      <div id="referral-title">Пригласи друга</div>
+      <div id="referral-text">Получи 25 <img src="/static/icons/diamond.png" alt=""> за каждого друга, который зайдёт по твоей ссылке (бонус на первых 10 друзей)</div>
+      <button id="referral-share-btn">Поделиться</button>
+    </div>
+  </div>
+
+  <div id="daily-bonus-overlay">
+    <div id="daily-bonus-card">
+      <div id="daily-bonus-title">С возвращением!</div>
+      <div id="daily-bonus-text">Ты сегодня зашёл в первый раз — держи 5 <img src="/static/icons/diamond.png" alt="">!<br>Заходи каждый день за новым бонусом.</div>
+      <button id="daily-bonus-ok">Забрать</button>
+    </div>
+  </div>
+
+  <div id="chance-overlay">
+    <div id="chance-card">
+      <button class="btn-close" id="chance-close">✕</button>
+      <div id="chance-title">Шанс на ферме</div>
+      <div class="chance-row"><span class="rarity-tag legend">legend</span><span class="chance-pct">5%</span></div>
+      <div class="chance-row"><span class="rarity-tag epic">epic</span><span class="chance-pct">15%</span></div>
+      <div class="chance-row"><span class="rarity-tag rare">rare</span><span class="chance-pct">80%</span></div>
+    </div>
+  </div>
+
+  <div id="zoom-overlay">
+    <div id="zoom-content">
+      <img id="zoom-img" src="" alt="">
+      <div id="zoom-name"></div>
+    </div>
+  </div>
+
+  <div id="alert-overlay">
+    <div id="alert-card">
+      <div id="alert-text"></div>
+      <button id="alert-ok">Понятно</button>
+    </div>
+  </div>
+
   <div id="modal-overlay">
     <div id="modal-card">
       <button class="btn-close" id="modal-close">✕</button>
@@ -667,6 +921,7 @@
         </div>
         <button class="btn-sell" id="modal-sell">Продать</button>
         <button class="btn-swap" id="modal-swap">Обменять</button>
+        <button class="btn-stake" id="modal-stake">Застейкать</button>
         <button class="btn-back" id="modal-back">Назад</button>
       </div>
     </div>
@@ -707,7 +962,14 @@
   <div id="models-overlay">
     <div id="models-card">
       <button class="btn-close" id="models-close">✕</button>
-      <div id="models-title">Все модели (<span id="models-count">0</span>)</div>
+      <div id="models-header-row">
+        <div id="models-title">Все модели (<span id="models-count">0</span>)</div>
+        <select id="models-sort">
+          <option value="legend_first" selected>LEGEND → RARE</option>
+          <option value="rare_first">RARE → LEGEND</option>
+          <option value="alpha">По алфавиту</option>
+        </select>
+      </div>
       <div class="grid" id="models-grid"></div>
     </div>
   </div>
@@ -716,6 +978,10 @@
     <div id="tops-card">
       <button class="btn-close" id="tops-close">✕</button>
       <div id="tops-title">Топ игроков</div>
+      <div class="tops-switch" id="tops-switch">
+        <button class="tops-switch-btn active" data-metric="cards">Карты</button>
+        <button class="tops-switch-btn" data-metric="gems">Гемы</button>
+      </div>
       <div id="tops-list"></div>
     </div>
   </div>
@@ -725,7 +991,25 @@
 
 <script>
 const tg = window.Telegram?.WebApp;
-if (tg) { tg.ready(); tg.expand(); }
+function applyTgViewportHeight(){
+  if(tg && tg.viewportStableHeight){
+    document.documentElement.style.setProperty("--tg-vh", tg.viewportStableHeight + "px");
+  }
+}
+if (tg) {
+  tg.ready();
+  tg.expand();
+  applyTgViewportHeight();
+  tg.onEvent("viewportChanged", applyTgViewportHeight);
+}
+
+// Light haptic tap on every button/card press, app-wide — one listener instead of
+// wiring tg.HapticFeedback into every individual click handler.
+document.addEventListener("click", (e)=>{
+  if(e.target.closest("button, .grid-item")){
+    tg?.HapticFeedback?.impactOccurred("light");
+  }
+}, true);
 
 const API_BASE = "/api";
 const FARM_COST_GEMS = 25;
@@ -751,6 +1035,13 @@ function toastHTML(html){
 function notEnoughGemsToast(){
   toastHTML(`Не хватает гемов — нужно ${FARM_COST_GEMS} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
 }
+function showAlert(text){
+  document.getElementById("alert-text").textContent = text;
+  document.getElementById("alert-overlay").classList.add("active");
+}
+document.getElementById("alert-ok").addEventListener("click", ()=>{
+  document.getElementById("alert-overlay").classList.remove("active");
+});
 
 // ---------- Generic input modal (buy gems / list price / offer / gift username) ----------
 let inputResolve = null;
@@ -799,8 +1090,12 @@ async function api(path, body={}){
     body: JSON.stringify({ initData, ...body })
   });
   if(!res.ok){
-    const detail = await res.text();
-    throw new Error(detail || res.statusText);
+    let detail = res.statusText;
+    try{
+      const data = await res.json();
+      if(data && data.detail) detail = data.detail;
+    }catch(e){ /* body wasn't JSON — keep statusText */ }
+    throw new Error(detail);
   }
   return res.json();
 }
@@ -834,9 +1129,34 @@ async function refreshGems(){
   try{
     const auth = await api("/auth");
     document.getElementById("gems-amount").textContent = auth.gems;
+    if(auth.is_new){
+      document.getElementById("welcome-overlay").classList.add("active");
+    }else if(auth.daily_bonus > 0){
+      document.getElementById("daily-bonus-overlay").classList.add("active");
+    }
   }catch(e){ /* non-critical */ }
 }
 refreshGems();
+
+document.getElementById("welcome-ok").addEventListener("click", ()=>{
+  document.getElementById("welcome-overlay").classList.remove("active");
+});
+
+document.getElementById("daily-bonus-ok").addEventListener("click", ()=>{
+  document.getElementById("daily-bonus-overlay").classList.remove("active");
+});
+
+document.getElementById("farm-total-pill").addEventListener("click", ()=>{
+  document.getElementById("chance-overlay").classList.add("active");
+});
+document.getElementById("chance-close").addEventListener("click", ()=>{
+  document.getElementById("chance-overlay").classList.remove("active");
+});
+document.getElementById("chance-overlay").addEventListener("click", (e)=>{
+  if(e.target.id === "chance-overlay"){
+    document.getElementById("chance-overlay").classList.remove("active");
+  }
+});
 
 document.getElementById("gems-pill").addEventListener("click", async ()=>{
   const gems = await promptNumber("Сколько гемов купить? (1 гем = 1 ⭐)");
@@ -901,6 +1221,7 @@ function renderMarket(){
   list.innerHTML = sorted.map(l => `
       <div class="grid-item" data-uc="${l.user_card_id}">
         <img src="/static/cards/${l.filename}" alt="${l.name||''}">
+        <div class="rarity-tag ${l.rarity}">${l.rarity}</div>
         <div class="market-price-tag"><img src="/static/icons/diamond.png" alt="">${l.listed_price}</div>
         ${l.is_mine ? `<div class="market-mine-badge">Твой</div>` : ""}
       </div>
@@ -965,6 +1286,7 @@ function renderSwapListings(){
   list.innerHTML = swapListings.map(l => `
       <div class="grid-item" data-uc="${l.user_card_id}">
         <img src="/static/cards/${l.filename}" alt="${l.name||''}">
+        <div class="rarity-tag ${l.rarity}">${l.rarity}</div>
         ${l.is_mine ? `<div class="market-mine-badge">Твой</div>` : ""}
       </div>
     `).join("");
@@ -1119,15 +1441,73 @@ async function ensureAllCards(){
   return allCardsCache;
 }
 
-document.getElementById("models-btn").addEventListener("click", async ()=>{
-  const cards = await ensureAllCards();
-  document.getElementById("models-count").textContent = cards.length;
-  document.getElementById("models-grid").innerHTML = cards.map(c => `
-    <div class="grid-item">
+let zoomList = [];
+let zoomIndex = 0;
+let zoomStartX = 0, zoomStartY = 0, zoomJustSwiped = false;
+
+function renderZoom(){
+  const c = zoomList[zoomIndex];
+  if(!c) return;
+  document.getElementById("zoom-img").src = `/static/cards/${c.filename}`;
+  document.getElementById("zoom-name").textContent = c.name || "";
+}
+
+function openZoom(list, index){
+  zoomList = list;
+  zoomIndex = index;
+  renderZoom();
+  document.getElementById("zoom-overlay").classList.add("active");
+}
+
+const zoomOverlayEl = document.getElementById("zoom-overlay");
+zoomOverlayEl.addEventListener("touchstart", (e)=>{
+  zoomStartX = e.touches[0].clientX;
+  zoomStartY = e.touches[0].clientY;
+  zoomJustSwiped = false;
+}, { passive: true });
+zoomOverlayEl.addEventListener("touchend", (e)=>{
+  const dx = e.changedTouches[0].clientX - zoomStartX;
+  const dy = e.changedTouches[0].clientY - zoomStartY;
+  if(zoomList.length > 1 && Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)){
+    zoomJustSwiped = true;
+    zoomIndex = dx < 0 ? (zoomIndex + 1) % zoomList.length : (zoomIndex - 1 + zoomList.length) % zoomList.length;
+    renderZoom();
+  }
+}, { passive: true });
+zoomOverlayEl.addEventListener("click", ()=>{
+  if(zoomJustSwiped){ zoomJustSwiped = false; return; }
+  zoomOverlayEl.classList.remove("active");
+});
+
+const RARITY_ORDER = { legend: 0, epic: 1, rare: 2 };
+
+function renderModelsGrid(){
+  const cards = allCardsCache || [];
+  const sortMode = document.getElementById("models-sort").value;
+  const sorted = [...cards].sort((a, b) => {
+    if(sortMode === "alpha") return (a.name || "").localeCompare(b.name || "", "ru");
+    const ra = RARITY_ORDER[a.rarity] ?? 2, rb = RARITY_ORDER[b.rarity] ?? 2;
+    if(ra !== rb) return sortMode === "rare_first" ? rb - ra : ra - rb;
+    return (a.name || "").localeCompare(b.name || "", "ru");
+  });
+  const grid = document.getElementById("models-grid");
+  grid.innerHTML = sorted.map(c => `
+    <div class="grid-item" data-src="/static/cards/${c.filename}">
       <img src="/static/cards/${c.filename}" alt="${c.name||''}">
+      <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
       <div class="model-name-tag">${c.name || ""}</div>
     </div>
   `).join("");
+  grid.querySelectorAll(".grid-item").forEach((el, idx)=>{
+    el.addEventListener("click", ()=>openZoom(sorted, idx));
+  });
+}
+document.getElementById("models-sort").addEventListener("change", renderModelsGrid);
+
+document.getElementById("models-btn").addEventListener("click", async ()=>{
+  const cards = await ensureAllCards();
+  document.getElementById("models-count").textContent = cards.length;
+  renderModelsGrid();
   document.getElementById("models-overlay").classList.add("active");
 });
 document.getElementById("models-close").addEventListener("click", ()=>{
@@ -1140,24 +1520,46 @@ document.getElementById("models-overlay").addEventListener("click", (e)=>{
 });
 
 // ---------- Leaderboard ("Топы") ----------
+let topsPlayers = [];
+let topsMetric = "cards"; // "cards" | "gems"
+
+function renderTops(){
+  const list = document.getElementById("tops-list");
+  if(topsPlayers.length === 0){
+    list.innerHTML = `<div class="empty-state">Пока никто не сфармил ни одной карточки</div>`;
+    return;
+  }
+  const sorted = [...topsPlayers].sort((a, b) => {
+    if(topsMetric === "gems") return b.gems_earned - a.gems_earned;
+    return b.total_cards - a.total_cards;
+  }).slice(0, 50);
+  list.innerHTML = sorted.map((p, i) => `
+    <div class="tops-row">
+      <div class="tops-rank ${i===0?'top1':i===1?'top2':i===2?'top3':''}">${i+1}</div>
+      <div class="tops-avatar">${p.photo_url ? `<img src="${p.photo_url}" alt="">` : (p.username || p.first_name || "?")[0].toUpperCase()}</div>
+      <div class="tops-name">${p.username ? "@"+p.username : (p.first_name || "Игрок")}</div>
+      <div class="tops-count">${topsMetric === "gems" ? `<img src="/static/icons/diamond.png" alt="">${p.gems_earned}` : p.total_cards}</div>
+    </div>
+  `).join("");
+}
+
+document.querySelectorAll(".tops-switch-btn").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    if(btn.dataset.metric === topsMetric) return;
+    topsMetric = btn.dataset.metric;
+    document.querySelectorAll(".tops-switch-btn").forEach(b=>{
+      b.classList.toggle("active", b.dataset.metric === topsMetric);
+    });
+    renderTops();
+  });
+});
+
 document.getElementById("tops-btn").addEventListener("click", async ()=>{
   try{
     const res = await fetch(API_BASE + "/leaderboard");
     const data = await res.json();
-    const players = data.players || [];
-    const list = document.getElementById("tops-list");
-    if(players.length === 0){
-      list.innerHTML = `<div class="empty-state">Пока никто не сфармил ни одной карточки</div>`;
-    }else{
-      list.innerHTML = players.map((p, i) => `
-        <div class="tops-row">
-          <div class="tops-rank ${i===0?'top1':i===1?'top2':i===2?'top3':''}">${i+1}</div>
-          <div class="tops-avatar">${p.photo_url ? `<img src="${p.photo_url}" alt="">` : (p.username || p.first_name || "?")[0].toUpperCase()}</div>
-          <div class="tops-name">${p.username ? "@"+p.username : (p.first_name || "Игрок")}</div>
-          <div class="tops-count">${p.total_cards}</div>
-        </div>
-      `).join("");
-    }
+    topsPlayers = data.players || [];
+    renderTops();
     document.getElementById("tops-overlay").classList.add("active");
   }catch(e){
     toast("Не удалось загрузить топы: " + e.message);
@@ -1180,8 +1582,13 @@ function startFarmAnimation(cards){
   const stage = document.getElementById("farm-stage");
   const progressWrap = document.getElementById("farm-progress-wrap");
   const progressBar = document.getElementById("farm-progress-bar");
-  document.getElementById("farm-result-name").textContent = "";
+  const nameEl0 = document.getElementById("farm-result-name");
+  nameEl0.innerHTML = '<span class="legend">LEGEND 5%</span> · <span class="epic">EPIC 15%</span> · <span class="rare">RARE 80%</span>';
+  nameEl0.classList.add("chance-hint");
   document.getElementById("farm-result-number").textContent = "";
+  const rarityEl0 = document.getElementById("farm-result-rarity");
+  rarityEl0.textContent = "";
+  rarityEl0.className = "";
   progressWrap.classList.add("active");
   progressBar.style.width = "0%";
 
@@ -1227,14 +1634,18 @@ document.getElementById("farm-btn").addEventListener("click", async ()=>{
 
   btn.disabled = true;
   const hint = document.getElementById("farm-hint");
-  hint.textContent = "Идёт фарм...";
   try{
     const cards = await ensureAllCards();
     const [card] = await Promise.all([ api("/farm"), startFarmAnimation(cards) ]);
     const stage = document.getElementById("farm-stage");
     stage.innerHTML = `<img src="/static/cards/${card.filename}" alt="${card.name||''}">`;
-    document.getElementById("farm-result-name").textContent = card.name || "Новая картинка!";
+    const nameEl = document.getElementById("farm-result-name");
+    nameEl.classList.remove("chance-hint");
+    nameEl.textContent = card.name || "Новая картинка!";
     document.getElementById("farm-result-number").textContent = `№${card.farm_number}`;
+    const rarityEl = document.getElementById("farm-result-rarity");
+    rarityEl.textContent = card.rarity || "";
+    rarityEl.className = card.rarity || "";
     document.getElementById("total-farmed").textContent = card.total_farmed;
     document.getElementById("gems-amount").textContent = card.gems;
     tg?.HapticFeedback?.notificationOccurred("success");
@@ -1304,8 +1715,12 @@ function renderProfileGrid(){
   grid.innerHTML = inventory.map(c => `
     <div class="grid-item" data-card-id="${c.card_id}">
       <img src="/static/cards/${c.filename}" alt="${c.name||''}">
+      <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
       <div class="drop-number">#${c.user_card_id}</div>
       ${c.count > 1 ? `<div class="count">x${c.count}</div>` : ""}
+      ${c.listed_price ? `<div class="profile-sale-tag"><img src="/static/icons/diamond.png" alt="">${c.listed_price}</div>` : ""}
+      ${c.swap_listed ? `<div class="profile-swap-tag">Обмен</div>` : ""}
+      ${c.staked_at ? `<div class="profile-stake-tag">${formatStakedDuration(c.staked_at)}</div>` : ""}
     </div>
   `).join("");
 
@@ -1336,11 +1751,16 @@ function openModalAt(index){
   document.getElementById("modal-card").dataset.filename = item.filename;
   updateSellButton(item);
   updateSwapButton(item);
+  updateStakeButton(item);
 }
 
 function updateSellButton(item){
   const btn = document.getElementById("modal-sell");
   btn.classList.remove("active", "listed");
+  if(item.staked_at){
+    btn.textContent = "В стейкинге";
+    return;
+  }
   if(item.listed_price){
     btn.textContent = `Убрать с продажи (${item.listed_price} 💎)`;
     btn.classList.add("listed");
@@ -1353,11 +1773,38 @@ function updateSellButton(item){
 function updateSwapButton(item){
   const btn = document.getElementById("modal-swap");
   btn.classList.remove("active", "listed");
+  if(item.staked_at){
+    btn.textContent = "В стейкинге";
+    return;
+  }
   if(item.swap_listed){
     btn.textContent = "Снять с обмена";
     btn.classList.add("listed");
   }else{
     btn.textContent = "Обменять";
+    btn.classList.add("active");
+  }
+}
+
+function formatStakedDuration(isoString){
+  const stakedMs = new Date(isoString).getTime();
+  const diffMin = Math.max(0, Math.floor((Date.now() - stakedMs) / 60000));
+  if(diffMin < 60) return `${diffMin}м`;
+  const hours = Math.floor(diffMin / 60);
+  if(hours < 24) return `${hours}ч`;
+  const days = Math.floor(hours / 24);
+  const remHours = hours % 24;
+  return remHours ? `${days}д ${remHours}ч` : `${days}д`;
+}
+
+function updateStakeButton(item){
+  const btn = document.getElementById("modal-stake");
+  btn.classList.remove("active", "staked");
+  if(item.staked_at){
+    btn.textContent = `Забрать со стейкинга (${formatStakedDuration(item.staked_at)})`;
+    btn.classList.add("staked");
+  }else{
+    btn.innerHTML = `Застейкать <span class="stake-bonus">+5<img src="/static/icons/diamond.png" alt="">/сутки</span>`;
     btn.classList.add("active");
   }
 }
@@ -1394,15 +1841,29 @@ document.getElementById("modal-overlay").addEventListener("click", (e)=>{
   }
 });
 
-document.getElementById("modal-share").addEventListener("click", ()=>{
+document.getElementById("modal-share").addEventListener("click", async ()=>{
   if(!selectedUserCardId) return;
+  // tg.switchInlineQuery only works for Mini Apps launched from the attachment menu;
+  // ours is opened via a normal web_app button, so Telegram throws synchronously here
+  // instead of just doing nothing — catch it and fall back to DMing the photo instead
+  // of leaving the button looking broken.
+  let usedInline = false;
   if(tg?.switchInlineQuery){
-    // Opens Telegram's native chat picker; whoever gets picked receives the card
-    // photo directly (see bot.py's handle_inline_share) — no manual forwarding.
-    tg.switchInlineQuery(`share:${selectedUserCardId}`, ["users"]);
+    try{
+      tg.switchInlineQuery(`share:${selectedUserCardId}`, ["users"]);
+      usedInline = true;
+    }catch(e){ usedInline = false; }
+  }
+  if(usedInline){
     document.getElementById("modal-overlay").classList.remove("active");
-  }else{
-    toast("Открой через Телеграм, чтобы поделиться");
+    return;
+  }
+  try{
+    await api("/share", { user_card_id: selectedUserCardId });
+    document.getElementById("modal-overlay").classList.remove("active");
+    toast("Отправил картинку тебе в чат с ботом — перешли её другу оттуда");
+  }catch(e){
+    toast("Не удалось поделиться: " + e.message);
   }
 });
 
@@ -1415,12 +1876,20 @@ document.getElementById("modal-give").addEventListener("click", async ()=>{
     document.getElementById("modal-overlay").classList.remove("active");
     loadProfile();
   }catch(e){
-    toast("Не удалось передать: " + e.message);
+    if(e.message.includes("ещё не запускал бота")){
+      showAlert("Юзера ещё нет в боте — пригласите его сначала!");
+    }else{
+      toast("Не удалось передать: " + e.message);
+    }
   }
 });
 
 document.getElementById("modal-sell").addEventListener("click", async ()=>{
   if(!selectedItem) return;
+  if(selectedItem.staked_at){
+    toast("Сначала снимите карту со стейкинга");
+    return;
+  }
   if(selectedItem.listed_price){
     try{
       await api("/market/unlist", { user_card_id: selectedUserCardId });
@@ -1446,6 +1915,10 @@ document.getElementById("modal-sell").addEventListener("click", async ()=>{
 
 document.getElementById("modal-swap").addEventListener("click", async ()=>{
   if(!selectedItem) return;
+  if(selectedItem.staked_at){
+    toast("Сначала снимите карту со стейкинга");
+    return;
+  }
   if(selectedItem.swap_listed){
     try{
       await api("/swap/unlist", { user_card_id: selectedUserCardId });
@@ -1467,6 +1940,60 @@ document.getElementById("modal-swap").addEventListener("click", async ()=>{
       toast("Не получилось выставить: " + e.message);
     }
   }
+});
+
+document.getElementById("modal-stake").addEventListener("click", async ()=>{
+  if(!selectedItem) return;
+  if(selectedItem.staked_at){
+    try{
+      await api("/stake/unstake", { user_card_id: selectedUserCardId });
+      selectedItem.staked_at = null;
+      updateStakeButton(selectedItem);
+      updateSellButton(selectedItem);
+      updateSwapButton(selectedItem);
+      toast("Снято со стейкинга");
+    }catch(e){
+      toast("Не получилось: " + e.message);
+    }
+  }else{
+    if(selectedItem.listed_price || selectedItem.swap_listed){
+      toast("Сначала снимите карту с продажи/обмена");
+      return;
+    }
+    try{
+      await api("/stake/list", { user_card_id: selectedUserCardId });
+      selectedItem.staked_at = new Date().toISOString();
+      updateStakeButton(selectedItem);
+      updateSellButton(selectedItem);
+      updateSwapButton(selectedItem);
+      toast("В стейкинге! +5 гемов в сутки за карту");
+    }catch(e){
+      toast("Не получилось: " + e.message);
+    }
+  }
+});
+
+// ---------- Referral modal (tap the "Рефералы" stat tile in Profile) ----------
+document.getElementById("stat-refs-tile").addEventListener("click", ()=>{
+  document.getElementById("referral-overlay").classList.add("active");
+});
+document.getElementById("referral-close").addEventListener("click", ()=>{
+  document.getElementById("referral-overlay").classList.remove("active");
+});
+document.getElementById("referral-overlay").addEventListener("click", (e)=>{
+  if(e.target.id === "referral-overlay"){
+    document.getElementById("referral-overlay").classList.remove("active");
+  }
+});
+document.getElementById("referral-share-btn").addEventListener("click", ()=>{
+  const myId = tg?.initDataUnsafe?.user?.id;
+  if(!myId){
+    toast("Открой через Телеграм, чтобы поделиться");
+    return;
+  }
+  const refLink = `https://t.me/Peeppobot?start=ref${myId}`;
+  openShareSheet(refLink, "Залетай в Peeppo — фарми картинки, собирай коллекцию! 🎮");
+  document.getElementById("referral-overlay").classList.remove("active");
 });
 
 // ---------- Invite friends (header button, visible on every tab) ----------

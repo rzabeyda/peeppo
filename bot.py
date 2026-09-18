@@ -89,9 +89,12 @@ async def handle_start(message: Message):
         await _handle_claim(message, payload)
         return
 
-    await message.answer(
-        "Добро пожаловать в <b>Peeppo</b>!\n\n"
-        "Жми Фарм — собирай картинки, показывай друзьям, меняйся и продавай на рынке.",
+    await message.answer_photo(
+        photo=FSInputFile(STATIC_CARDS_DIR / "black_pepe.jpg"),
+        caption=(
+            "Добро Пожаловать в <b>Peeppo</b>!\n\n"
+            "Жми Фарм — собирай карточки, показывай друзьям, меняйся и продавай на рынке."
+        ),
         reply_markup=_open_button(),
         parse_mode="HTML",
     )
@@ -432,7 +435,11 @@ async def send_share_message(user_id: int, photo_path: str, card_name: str | Non
     Kept as a fallback for clients where tg.switchInlineQuery isn't available (see
     handle_inline_share below for the main "Поделиться" flow, which skips this chat entirely)."""
     ref_link = f"https://t.me/{BOT_USERNAME}?start=ref{user_id}"
-    caption = f"«{card_name}» 🎁 Залетай в Peeppo → {ref_link}" if card_name else f"Мой дроп 🎁 Залетай в Peeppo → {ref_link}"
+    caption = (
+        f"Смотри что мне выпало «{card_name}» 🎁 Залетай в Peeppo и фарми карты → {ref_link}"
+        if card_name else
+        f"Смотри что мне выпало 🎁 Залетай в Peeppo и фарми карты → {ref_link}"
+    )
     await bot.send_photo(chat_id=user_id, photo=FSInputFile(photo_path), caption=caption)
 
 
@@ -468,7 +475,7 @@ async def handle_inline_share(inline_query: InlineQuery):
         id=str(user_card_id),
         photo_url=photo_url,
         thumbnail_url=photo_url,
-        caption=f"«{name}» 🎁 Залетай в Peeppo → {ref_link}",
+        caption=f"Смотри что мне выпало «{name}» 🎁 Залетай в Peeppo и фарми карты → {ref_link}",
     )
     try:
         await inline_query.answer([result], cache_time=1, is_personal=True)
