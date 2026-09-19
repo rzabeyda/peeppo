@@ -207,8 +207,9 @@ def farm(body: InitDataBody):
         raise HTTPException(400, "not enough gems")
     if result is None:
         raise HTTPException(503, "card catalog is empty — add images first")
-    # user_cards.id is a plain global AUTOINCREMENT, so it doubles as this drop's serial number
-    result["farm_number"] = result["user_card_id"]
+    # drop_number is per-user (how many cards this player has ever farmed), so wiping a
+    # player's inventory naturally restarts their next drops at 1, 2, 3...
+    result["farm_number"] = result["drop_number"]
     result["total_farmed"] = db.get_total_farmed()
     result["gems"] = db.get_gems(user["telegram_id"])
     return result

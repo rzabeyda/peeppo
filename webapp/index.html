@@ -189,7 +189,7 @@
   .profile-card{
     position:relative;
     text-align:center;
-    padding:22px 20px 15px;
+    padding:16px 20px 15px;
     margin-bottom:16px;
     background:linear-gradient(160deg,#181818 0%,#0a0a0a 100%);
     border:1px solid var(--card-border);
@@ -202,12 +202,43 @@
     background:radial-gradient(circle, rgba(139,92,246,.35), transparent 70%);
     pointer-events:none;
   }
+  .profile-header-row{
+    position:relative;
+    display:flex; align-items:center; gap:12px;
+    text-align:left;
+    margin-bottom:12px;
+  }
+  .profile-info-btn{
+    position:absolute; top:0; right:0;
+    width:26px; height:26px;
+    border-radius:50%;
+    background:rgba(255,255,255,.08);
+    border:1px solid var(--card-border);
+    color:#ccc;
+    font-size:14px; font-weight:800;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+  }
+  .profile-info-btn:active{transform:scale(.9);}
+  #profile-info-overlay{
+    position:absolute; inset:0; background:rgba(0,0,0,.9); display:none;
+    align-items:center; justify-content:center; z-index:80; padding:24px;
+  }
+  #profile-info-overlay.active{display:flex;}
+  #profile-info-card{
+    position:relative; width:100%; max-width:300px; background:var(--card-bg);
+    border:1px solid var(--card-border); border-radius:20px; padding:26px 20px 20px; text-align:center;
+  }
+  #profile-info-title{font-size:16px; font-weight:800; color:#fff; margin-bottom:12px;}
+  #profile-info-text{font-size:13px; color:#ccc; line-height:1.7; text-align:left;}
+  #profile-info-text img{width:14px; height:14px; vertical-align:-2px; margin:0 1px;}
+  .profile-header-text{min-width:0;}
   .avatar-ring{
-    width:66px; height:66px;
+    width:52px; height:52px;
     border-radius:50%;
     background:linear-gradient(135deg,var(--accent2),var(--accent));
     padding:3px;
-    margin:0 auto 10px;
+    flex-shrink:0;
     position:relative;
   }
   .avatar{
@@ -219,8 +250,8 @@
     overflow:hidden;
   }
   .avatar img{width:100%; height:100%; object-fit:cover;}
-  .profile-name{position:relative; font-size:18px; font-weight:800; margin-bottom:2px;}
-  .profile-username{position:relative; font-size:12px; font-weight:700; color:var(--accent2); margin-bottom:14px;}
+  .profile-name{position:relative; font-size:16px; font-weight:800; margin-bottom:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .profile-username{position:relative; font-size:12px; font-weight:700; color:var(--accent2);}
   .profile-stats{position:relative; display:flex; gap:8px;}
   .stat-tile{
     flex:1;
@@ -241,7 +272,8 @@
     margin:2px 2px 10px;
   }
   .section-label-row .section-label{margin:0;}
-  #profile-sort-btn{
+  .profile-sort-buttons{display:flex; gap:6px;}
+  #profile-sort-btn, #profile-rarity-sort-btn{
     background:rgba(255,255,255,.06);
     color:#ccc;
     border:1px solid var(--card-border);
@@ -249,8 +281,10 @@
     padding:5px 12px;
     font-size:11px; font-weight:800;
     cursor:pointer;
+    opacity:.55;
   }
-  #profile-sort-btn:active{transform:scale(.95);}
+  #profile-sort-btn.active-sort, #profile-rarity-sort-btn.active-sort{opacity:1;}
+  #profile-sort-btn:active, #profile-rarity-sort-btn:active{transform:scale(.95);}
   .grid{
     display:grid;
     grid-template-columns:repeat(3,1fr);
@@ -314,16 +348,17 @@
   /* ---------- Market ---------- */
   #market-screen .empty-state{padding:100px 20px;}
   #market-screen .emoji{font-size:40px; display:block; margin-bottom:10px;}
-  .market-header-row{display:flex; gap:8px; margin-bottom:10px;}
+  .market-header-row{display:flex; gap:8px; margin-bottom:10px; justify-content:space-between;}
   #market-sort{
-    flex:1; box-sizing:border-box;
+    flex-shrink:0; box-sizing:border-box;
     background:var(--card-bg); color:#fff;
     border:1px solid var(--card-border);
-    border-radius:12px;
-    padding:9px 10px;
-    font-size:12px; font-weight:700;
-    -webkit-appearance:none; appearance:none;
+    border-radius:10px;
+    padding:6px 8px;
+    font-size:11px; font-weight:700;
+    cursor:pointer; white-space:nowrap;
   }
+  #market-sort:active{transform:scale(.95);}
   #market-sort.hidden{visibility:hidden; pointer-events:none;}
   .mode-switch{
     flex-shrink:0;
@@ -378,11 +413,11 @@
   .market-price-tag img{width:10px; height:10px; border-radius:0;}
   .market-mine-badge{
     position:absolute; top:6px; right:6px;
-    background:rgba(139,92,246,.9);
+    background:rgba(37,99,235,.9);
     color:#fff;
-    font-size:9px; font-weight:800;
-    text-transform:uppercase; letter-spacing:.3px;
-    padding:3px 7px; border-radius:8px;
+    font-size:5.4px; font-weight:800;
+    text-transform:uppercase; letter-spacing:.18px;
+    padding:1.8px 4.2px; border-radius:4.8px;
   }
 
   /* ---------- Market item quick-action popup ---------- */
@@ -469,8 +504,15 @@
     border-radius:10px;
     padding:6px 8px;
     font-size:11px; font-weight:700;
-    -webkit-appearance:none; appearance:none;
+    cursor:pointer; white-space:nowrap;
   }
+  #models-sort:active{transform:scale(.95);}
+  #models-rarity-summary{display:flex; gap:6px; margin:0 10px 12px 2px; font-size:10.625px; font-weight:800; letter-spacing:.2px; white-space:nowrap;}
+  #models-rarity-summary .diamond{color:#ff2fb0;}
+  #models-rarity-summary .platina{color:#a78bfa;}
+  #models-rarity-summary .gold{color:#facc15;}
+  #models-rarity-summary .silver{color:#9ca3af;}
+  #models-rarity-summary .bronze{color:#cd7f32;}
   #models-grid .grid-item{cursor:zoom-in;}
   #zoom-overlay{
     position:absolute; inset:0;
@@ -494,22 +536,28 @@
   }
   .rarity-tag{
     position:absolute; top:6px; left:6px;
-    font-size:7px; font-weight:800;
-    padding:2px 5px; border-radius:6px;
+    font-size:5.6px; font-weight:800;
+    padding:1.6px 4px; border-radius:4.8px;
     text-transform:uppercase; letter-spacing:.3px;
   }
-  .rarity-tag.rare{background:rgba(59,130,246,.85); color:#fff;}
-  .rarity-tag.epic{background:rgba(139,92,246,.9); color:#fff;}
-  .rarity-tag.legend{background:linear-gradient(135deg,#facc15,#fff3b0); color:#1a1400; box-shadow:0 0 8px rgba(250,204,21,.55);}
+  .rarity-tag.bronze{background:linear-gradient(135deg,#8c5a2b,#cd7f32); color:#fff8ee; box-shadow:0 0 8px rgba(140,90,43,.5);}
+  .rarity-tag.silver{background:linear-gradient(135deg,#8e97a3,#e5e7eb); color:#1f2530; box-shadow:0 0 8px rgba(156,163,175,.5);}
+  .rarity-tag.gold{background:linear-gradient(135deg,#d4a017,#fde68a); color:#4a3500; box-shadow:0 0 8px rgba(250,204,21,.5);}
+  .rarity-tag.platina{background:linear-gradient(135deg,#7c3aed,#c4b5fd); color:#fff; box-shadow:0 0 8px rgba(139,92,246,.5);}
+  .rarity-tag.diamond{background:linear-gradient(135deg,#ff2fb0,#ffb3ec); color:#3a0022; box-shadow:0 0 8px rgba(255,47,176,.55);}
   #farm-result-rarity{font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.4px; min-height:14px; margin-bottom:4px;}
-  #farm-result-rarity.rare{color:#3b82f6;}
-  #farm-result-rarity.epic{color:#a78bfa;}
-  #farm-result-rarity.legend{color:var(--accent2);}
-  #farm-result-name.chance-hint{font-size:11px; font-weight:700; color:#888; letter-spacing:.2px;}
+  #farm-result-rarity.bronze{color:#cd7f32;}
+  #farm-result-rarity.silver{color:#9ca3af;}
+  #farm-result-rarity.gold{color:#facc15;}
+  #farm-result-rarity.platina{color:#a78bfa;}
+  #farm-result-rarity.diamond{color:#ff2fb0;}
+  #farm-result-name.chance-hint{font-size:11px; font-weight:700; color:#888; letter-spacing:.2px; line-height:1.6;}
   #farm-result-name.chance-hint b{font-weight:800;}
-  #farm-result-name.chance-hint .legend{color:var(--accent2);}
-  #farm-result-name.chance-hint .epic{color:#a78bfa;}
-  #farm-result-name.chance-hint .rare{color:#3b82f6;}
+  #farm-result-name.chance-hint .diamond{color:#ff2fb0;}
+  #farm-result-name.chance-hint .platina{color:#a78bfa;}
+  #farm-result-name.chance-hint .gold{color:#facc15;}
+  #farm-result-name.chance-hint .silver{color:#9ca3af;}
+  #farm-result-name.chance-hint .bronze{color:#cd7f32;}
 
   /* ---------- Leaderboard ("Топы") overlay ---------- */
   #tops-overlay{
@@ -649,6 +697,8 @@
   #modal-card .btn-stake .stake-bonus img{width:12px; height:12px; aspect-ratio:auto; object-fit:contain; margin-bottom:0; flex-shrink:0; display:block;}
   .btn-stake.active{background:#ec4899; color:#fff; cursor:pointer;}
   .btn-stake.staked{background:rgba(239,68,68,.15); color:var(--danger); cursor:pointer;}
+  .btn-craft{background:#1f1f1f; color:#ccc; width:100%; cursor:pointer;}
+  .btn-craft:active{transform:scale(.97);}
   .btn-back{background:#161616; color:#999; width:100%;}
   .btn-close{
     position:absolute; top:10px; right:10px;
@@ -698,6 +748,38 @@
   #alert-ok{width:100%; padding:13px; border-radius:12px; border:none; background:var(--accent); color:#fff; font-weight:700; font-size:14px; cursor:pointer;}
   #alert-ok:active{transform:scale(.97);}
 
+  #gems-choice-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.9);
+    display:none;
+    align-items:center; justify-content:center;
+    z-index:95;
+    padding:24px;
+  }
+  #gems-choice-overlay.active{display:flex;}
+  #gems-choice-card{
+    width:100%; max-width:300px;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-radius:20px;
+    padding:22px 20px 18px;
+    text-align:center;
+  }
+  #gems-choice-title{
+    font-size:16px; font-weight:800; color:#fff;
+    margin-bottom:18px;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+  }
+  #gems-choice-title img{width:18px; height:18px;}
+  #gems-choice-card button{
+    width:100%; padding:13px; border-radius:12px; border:none;
+    font-weight:700; font-size:14px; cursor:pointer; margin-bottom:10px;
+  }
+  #gems-choice-card button:active{transform:scale(.97);}
+  #gems-choice-buy{background:var(--accent); color:#fff;}
+  #gems-choice-sell{background:#1f1f1f; color:#fff;}
+  #gems-choice-cancel{background:none; color:#999; margin-bottom:0;}
+
   #referral-overlay{
     position:absolute; inset:0;
     background:rgba(0,0,0,.9);
@@ -707,6 +789,27 @@
     padding:24px;
   }
   #referral-overlay.active{display:flex;}
+  #income-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.9);
+    display:none;
+    align-items:center; justify-content:center;
+    z-index:77;
+    padding:24px;
+  }
+  #income-overlay.active{display:flex;}
+  #income-card{
+    position:relative;
+    width:100%; max-width:300px;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-radius:20px;
+    padding:26px 20px 20px;
+    text-align:center;
+  }
+  #income-title{font-size:16px; font-weight:800; color:#fff; margin-bottom:10px;}
+  #income-text{font-size:13px; color:#ccc; line-height:1.5; margin-bottom:18px;}
+  #income-text img{width:14px; height:14px; vertical-align:-2px; margin:0 1px;}
   #referral-card{
     position:relative;
     width:100%; max-width:300px;
@@ -813,16 +916,11 @@
     <!-- MARKET -->
     <section id="market-screen" class="screen">
       <div class="market-header-row">
-        <select id="market-sort">
-          <option value="price_asc" selected>Цена: сначала дешёвые</option>
-          <option value="price_desc">Цена: сначала дорогие</option>
-          <option value="new">Сначала новые</option>
-          <option value="old">Сначала старые</option>
-          <option value="number">По номеру</option>
-        </select>
+        <button type="button" id="market-sort">Цена ↓</button>
         <div class="mode-switch" id="market-mode-switch">
           <button class="mode-switch-btn active" data-mode="trade">Торговля</button>
           <button class="mode-switch-btn" data-mode="swap">Обмен</button>
+          <button class="mode-switch-btn" data-mode="pvp">PvP</button>
         </div>
       </div>
       <div id="market-list"></div>
@@ -832,13 +930,22 @@
     <section id="profile-screen" class="screen">
       <div class="profile-card">
         <div class="profile-card-glow"></div>
-        <div class="avatar-ring"><div class="avatar" id="profile-avatar">?</div></div>
-        <div class="profile-name" id="profile-name">...</div>
-        <div class="profile-username" id="profile-username"></div>
+        <div class="profile-header-row">
+          <button class="profile-info-btn" id="profile-info-btn">?</button>
+          <div class="avatar-ring"><div class="avatar" id="profile-avatar">?</div></div>
+          <div class="profile-header-text">
+            <div class="profile-name" id="profile-name">...</div>
+            <div class="profile-username" id="profile-username"></div>
+          </div>
+        </div>
         <div class="profile-stats">
           <div class="stat-tile">
             <div class="stat-value" id="stat-total">0</div>
             <div class="stat-label">Карты</div>
+          </div>
+          <div class="stat-tile clickable" id="stat-income-tile">
+            <div class="stat-value" id="stat-income">25</div>
+            <div class="stat-label">Доход</div>
           </div>
           <div class="stat-tile clickable" id="stat-refs-tile">
             <div class="stat-value" id="stat-refs">0</div>
@@ -848,7 +955,10 @@
       </div>
       <div class="section-label-row">
         <div class="section-label">Коллекция</div>
-        <button id="profile-sort-btn">№ ↓</button>
+        <div class="profile-sort-buttons">
+          <button id="profile-sort-btn" class="active-sort">№ ↓</button>
+          <button id="profile-rarity-sort-btn">Ранг ↓</button>
+        </div>
       </div>
       <div class="grid" id="profile-grid"></div>
     </section>
@@ -877,10 +987,31 @@
     </div>
   </div>
 
+  <div id="profile-info-overlay">
+    <div id="profile-info-card">
+      <button class="btn-close" id="profile-info-close">✕</button>
+      <div id="profile-info-title">Как заработать гемы</div>
+      <div id="profile-info-text">
+        Заходи каждый день в игру и получай 25 <img src="/static/icons/diamond.png" alt=""><br>
+        Приглашай друзей и получай по 25 <img src="/static/icons/diamond.png" alt=""> за каждого<br>
+        Стейкай свои карточки и зарабатывай гемы<br>
+        Продавай или обменивай карточки на рынке
+      </div>
+    </div>
+  </div>
+
+  <div id="income-overlay">
+    <div id="income-card">
+      <button class="btn-close" id="income-close">✕</button>
+      <div id="income-title">Ваш доход</div>
+      <div id="income-text">25 <img src="/static/icons/diamond.png" alt=""> в день — заходи и забирай каждый день!</div>
+    </div>
+  </div>
+
   <div id="daily-bonus-overlay">
     <div id="daily-bonus-card">
       <div id="daily-bonus-title">С возвращением!</div>
-      <div id="daily-bonus-text">Ты сегодня зашёл в первый раз — держи 5 <img src="/static/icons/diamond.png" alt="">!<br>Заходи каждый день за новым бонусом.</div>
+      <div id="daily-bonus-text">Держи 25 <img src="/static/icons/diamond.png" alt=""> за сегодняшний вход!<br>Заходи каждый день за новым бонусом.</div>
       <button id="daily-bonus-ok">Забрать</button>
     </div>
   </div>
@@ -888,10 +1019,12 @@
   <div id="chance-overlay">
     <div id="chance-card">
       <button class="btn-close" id="chance-close">✕</button>
-      <div id="chance-title">Шанс на ферме</div>
-      <div class="chance-row"><span class="rarity-tag legend">legend</span><span class="chance-pct">5%</span></div>
-      <div class="chance-row"><span class="rarity-tag epic">epic</span><span class="chance-pct">15%</span></div>
-      <div class="chance-row"><span class="rarity-tag rare">rare</span><span class="chance-pct">80%</span></div>
+      <div id="chance-title">Сфармлено</div>
+      <div class="chance-row"><span class="rarity-tag diamond">diamond</span><span class="chance-pct" id="farmed-diamond">0</span></div>
+      <div class="chance-row"><span class="rarity-tag platina">platina</span><span class="chance-pct" id="farmed-platina">0</span></div>
+      <div class="chance-row"><span class="rarity-tag gold">gold</span><span class="chance-pct" id="farmed-gold">0</span></div>
+      <div class="chance-row"><span class="rarity-tag silver">silver</span><span class="chance-pct" id="farmed-silver">0</span></div>
+      <div class="chance-row"><span class="rarity-tag bronze">bronze</span><span class="chance-pct" id="farmed-bronze">0</span></div>
     </div>
   </div>
 
@@ -921,7 +1054,7 @@
         </div>
         <button class="btn-sell" id="modal-sell">Продать</button>
         <button class="btn-swap" id="modal-swap">Обменять</button>
-        <button class="btn-stake" id="modal-stake">Застейкать</button>
+        <button class="btn-craft" id="modal-craft">Крафт</button>
         <button class="btn-back" id="modal-back">Назад</button>
       </div>
     </div>
@@ -935,6 +1068,15 @@
         <button id="input-cancel">Отмена</button>
         <button id="input-confirm">ОК</button>
       </div>
+    </div>
+  </div>
+
+  <div id="gems-choice-overlay">
+    <div id="gems-choice-card">
+      <div id="gems-choice-title"><img src="/static/icons/diamond.png" alt="">Гемы</div>
+      <button id="gems-choice-buy">Купить Гемы за Звёзды</button>
+      <button id="gems-choice-sell">Продать Гемы за Звёзды</button>
+      <button id="gems-choice-cancel">Отмена</button>
     </div>
   </div>
 
@@ -964,12 +1106,9 @@
       <button class="btn-close" id="models-close">✕</button>
       <div id="models-header-row">
         <div id="models-title">Все модели (<span id="models-count">0</span>)</div>
-        <select id="models-sort">
-          <option value="legend_first" selected>LEGEND → RARE</option>
-          <option value="rare_first">RARE → LEGEND</option>
-          <option value="alpha">По алфавиту</option>
-        </select>
+        <button type="button" id="models-sort">DIAMOND → SILVER</button>
       </div>
+      <div id="models-rarity-summary"></div>
       <div class="grid" id="models-grid"></div>
     </div>
   </div>
@@ -1147,6 +1286,11 @@ document.getElementById("daily-bonus-ok").addEventListener("click", ()=>{
 });
 
 document.getElementById("farm-total-pill").addEventListener("click", ()=>{
+  document.getElementById("farmed-diamond").textContent = inventory.filter(c=>c.rarity==="diamond").length;
+  document.getElementById("farmed-platina").textContent = inventory.filter(c=>c.rarity==="platina").length;
+  document.getElementById("farmed-gold").textContent = inventory.filter(c=>c.rarity==="gold").length;
+  document.getElementById("farmed-silver").textContent = inventory.filter(c=>c.rarity==="silver").length;
+  document.getElementById("farmed-bronze").textContent = inventory.filter(c=>c.rarity==="bronze").length;
   document.getElementById("chance-overlay").classList.add("active");
 });
 document.getElementById("chance-close").addEventListener("click", ()=>{
@@ -1158,7 +1302,23 @@ document.getElementById("chance-overlay").addEventListener("click", (e)=>{
   }
 });
 
-document.getElementById("gems-pill").addEventListener("click", async ()=>{
+document.getElementById("gems-pill").addEventListener("click", ()=>{
+  document.getElementById("gems-choice-overlay").classList.add("active");
+});
+document.getElementById("gems-choice-cancel").addEventListener("click", ()=>{
+  document.getElementById("gems-choice-overlay").classList.remove("active");
+});
+document.getElementById("gems-choice-overlay").addEventListener("click", (e)=>{
+  if(e.target.id === "gems-choice-overlay"){
+    document.getElementById("gems-choice-overlay").classList.remove("active");
+  }
+});
+document.getElementById("gems-choice-sell").addEventListener("click", ()=>{
+  document.getElementById("gems-choice-overlay").classList.remove("active");
+  toast("В разработке");
+});
+document.getElementById("gems-choice-buy").addEventListener("click", async ()=>{
+  document.getElementById("gems-choice-overlay").classList.remove("active");
   const gems = await promptNumber("Сколько гемов купить? (1 гем = 1 ⭐)");
   if(!gems) return;
   try{
@@ -1195,7 +1355,15 @@ async function loadMarket(){
   }
 }
 
-document.getElementById("market-sort").addEventListener("change", renderMarket);
+let marketSortMode = "price_asc"; // "price_asc" | "price_desc" | "new" | "old" | "number"
+const MARKET_SORT_LABELS = { price_asc: "Цена ↓", price_desc: "Цена ↑", new: "Новые", old: "Старые", number: "№" };
+const MARKET_SORT_CYCLE = ["price_asc", "price_desc", "new", "old", "number"];
+document.getElementById("market-sort").addEventListener("click", ()=>{
+  const idx = MARKET_SORT_CYCLE.indexOf(marketSortMode);
+  marketSortMode = MARKET_SORT_CYCLE[(idx + 1) % MARKET_SORT_CYCLE.length];
+  document.getElementById("market-sort").textContent = MARKET_SORT_LABELS[marketSortMode];
+  renderMarket();
+});
 
 function renderMarket(){
   const list = document.getElementById("market-list");
@@ -1205,7 +1373,7 @@ function renderMarket(){
     return;
   }
 
-  const sortMode = document.getElementById("market-sort").value;
+  const sortMode = marketSortMode;
   const sorted = [...marketListings].sort((a, b) => {
     switch(sortMode){
       case "old": return a.user_card_id - b.user_card_id;
@@ -1258,6 +1426,10 @@ function goToMarketSwapTab(){
 
 document.querySelectorAll(".mode-switch-btn").forEach(btn=>{
   btn.addEventListener("click", ()=>{
+    if(btn.dataset.mode === "pvp"){
+      showAlert("В разработке");
+      return;
+    }
     if(btn.dataset.mode === marketMode) return;
     setMarketMode(btn.dataset.mode);
     refreshMarketScreen();
@@ -1399,7 +1571,6 @@ function renderSwapPickerGrid(){
     <div class="grid-item picker-item ${swapPickerSelected.has(c.user_card_id) ? 'selected' : ''}" data-uc="${c.user_card_id}">
       <img src="/static/cards/${c.filename}" alt="${c.name||''}">
       <div class="check">✓</div>
-      ${c.count > 1 ? `<div class="count">x${c.count}</div>` : ""}
     </div>
   `).join("");
   grid.querySelectorAll(".picker-item").forEach(el=>{
@@ -1479,15 +1650,19 @@ zoomOverlayEl.addEventListener("click", ()=>{
   zoomOverlayEl.classList.remove("active");
 });
 
-const RARITY_ORDER = { legend: 0, epic: 1, rare: 2 };
+const RARITY_ORDER = { diamond: 0, platina: 1, gold: 2, silver: 3, bronze: 4 };
+
+let modelsSortMode = "best_first"; // "best_first" | "worst_first" | "alpha"
+const MODELS_SORT_LABELS = { best_first: "DIAMOND → BRONZE", worst_first: "BRONZE → DIAMOND", alpha: "По алфавиту" };
+const MODELS_SORT_CYCLE = ["best_first", "worst_first", "alpha"];
 
 function renderModelsGrid(){
   const cards = allCardsCache || [];
-  const sortMode = document.getElementById("models-sort").value;
+  const sortMode = modelsSortMode;
   const sorted = [...cards].sort((a, b) => {
     if(sortMode === "alpha") return (a.name || "").localeCompare(b.name || "", "ru");
-    const ra = RARITY_ORDER[a.rarity] ?? 2, rb = RARITY_ORDER[b.rarity] ?? 2;
-    if(ra !== rb) return sortMode === "rare_first" ? rb - ra : ra - rb;
+    const ra = RARITY_ORDER[a.rarity] ?? 4, rb = RARITY_ORDER[b.rarity] ?? 4;
+    if(ra !== rb) return sortMode === "worst_first" ? rb - ra : ra - rb;
     return (a.name || "").localeCompare(b.name || "", "ru");
   });
   const grid = document.getElementById("models-grid");
@@ -1502,11 +1677,23 @@ function renderModelsGrid(){
     el.addEventListener("click", ()=>openZoom(sorted, idx));
   });
 }
-document.getElementById("models-sort").addEventListener("change", renderModelsGrid);
+document.getElementById("models-sort").addEventListener("click", ()=>{
+  const idx = MODELS_SORT_CYCLE.indexOf(modelsSortMode);
+  modelsSortMode = MODELS_SORT_CYCLE[(idx + 1) % MODELS_SORT_CYCLE.length];
+  document.getElementById("models-sort").textContent = MODELS_SORT_LABELS[modelsSortMode];
+  renderModelsGrid();
+});
 
+function updateModelsRaritySummary(cards){
+  const counts = {diamond:0, platina:0, gold:0, silver:0, bronze:0};
+  cards.forEach(c=>{ if(counts[c.rarity]!==undefined) counts[c.rarity]++; });
+  document.getElementById("models-rarity-summary").innerHTML =
+    `<span class="diamond">DIAMOND ${counts.diamond}</span><span class="platina">PLATINA ${counts.platina}</span><span class="gold">GOLD ${counts.gold}</span><span class="silver">SILVER ${counts.silver}</span><span class="bronze">BRONZE ${counts.bronze}</span>`;
+}
 document.getElementById("models-btn").addEventListener("click", async ()=>{
   const cards = await ensureAllCards();
   document.getElementById("models-count").textContent = cards.length;
+  updateModelsRaritySummary(cards);
   renderModelsGrid();
   document.getElementById("models-overlay").classList.add("active");
 });
@@ -1583,7 +1770,7 @@ function startFarmAnimation(cards){
   const progressWrap = document.getElementById("farm-progress-wrap");
   const progressBar = document.getElementById("farm-progress-bar");
   const nameEl0 = document.getElementById("farm-result-name");
-  nameEl0.innerHTML = '<span class="legend">LEGEND 5%</span> · <span class="epic">EPIC 15%</span> · <span class="rare">RARE 80%</span>';
+  nameEl0.innerHTML = '<span class="diamond">DIAMOND 1%</span> · <span class="platina">PLATINA 7%</span> · <span class="gold">GOLD 13%</span><br><span class="silver">SILVER 29%</span> · <span class="bronze">BRONZE 50%</span>';
   nameEl0.classList.add("chance-hint");
   document.getElementById("farm-result-number").textContent = "";
   const rarityEl0 = document.getElementById("farm-result-rarity");
@@ -1604,7 +1791,7 @@ function startFarmAnimation(cards){
     }, 180);
   }
 
-  const duration = 10000;
+  const duration = 5000;
   const start = Date.now();
   return new Promise(resolve=>{
     clearInterval(farmProgressTimer);
@@ -1622,6 +1809,7 @@ function startFarmAnimation(cards){
   });
 }
 
+let farmRequestSeq = 0;
 document.getElementById("farm-btn").addEventListener("click", async ()=>{
   const btn = document.getElementById("farm-btn");
   if(btn.disabled) return;
@@ -1633,10 +1821,14 @@ document.getElementById("farm-btn").addEventListener("click", async ()=>{
   }
 
   btn.disabled = true;
+  const mySeq = ++farmRequestSeq;
   const hint = document.getElementById("farm-hint");
   try{
     const cards = await ensureAllCards();
-    const [card] = await Promise.all([ api("/farm"), startFarmAnimation(cards) ]);
+    await startFarmAnimation(cards);
+    if(mySeq !== farmRequestSeq) return; // a newer farm superseded this one — never show its stale result
+    const card = await api("/farm");
+    if(mySeq !== farmRequestSeq) return;
     const stage = document.getElementById("farm-stage");
     stage.innerHTML = `<img src="/static/cards/${card.filename}" alt="${card.name||''}">`;
     const nameEl = document.getElementById("farm-result-name");
@@ -1650,6 +1842,7 @@ document.getElementById("farm-btn").addEventListener("click", async ()=>{
     document.getElementById("gems-amount").textContent = card.gems;
     tg?.HapticFeedback?.notificationOccurred("success");
   }catch(e){
+    if(mySeq !== farmRequestSeq) return;
     document.getElementById("farm-progress-wrap").classList.remove("active");
     clearInterval(farmCycleTimer);
     clearInterval(farmProgressTimer);
@@ -1659,7 +1852,7 @@ document.getElementById("farm-btn").addEventListener("click", async ()=>{
       toast("Ошибка фарма: " + e.message);
     }
   }finally{
-    btn.disabled = false;
+    if(mySeq === farmRequestSeq) btn.disabled = false;
     hint.textContent = "";
   }
 });
@@ -1681,8 +1874,7 @@ async function loadProfile(){
 
     const data = await api("/profile");
     inventory = data.inventory;
-    const total = inventory.reduce((s,c)=>s+c.count, 0);
-    document.getElementById("stat-total").textContent = total;
+    document.getElementById("stat-total").textContent = inventory.length;
 
     sortInventoryAndRender();
   }catch(e){
@@ -1690,17 +1882,37 @@ async function loadProfile(){
   }
 }
 
-// ---------- Collection sort (by drop number) ----------
+// ---------- Collection sort (by drop number, or by rarity) ----------
 let profileSortAsc = false; // false = biggest number (newest) first, matching the old default
+let profileRarityAsc = false; // false = diamond -> silver, true = silver -> diamond
+let profileSortMode = "number"; // "number" | "rarity"
 
 document.getElementById("profile-sort-btn").addEventListener("click", ()=>{
+  profileSortMode = "number";
   profileSortAsc = !profileSortAsc;
   sortInventoryAndRender();
 });
 
+document.getElementById("profile-rarity-sort-btn").addEventListener("click", ()=>{
+  profileSortMode = "rarity";
+  profileRarityAsc = !profileRarityAsc;
+  sortInventoryAndRender();
+});
+
 function sortInventoryAndRender(){
-  inventory.sort((a, b) => profileSortAsc ? a.user_card_id - b.user_card_id : b.user_card_id - a.user_card_id);
+  if(profileSortMode === "rarity"){
+    inventory.sort((a, b) => {
+      const ra = RARITY_ORDER[a.rarity] ?? 4, rb = RARITY_ORDER[b.rarity] ?? 4;
+      if(ra !== rb) return profileRarityAsc ? rb - ra : ra - rb;
+      return b.user_card_id - a.user_card_id;
+    });
+  }else{
+    inventory.sort((a, b) => profileSortAsc ? a.user_card_id - b.user_card_id : b.user_card_id - a.user_card_id);
+  }
   document.getElementById("profile-sort-btn").textContent = profileSortAsc ? "№ ↑" : "№ ↓";
+  document.getElementById("profile-rarity-sort-btn").textContent = profileRarityAsc ? "Ранг ↑" : "Ранг ↓";
+  document.getElementById("profile-sort-btn").classList.toggle("active-sort", profileSortMode === "number");
+  document.getElementById("profile-rarity-sort-btn").classList.toggle("active-sort", profileSortMode === "rarity");
   renderProfileGrid();
 }
 
@@ -1708,16 +1920,16 @@ function renderProfileGrid(){
   const grid = document.getElementById("profile-grid");
   if(inventory.length === 0){
     grid.innerHTML = "";
+    document.getElementById("empty-hint")?.remove();
     grid.insertAdjacentHTML("afterend", `<div class="empty-state" id="empty-hint">Пока пусто — иди фармить 🌱</div>`);
     return;
   }
   document.getElementById("empty-hint")?.remove();
   grid.innerHTML = inventory.map(c => `
-    <div class="grid-item" data-card-id="${c.card_id}">
+    <div class="grid-item" data-uc="${c.user_card_id}">
       <img src="/static/cards/${c.filename}" alt="${c.name||''}">
       <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
-      <div class="drop-number">#${c.user_card_id}</div>
-      ${c.count > 1 ? `<div class="count">x${c.count}</div>` : ""}
+      <div class="drop-number">#${c.drop_number}</div>
       ${c.listed_price ? `<div class="profile-sale-tag"><img src="/static/icons/diamond.png" alt="">${c.listed_price}</div>` : ""}
       ${c.swap_listed ? `<div class="profile-swap-tag">Обмен</div>` : ""}
       ${c.staked_at ? `<div class="profile-stake-tag">${formatStakedDuration(c.staked_at)}</div>` : ""}
@@ -1725,14 +1937,14 @@ function renderProfileGrid(){
   `).join("");
 
   grid.querySelectorAll(".grid-item").forEach(el=>{
-    el.addEventListener("click", ()=>openModal(parseInt(el.dataset.cardId)));
+    el.addEventListener("click", ()=>openModal(parseInt(el.dataset.uc)));
   });
 }
 
 let modalIndex = -1;
 
-function openModal(cardId){
-  const index = inventory.findIndex(c => c.card_id === cardId);
+function openModal(userCardId){
+  const index = inventory.findIndex(c => c.user_card_id === userCardId);
   if(index === -1) return;
   openModalAt(index);
 }
@@ -1746,12 +1958,11 @@ function openModalAt(index){
   selectedUserCardId = item.user_card_id;
   selectedItem = item;
   document.getElementById("modal-img").src = `/static/cards/${item.filename}`;
-  document.getElementById("modal-name").textContent = `${item.name || "Без названия"} #${item.user_card_id}`;
+  document.getElementById("modal-name").textContent = `${item.name || "Без названия"} #${item.drop_number}`;
   document.getElementById("modal-overlay").classList.add("active");
   document.getElementById("modal-card").dataset.filename = item.filename;
   updateSellButton(item);
   updateSwapButton(item);
-  updateStakeButton(item);
 }
 
 function updateSellButton(item){
@@ -1795,18 +2006,6 @@ function formatStakedDuration(isoString){
   const days = Math.floor(hours / 24);
   const remHours = hours % 24;
   return remHours ? `${days}д ${remHours}ч` : `${days}д`;
-}
-
-function updateStakeButton(item){
-  const btn = document.getElementById("modal-stake");
-  btn.classList.remove("active", "staked");
-  if(item.staked_at){
-    btn.textContent = `Забрать со стейкинга (${formatStakedDuration(item.staked_at)})`;
-    btn.classList.add("staked");
-  }else{
-    btn.innerHTML = `Застейкать <span class="stake-bonus">+5<img src="/static/icons/diamond.png" alt="">/сутки</span>`;
-    btn.classList.add("active");
-  }
 }
 
 // Swipe left/right on the card to browse the rest of the collection.
@@ -1942,38 +2141,35 @@ document.getElementById("modal-swap").addEventListener("click", async ()=>{
   }
 });
 
-document.getElementById("modal-stake").addEventListener("click", async ()=>{
-  if(!selectedItem) return;
-  if(selectedItem.staked_at){
-    try{
-      await api("/stake/unstake", { user_card_id: selectedUserCardId });
-      selectedItem.staked_at = null;
-      updateStakeButton(selectedItem);
-      updateSellButton(selectedItem);
-      updateSwapButton(selectedItem);
-      toast("Снято со стейкинга");
-    }catch(e){
-      toast("Не получилось: " + e.message);
-    }
-  }else{
-    if(selectedItem.listed_price || selectedItem.swap_listed){
-      toast("Сначала снимите карту с продажи/обмена");
-      return;
-    }
-    try{
-      await api("/stake/list", { user_card_id: selectedUserCardId });
-      selectedItem.staked_at = new Date().toISOString();
-      updateStakeButton(selectedItem);
-      updateSellButton(selectedItem);
-      updateSwapButton(selectedItem);
-      toast("В стейкинге! +5 гемов в сутки за карту");
-    }catch(e){
-      toast("Не получилось: " + e.message);
-    }
-  }
+document.getElementById("modal-craft").addEventListener("click", ()=>{
+  showAlert("В разработке");
 });
 
 // ---------- Referral modal (tap the "Рефералы" stat tile in Profile) ----------
+document.getElementById("profile-info-btn").addEventListener("click", ()=>{
+  document.getElementById("profile-info-overlay").classList.add("active");
+});
+document.getElementById("profile-info-close").addEventListener("click", ()=>{
+  document.getElementById("profile-info-overlay").classList.remove("active");
+});
+document.getElementById("profile-info-overlay").addEventListener("click", (e)=>{
+  if(e.target.id === "profile-info-overlay"){
+    document.getElementById("profile-info-overlay").classList.remove("active");
+  }
+});
+
+document.getElementById("stat-income-tile").addEventListener("click", ()=>{
+  document.getElementById("income-overlay").classList.add("active");
+});
+document.getElementById("income-close").addEventListener("click", ()=>{
+  document.getElementById("income-overlay").classList.remove("active");
+});
+document.getElementById("income-overlay").addEventListener("click", (e)=>{
+  if(e.target.id === "income-overlay"){
+    document.getElementById("income-overlay").classList.remove("active");
+  }
+});
+
 document.getElementById("stat-refs-tile").addEventListener("click", ()=>{
   document.getElementById("referral-overlay").classList.add("active");
 });

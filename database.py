@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS cards (
     filename      TEXT NOT NULL,
     name          TEXT,
     is_active     INTEGER NOT NULL DEFAULT 1,
-    rarity        TEXT NOT NULL DEFAULT 'rare',
+    rarity        TEXT NOT NULL DEFAULT 'silver',
     created_at    TEXT NOT NULL
 );
 
@@ -132,14 +132,14 @@ def init_db():
         # migration for DBs created before card rarity existed
         c_cols = {row["name"] for row in conn.execute("PRAGMA table_info(cards)")}
         if "rarity" not in c_cols:
-            conn.execute("ALTER TABLE cards ADD COLUMN rarity TEXT NOT NULL DEFAULT 'rare'")
+            conn.execute("ALTER TABLE cards ADD COLUMN rarity TEXT NOT NULL DEFAULT 'silver'")
             conn.execute("UPDATE users SET gems_earned = gems WHERE gems_earned = 0")
         # migration for DBs created before the daily login bonus existed
         if "last_daily_bonus" not in u_cols:
             conn.execute("ALTER TABLE users ADD COLUMN last_daily_bonus TEXT")
 
 
-DAILY_BONUS_GEMS = 5
+DAILY_BONUS_GEMS = 25
 REFERRAL_REWARD_GEMS = 25
 MAX_REWARDED_REFERRALS = 10  # after this many, referrals still count but stop paying out
 SIGNUP_BONUS_GEMS = 50
@@ -232,12 +232,14 @@ def get_all_cards() -> list[dict]:
         return [dict(r) for r in rows]
 
 
-RARITY_WEIGHTS = {"rare": 80, "epic": 15, "legend": 5}
+# Tiers: silver (was rare) < gold (was epic) < platina (was legend) < diamond (new top tier).
+# Tiers: bronze (junk/memes, sub-$100) < silver ($100-1k) < gold ($1k-10k) < platina ($10k-100k) < diamond (>$100k).
+RARITY_WEIGHTS = {"bronze": 50, "silver": 29, "gold": 13, "platina": 7, "diamond": 1}
 
 
 def draw_random_card() -> sqlite3.Row | None:
-    """Pick one active card, weighted by rarity (RARITY_WEIGHTS) — most drops are RARE,
-    EPIC and LEGEND are progressively less common. Returns None if the catalog is empty.
+    """Pick one active card, weighted by rarity (RARITY_WEIGHTS) — most drops are BRONZE,
+    then SILVER, GOLD and PLATINA progressively less common. Returns None if the catalog is empty.
     Falls back gracefully (equal weight) if a tier has no active cards yet."""
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM cards WHERE is_active = 1").fetchall()
@@ -245,7 +247,7 @@ def draw_random_card() -> sqlite3.Row | None:
             return None
         by_rarity: dict[str, list] = {}
         for r in rows:
-            by_rarity.setdefault(r["rarity"] or "rare", []).append(r)
+            by_rarity.setdefault(r["rarity"] or "silver", []).append(r)
         tiers = list(by_rarity.keys())
         weights = [RARITY_WEIGHTS.get(t, 1) for t in tiers]
         chosen_tier = random.choices(tiers, weights=weights, k=1)[0]
@@ -286,36 +288,33 @@ def farm(user_id: int) -> dict | None:
             (user_id, card["id"], _now()),
         )
         user_card_id = cur.lastrowid
+        drop_number = conn.execute(
+            "SELECT COUNT(*) FROM user_cards WHERE user_id = ?", (user_id,)
+        ).fetchone()[0]
     return {
         "user_card_id": user_card_id,
         "card_id": card["id"],
         "filename": card["filename"],
         "name": card["name"],
         "rarity": card["rarity"],
+        "drop_number": drop_number,
     }
 
 
 def get_inventory(user_id: int) -> list[dict]:
-    """Cards the user owns, grouped with a count (duplicates are common since supply is unlimited).
-    Each row also carries the listed_price of its representative copy, if that specific
-    copy is currently for sale on the market."""
+    """Cards the user owns — one row per copy, shown separately even when duplicated
+    (duplicates are common since supply is unlimited), each keeping its own number,
+    listing/swap/stake status."""
     with get_conn() as conn:
         rows = conn.execute(
             """
-            WITH agg AS (
-                SELECT c.id AS card_id, c.filename, c.name, c.rarity, COUNT(*) AS count,
-                       MAX(uc.obtained_at) AS last_obtained_at,
-                       (SELECT uc2.id FROM user_cards uc2
-                        WHERE uc2.user_id = uc.user_id AND uc2.card_id = c.id
-                        ORDER BY uc2.obtained_at DESC LIMIT 1) AS user_card_id
-                FROM user_cards uc
-                JOIN cards c ON c.id = uc.card_id
-                WHERE uc.user_id = ?
-                GROUP BY c.id
-            )
-            SELECT agg.*, ucx.listed_price, ucx.swap_listed, ucx.staked_at
-            FROM agg JOIN user_cards ucx ON ucx.id = agg.user_card_id
-            ORDER BY agg.last_obtained_at DESC
+            SELECT uc.id AS user_card_id, c.id AS card_id, c.filename, c.name, c.rarity,
+                   uc.listed_price, uc.swap_listed, uc.staked_at,
+                   ROW_NUMBER() OVER (PARTITION BY uc.user_id ORDER BY uc.obtained_at) AS drop_number
+            FROM user_cards uc
+            JOIN cards c ON c.id = uc.card_id
+            WHERE uc.user_id = ?
+            ORDER BY uc.obtained_at DESC
             """,
             (user_id,),
         ).fetchall()
