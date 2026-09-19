@@ -338,9 +338,9 @@
     position:absolute; bottom:6px; right:6px;
     background:var(--accent2);
     color:#1a1400;
-    font-size:9px; font-weight:800;
-    text-transform:uppercase; letter-spacing:.3px;
-    padding:3px 7px; border-radius:8px;
+    font-size:4.5px; font-weight:800;
+    text-transform:uppercase; letter-spacing:.15px;
+    padding:1.5px 3.5px; border-radius:4px;
   }
   .grid-item .profile-stake-tag{
     position:absolute; bottom:6px; right:6px;
@@ -677,27 +677,27 @@
   #history-list{flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px;}
   .history-row{
     background:var(--card-bg); border:1px solid var(--card-border); border-radius:12px;
-    padding:10px 12px 10px 0; font-size:12.5px; display:flex; gap:10px; align-items:stretch;
+    padding:10px 12px 10px 0; font-size:12.5px; display:flex; gap:10px; align-items:center;
     width:100%; max-width:100%; box-sizing:border-box; overflow:visible;
   }
   .history-row.market-history-row{padding-top:15px; padding-bottom:15px;}
-  .history-row.pvp-history-row{padding-top:28px; padding-bottom:28px;}
+  .history-row.pvp-history-row{padding-top:20px; padding-bottom:20px;}
   .history-row.pvp-history-row .info .line1{font-size:13.5px;}
   .history-row.pvp-history-row .info .line2{font-size:12px;}
   .history-row .thumbs{margin-left:-1px;}
   .history-row .thumbs img:first-child{border-top-left-radius:11px; border-bottom-left-radius:11px;}
-  .history-row .thumbs{display:flex; flex-shrink:0; align-items:stretch;}
-  .history-row .thumbs img{width:auto; height:auto; aspect-ratio:1/1; align-self:stretch; border-radius:8px; object-fit:cover; border:1px solid var(--card-border); margin-left:-10px; background:#000;}
+  .history-row .thumbs{display:flex; flex-shrink:0;}
+  .history-row .thumbs img{width:50px; height:50px; border-radius:8px; object-fit:cover; border:1px solid var(--card-border); margin-left:-14px; background:#000;}
   .history-row .thumbs img.rarity-border-bronze{border-color:#cd7f32; box-shadow:0 0 6px rgba(205,127,50,.4);}
   .history-row .thumbs img.rarity-border-silver{border-color:#9ca3af; box-shadow:0 0 6px rgba(156,163,175,.4);}
   .history-row .thumbs img.rarity-border-gold{border-color:#facc15; box-shadow:0 0 6px rgba(250,204,21,.45);}
   .history-row .thumbs img.rarity-border-platinum{border-color:#a78bfa; box-shadow:0 0 6px rgba(167,139,250,.45);}
   .history-row .thumbs img.rarity-border-diamond{border-color:#ff2fb0; box-shadow:0 0 6px rgba(255,47,176,.5);}
   .history-row .thumbs img:first-child{margin-left:0;}
-  .history-row .info{min-width:0; flex:1 1 auto; display:flex; flex-direction:column; justify-content:center;}
+  .history-row .info{min-width:0; flex:1 1 auto;}
   .history-row .info .line1{font-weight:700; white-space:normal; word-break:break-word; line-height:1.35;}
   .history-row .info .line2{color:#888; font-size:11px; margin-top:2px; white-space:normal; word-break:break-word; line-height:1.35;}
-  .history-row .price{flex-shrink:0; font-weight:800; color:var(--accent2); font-size:12px; white-space:nowrap; display:flex; align-items:center;}
+  .history-row .price{flex-shrink:0; font-weight:800; color:var(--accent2); font-size:12px; white-space:nowrap;}
 
   /* ---------- PvP rules modal ---------- */
   #pvp-rules-overlay{
@@ -1283,10 +1283,10 @@
   </main>
 
   <nav>
-    <button class="nav-btn active" data-screen="farm-screen"><img class="icon-img" src="/static/icons/farm.png" alt="">Фарм</button>
+    <button class="nav-btn" data-screen="farm-screen"><img class="icon-img" src="/static/icons/farm.png" alt="">Фарм</button>
     <button class="nav-btn" data-screen="pvp-screen"><img class="icon-img" src="/static/icons/swords.png" alt="">PvP</button>
     <button class="nav-btn" data-screen="market-screen"><img class="icon-img" src="/static/icons/cage.png" alt="">Рынок</button>
-    <button class="nav-btn" data-screen="profile-screen"><img class="icon-img" src="/static/icons/profile_red.png" alt="">Профиль</button>
+    <button class="nav-btn active" data-screen="profile-screen"><img class="icon-img" src="/static/icons/profile_red.png" alt="">Профиль</button>
   </nav>
 
   <div id="welcome-overlay">
@@ -1551,6 +1551,7 @@ document.addEventListener("click", (e)=>{
 
 const API_BASE = "/api";
 const FARM_COST_GEMS = 25;
+const MIN_LISTING_PRICE_GEMS = 20; // mirrors database.py's MIN_LISTING_PRICE_GEMS
 let initData = tg?.initData || "";
 let inventory = [];
 let selectedUserCardId = null;
@@ -1662,7 +1663,9 @@ function switchScreen(screenId){
 document.querySelectorAll(".nav-btn").forEach(btn=>{
   btn.addEventListener("click", ()=>switchScreen(btn.dataset.screen));
 });
-document.getElementById("farm-screen").classList.add("active");
+document.querySelector('.nav-btn[data-screen="profile-screen"]').classList.add("active");
+document.getElementById("profile-screen").classList.add("active");
+loadProfile();
 
 // ---------- Farm ----------
 async function loadStats(){
@@ -2059,13 +2062,23 @@ function openMarketItem(ucId, mode){
         }catch(e){ toast("Не получилось купить: " + e.message); }
       });
       document.getElementById("mi-offer").addEventListener("click", async ()=>{
-        const price = await promptNumber("Сколько гемов предложить?");
+        const price = await promptNumber(`Сколько гемов предложить (минимум ${MIN_LISTING_PRICE_GEMS})`);
         if(!price) return;
+        if(price < MIN_LISTING_PRICE_GEMS){
+          toast(`Минимальная цена — ${MIN_LISTING_PRICE_GEMS} гемов`);
+          return;
+        }
         try{
           await api("/market/offer", { user_card_id: ucId, price_gems: price });
           toast("Предложение отправлено продавцу");
           closeMarketItem();
-        }catch(e){ toast("Не получилось: " + e.message); }
+        }catch(e){
+          if(String(e.message).includes("minimum price")){
+            toast(`Минимальная цена — ${MIN_LISTING_PRICE_GEMS} гемов`);
+          }else{
+            toast("Не получилось: " + e.message);
+          }
+        }
       });
     }
   }else{
@@ -2979,9 +2992,17 @@ document.getElementById("modal-share").addEventListener("click", async ()=>{
   }
 });
 
+const TRANSFER_FEE_GEMS = 3;
 document.getElementById("modal-give").addEventListener("click", async ()=>{
+  const currentGems = parseInt(document.getElementById("gems-amount").textContent, 10) || 0;
+  if(currentGems < TRANSFER_FEE_GEMS){
+    toastHTML(`Не хватает гемов — передача стоит ${TRANSFER_FEE_GEMS} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
+    return;
+  }
   const username = await promptText("Username друга (без @)", "username");
   if(!username) return;
+  const giveConfirmed = await confirmAction(`Передача карты стоит ${TRANSFER_FEE_GEMS} гемов. Продолжить?`);
+  if(!giveConfirmed) return;
   try{
     const res = await api("/transfer/to_username", { user_card_id: selectedUserCardId, username });
     toast(`Подарено пользователю @${res.to_name}!`);
@@ -2990,6 +3011,10 @@ document.getElementById("modal-give").addEventListener("click", async ()=>{
   }catch(e){
     if(e.message.includes("ещё не запускал бота")){
       showAlert("Юзера ещё нет в боте — пригласите его сначала!");
+    }else if(e.message.includes("not enough gems")){
+      toastHTML(`Не хватает гемов — передача стоит ${TRANSFER_FEE_GEMS} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
+    }else if(e.message.includes("busy")){
+      toast("Сначала снимите карту с продажи/обмена/стейкинга/PvP");
     }else{
       toast("Не удалось передать: " + e.message);
     }
@@ -3012,8 +3037,12 @@ document.getElementById("modal-sell").addEventListener("click", async ()=>{
       toast("Не получилось: " + e.message);
     }
   }else{
-    const price = await promptNumber("Цена в гемах");
+    const price = await promptNumber(`Цена в гемах (минимум ${MIN_LISTING_PRICE_GEMS})`);
     if(!price) return;
+    if(price < MIN_LISTING_PRICE_GEMS){
+      toast(`Минимальная цена — ${MIN_LISTING_PRICE_GEMS} гемов`);
+      return;
+    }
     try{
       await api("/market/list", { user_card_id: selectedUserCardId, price_gems: price });
       selectedItem.listed_price = price;
@@ -3021,7 +3050,11 @@ document.getElementById("modal-sell").addEventListener("click", async ()=>{
       toast("Выставлено на рынок!");
       document.getElementById("modal-overlay").classList.remove("active");
     }catch(e){
-      toast("Не получилось выставить: " + e.message);
+      if(String(e.message).includes("minimum price")){
+        toast(`Минимальная цена — ${MIN_LISTING_PRICE_GEMS} гемов`);
+      }else{
+        toast("Не получилось выставить: " + e.message);
+      }
     }
   }
 });
@@ -3081,7 +3114,12 @@ document.getElementById("modal-stake").addEventListener("click", async ()=>{
       toastHTML(`Не хватает гемов — нужно ${fee} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
       return;
     }
-    const stakeConfirmed = await confirmAction(`Стейкинг стоит ${fee} гемов. Продолжить?`);
+    const rateLines = Object.entries(STAKE_DAILY_RATES)
+      .map(([rarity, rate]) => `${rarity[0].toUpperCase()}${rarity.slice(1)}: ${rate} гемов/сутки`)
+      .join("\n");
+    const stakeConfirmed = await confirmAction(
+      `Стейкинг этой карты стоит ${fee} гемов.\nДоход: ${fee} гемов в сутки.\n\nСтавки по редкости:\n${rateLines}\n\nПродолжить?`
+    );
     if(!stakeConfirmed) return;
     try{
       const res = await api("/stake/list", { user_card_id: selectedUserCardId });
@@ -3103,16 +3141,22 @@ document.getElementById("modal-stake").addEventListener("click", async ()=>{
 
 const CRAFT_COST_GEMS = 25;
 // Mirrors database.py's CRAFT_WEIGHTS — client-side copy for the chance-hint display only.
+// Mirrors database.py's CRAFT_WEIGHTS — crafting never produces a tier BELOW the one
+// burned, so each row only lists tiers same-or-higher (burn Gold, only Gold/Platinum/
+// Diamond are possible).
 const CRAFT_CHANCES = {
-  bronze:  { bronze: 50, silver: 35, gold: 12, platinum: 2.5, diamond: 0.5 },
-  silver:  { bronze: 20, silver: 45, gold: 27, platinum: 6,   diamond: 2 },
-  gold:    { bronze: 5,  silver: 20, gold: 45, platinum: 22,  diamond: 8 },
-  platinum: { bronze: 1,  silver: 5,  gold: 24, platinum: 50,  diamond: 20 },
+  bronze:   { bronze: 50, silver: 35, gold: 12, platinum: 2.5, diamond: 0.5 },
+  silver:   { silver: 55, gold: 35, platinum: 8, diamond: 2 },
+  gold:     { gold: 55, platinum: 35, diamond: 10 },
+  platinum: { platinum: 65, diamond: 35 },
 };
 function craftHintHTML(rarity){
   const t = CRAFT_CHANCES[rarity] || CRAFT_CHANCES.bronze;
   const fmt = (v) => (v % 1 === 0 ? v : v.toFixed(1));
-  return `<span class="diamond">DIAMOND ${fmt(t.diamond)}%</span> · <span class="platinum">PLATINUM ${fmt(t.platinum)}%</span> · <span class="gold">GOLD ${fmt(t.gold)}%</span><br><span class="silver">SILVER ${fmt(t.silver)}%</span> · <span class="bronze">BRONZE ${fmt(t.bronze)}%</span>`;
+  const parts = ["diamond", "platinum", "gold", "silver", "bronze"]
+    .filter(r => t[r] !== undefined)
+    .map(r => `<span class="${r}">${r.toUpperCase()} ${fmt(t[r])}%</span>`);
+  return parts.length > 3 ? parts.slice(0,3).join(" · ") + "<br>" + parts.slice(3).join(" · ") : parts.join(" · ");
 }
 document.getElementById("modal-craft").addEventListener("click", async ()=>{
   if(!selectedItem) return;
@@ -3129,7 +3173,15 @@ document.getElementById("modal-craft").addEventListener("click", async ()=>{
     toastHTML(`Не хватает гемов — нужно ${CRAFT_COST_GEMS} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
     return;
   }
-  const craftConfirmed = await confirmAction(`Крафт стоит ${CRAFT_COST_GEMS} гемов, карта будет уничтожена. Продолжить?`);
+  const craftRarityLabel = (r) => r ? r[0].toUpperCase() + r.slice(1) : "Bronze";
+  const craftChances = CRAFT_CHANCES[selectedItem.rarity] || CRAFT_CHANCES.bronze;
+  const craftChanceLines = ["diamond", "platinum", "gold", "silver", "bronze"]
+    .filter(r => craftChances[r] !== undefined)
+    .map(r => `${craftRarityLabel(r)}: ${craftChances[r] % 1 === 0 ? craftChances[r] : craftChances[r].toFixed(1)}%`)
+    .join("\n");
+  const craftConfirmed = await confirmAction(
+    `Крафт стоит ${CRAFT_COST_GEMS} гемов, карта (${craftRarityLabel(selectedItem.rarity)}) будет уничтожена.\n\nШансы получить:\n${craftChanceLines}\n\nПродолжить?`
+  );
   if(!craftConfirmed) return;
 
   const craftUserCardId = selectedUserCardId;

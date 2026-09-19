@@ -280,9 +280,12 @@ async def transfer_to_username(body: TransferToUsernameBody):
     if target["telegram_id"] == user["telegram_id"]:
         raise HTTPException(400, "нельзя подарить самому себе")
 
-    result = db.transfer_card_to(body.user_card_id, user["telegram_id"], target["telegram_id"])
+    try:
+        result = db.transfer_card_to(body.user_card_id, user["telegram_id"], target["telegram_id"])
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
     if result is None:
-        raise HTTPException(404, "card not found in your inventory")
+        raise HTTPException(404, "card not found in your inventory, or it's busy (listed/staked/in a round)")
 
     import bot as bot_module
 
@@ -331,8 +334,8 @@ def market_listings(body: InitDataBody):
 @app.post("/api/market/list")
 def market_list(body: ListBody):
     user = _authenticate(body.initData)
-    if body.price_gems <= 0:
-        raise HTTPException(400, "price must be positive")
+    if body.price_gems < db.MIN_LISTING_PRICE_GEMS:
+        raise HTTPException(400, f"minimum price is {db.MIN_LISTING_PRICE_GEMS} gems")
     ok = db.list_card(body.user_card_id, user["telegram_id"], body.price_gems)
     if not ok:
         raise HTTPException(404, "card not found in your inventory")
@@ -365,8 +368,8 @@ async def market_buy(body: BuyBody):
 @app.post("/api/market/offer")
 async def market_offer(body: OfferBody):
     user = _authenticate(body.initData)
-    if body.price_gems <= 0:
-        raise HTTPException(400, "price must be positive")
+    if body.price_gems < db.MIN_LISTING_PRICE_GEMS:
+        raise HTTPException(400, f"minimum price is {db.MIN_LISTING_PRICE_GEMS} gems")
     result = db.make_offer(body.user_card_id, user["telegram_id"], body.price_gems)
     if result is None:
         raise HTTPException(400, "listing unavailable")

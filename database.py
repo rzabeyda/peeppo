@@ -481,15 +481,20 @@ def farm(user_id: int) -> dict | None:
 
 
 CRAFT_COST_GEMS = 25
+TRANSFER_FEE_GEMS = 3  # charged to the sender for a direct @username gift
+MIN_LISTING_PRICE_GEMS = 20  # floor for both a market listing price and a buyer's offer
 
 # Craft: burn one owned card + CRAFT_COST_GEMS gems for one new random card. Odds depend on
 # the tier of the card being burned — burning a higher tier gives much better odds at another
 # high tier (mirrors most collector-game "upgrade" mechanics). Each row must sum to 100.
 CRAFT_WEIGHTS = {
-    "bronze":  {"bronze": 50, "silver": 35, "gold": 12, "platinum": 2.5, "diamond": 0.5},
-    "silver":  {"bronze": 20, "silver": 45, "gold": 27, "platinum": 6,   "diamond": 2},
-    "gold":    {"bronze": 5,  "silver": 20, "gold": 45, "platinum": 22,  "diamond": 8},
-    "platinum": {"bronze": 1,  "silver": 5,  "gold": 24, "platinum": 50,  "diamond": 20},
+    # Crafting never produces a tier BELOW the one burned — only same-tier-or-higher is
+    # possible (burn Gold, get Gold/Platinum/Diamond only, never Bronze/Silver). Each row
+    # only lists the tiers it can actually produce and must sum to 100.
+    "bronze":   {"bronze": 50, "silver": 35, "gold": 12, "platinum": 2.5, "diamond": 0.5},
+    "silver":   {"silver": 55, "gold": 35, "platinum": 8, "diamond": 2},
+    "gold":     {"gold": 55, "platinum": 35, "diamond": 10},
+    "platinum": {"platinum": 65, "diamond": 35},
     # No "diamond" entry — Diamond is the top tier already, it can't be crafted away
     # (see the check in craft_card() below, which raises CraftNotAllowed for it).
 }
@@ -516,7 +521,9 @@ def draw_card_for_craft(input_rarity: str) -> sqlite3.Row | None:
         for r in rows:
             by_rarity.setdefault(r["rarity"] or "silver", []).append(r)
         tiers = list(by_rarity.keys())
-        weights = [weights_for_tier.get(t, 0.1) for t in tiers]
+        # 0 (not 0.1) for any tier missing from this input tier's row — that's exactly
+        # how lower tiers get excluded now that each row only lists same-or-higher tiers.
+        weights = [weights_for_tier.get(t, 0) for t in tiers]
         chosen_tier = random.choices(tiers, weights=weights, k=1)[0]
         return random.choice(by_rarity[chosen_tier])
 
@@ -550,12 +557,18 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
 
     with get_conn() as conn:
         conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (CRAFT_COST_GEMS, user_id))
-        conn.execute("DELETE FROM user_cards WHERE id = ?", (user_card_id,))
-        cur = conn.execute(
-            "INSERT INTO user_cards (user_id, card_id, obtained_at) VALUES (?, ?, ?)",
-            (user_id, new_card["id"], owned["obtained_at"]),
+        # Reuse the same user_cards row (swap its card_id in place) instead of deleting it
+        # and inserting a fresh one. market_offers, swap_offers, swap_offer_cards, and
+        # pvp_entries all carry a FOREIGN KEY on user_cards.id for history purposes, so a
+        # card that had ever been offered, swapped, or staked in the past (even in a long-
+        # finished deal) made the old DELETE blow up with "FOREIGN KEY constraint failed" —
+        # updating in place keeps the same id (every old reference stays valid) while still
+        # fully replacing which card it is.
+        conn.execute(
+            "UPDATE user_cards SET card_id = ?, listed_price = NULL, swap_listed = 0, staked_at = NULL, pvp_round_id = NULL WHERE id = ?",
+            (new_card["id"], user_card_id),
         )
-        new_user_card_id = cur.lastrowid
+        new_user_card_id = user_card_id
         # Global drop number — same rule as farm(): position among ALL cards ever
         # farmed/crafted by ANY user, not just this user's own collection.
         drop_number = conn.execute(
@@ -851,7 +864,7 @@ def list_card(user_card_id: int, seller_id: int, price_gems: int) -> bool:
     Blocked while that same copy is already listed for swap — a card can only be in one
     kind of lot at a time (list_for_swap enforces the same rule in the other direction).
     Also blocked while the copy is staked — it has to be pulled out of staking first."""
-    if price_gems <= 0:
+    if price_gems < MIN_LISTING_PRICE_GEMS:
         return False
     with get_conn() as conn:
         row = conn.execute(
@@ -938,7 +951,7 @@ def make_offer(user_card_id: int, buyer_id: int, price_gems: int) -> dict | None
     """Buyer proposes their own price on a listed card. Seller must accept it (via bot DM)
     before anything changes hands. Returns offer + card/seller info for the notification,
     or None if the listing doesn't exist / isn't for sale / buyer == seller."""
-    if price_gems <= 0:
+    if price_gems < MIN_LISTING_PRICE_GEMS:
         return None
     with get_conn() as conn:
         row = conn.execute(
@@ -1319,14 +1332,16 @@ def find_user_by_username(username: str) -> sqlite3.Row | None:
 
 def transfer_card_to(user_card_id: int, from_user_id: int, to_user_id: int) -> dict | None:
     """Direct gift by username — no claim link needed since we already know the recipient.
-    Returns {filename, name} on success, or None if the sender doesn't own the card or is
-    trying to gift it to themselves."""
+    Charges the sender TRANSFER_FEE_GEMS gems upfront. Returns {filename, name} on success,
+    or None if the sender doesn't own the card, is trying to gift it to themselves, or the
+    card is currently busy (listed for sale/swap, staked, or in a PvP round). Raises
+    InsufficientGems if the sender can't cover the fee."""
     if from_user_id == to_user_id:
         return None
     with get_conn() as conn:
         row = conn.execute(
             """
-            SELECT uc.user_id, c.filename, c.name
+            SELECT uc.user_id, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, c.filename, c.name
             FROM user_cards uc JOIN cards c ON c.id = uc.card_id
             WHERE uc.id = ?
             """,
@@ -1334,6 +1349,12 @@ def transfer_card_to(user_card_id: int, from_user_id: int, to_user_id: int) -> d
         ).fetchone()
         if row is None or row["user_id"] != from_user_id:
             return None
+        if row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None or row["pvp_round_id"] is not None:
+            return None
+        gems_row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (from_user_id,)).fetchone()
+        if gems_row is None or gems_row["gems"] < TRANSFER_FEE_GEMS:
+            raise InsufficientGems()
+        conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (TRANSFER_FEE_GEMS, from_user_id))
         conn.execute(
             "UPDATE user_cards SET user_id = ?, listed_price = NULL, transfer_pending = 0 WHERE id = ?",
             (to_user_id, user_card_id),
