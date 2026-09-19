@@ -17,8 +17,11 @@ same pattern as the other bots on this server.
 import asyncio
 import logging
 import os
+import random
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
@@ -45,6 +48,8 @@ _split = urlsplit(WEBAPP_URL)
 WEBAPP_ORIGIN = f"{_split.scheme}://{_split.netloc}"  # WEBAPP_URL minus any ?query — safe to append /static/... to
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "Peeppobot")  # no leading @
 ADMIN_ID = os.environ.get("ADMIN_ID")  # your own telegram_id — set in .env to get "new user" pings
+PUBLIC_CHAT = os.environ.get("PUBLIC_CHAT_USERNAME", "@peeppo_chat")  # public chat: PvP stakes + admin /gem drops
+CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "@peeppo_channel")  # channel: admin /giveaway posts
 STATIC_CARDS_DIR = Path(__file__).parent / "static" / "cards"
 
 logging.basicConfig(level=logging.INFO)
@@ -57,6 +62,9 @@ dp = Dispatcher()
 def _open_button():
     kb = InlineKeyboardBuilder()
     kb.button(text="Фармить", web_app=WebAppInfo(url=WEBAPP_URL))
+    kb.button(text="Чат", url="https://t.me/peeppo_chat")
+    kb.button(text="Канал", url="https://t.me/peeppo_channel")
+    kb.adjust(1, 2)  # "Фармить" on its own row, "Чат"/"Канал" side by side below it
     return kb.as_markup()
 
 
@@ -79,11 +87,28 @@ async def handle_start(message: Message):
         ref_by=ref_by,
     )
     if is_new:
-        await notify_admin_new_user(message.from_user)
-        if user_row["ref_by"]:
-            referral_count = db.get_referral_count(user_row["ref_by"])
-            rewarded = referral_count <= db.MAX_REWARDED_REFERRALS
-            await notify_referral_reward(user_row["ref_by"], message.from_user, rewarded)
+        referrer_row = db.get_user(user_row["ref_by"]) if user_row["ref_by"] else None
+        await notify_admin_new_user(message.from_user, referrer_row)
+        # No more "joined via your link" / "earned 25 gems" bot DMs — the referrer
+        # now sees the reward as an in-app popup on their own next visit instead
+        # (see db.set_referral_notice / /api/auth's referral_reward_notice).
+        await check_hundred_club()
+
+    if payload.startswith("giveaway"):
+        try:
+            giveaway_id = int(payload[len("giveaway"):])
+        except ValueError:
+            giveaway_id = None
+        if giveaway_id is not None:
+            status = db.join_giveaway(giveaway_id, message.from_user.id)
+            if status == "joined":
+                await message.answer("✅ Ты в розыгрыше! Итоги подведём в канале — следи за постом.")
+            elif status == "already_joined":
+                await message.answer("Ты уже участвуешь в этом розыгрыше 👍")
+            elif status == "drawn":
+                await message.answer("Этот розыгрыш уже завершён.")
+        # falls through to the normal welcome below, same as a referral link —
+        # the whole point is onboarding them into the game too, not just the entry.
 
     if payload.startswith("claim"):
         await _handle_claim(message, payload)
@@ -100,29 +125,24 @@ async def handle_start(message: Message):
     )
 
 
-async def notify_admin_new_user(tg_user):
-    """Best-effort ping to you (ADMIN_ID in .env) whenever someone brand new starts the bot."""
+async def notify_admin_new_user(tg_user, referrer_row=None):
+    """Best-effort ping to you (ADMIN_ID in .env) whenever someone brand new starts the
+    bot — names who invited them too, when they came via a referral link."""
     if not ADMIN_ID:
         return
     who = f"@{tg_user.username}" if tg_user.username else (tg_user.first_name or str(tg_user.id))
+    if referrer_row is not None:
+        ref_who = (
+            f"@{referrer_row['username']}" if referrer_row["username"]
+            else (referrer_row["first_name"] or str(referrer_row["telegram_id"]))
+        )
+        text = f"{ref_who} привёл {who}"
+    else:
+        text = f"Новый юзер {who}"
     try:
-        await bot.send_message(int(ADMIN_ID), f"Новый юзер {who}")
+        await bot.send_message(int(ADMIN_ID), text)
     except Exception:
         logger.warning("could not notify admin of new user %s", tg_user.id)
-
-
-async def notify_referral_reward(referrer_id: int, new_tg_user, rewarded: bool):
-    """Tells the referrer someone joined via their link — with the gem bonus only while
-    they're still under db.MAX_REWARDED_REFERRALS invites."""
-    who = f"@{new_tg_user.username}" if new_tg_user.username else (new_tg_user.first_name or "Новый игрок")
-    if rewarded:
-        text = f"{who} присоединился по твоей ссылке! +{db.REFERRAL_REWARD_GEMS} 💎 на баланс"
-    else:
-        text = f"{who} присоединился по твоей ссылке! Бонус за рефералов уже исчерпан (макс. {db.MAX_REWARDED_REFERRALS}), гемы в этот раз не начислены"
-    try:
-        await bot.send_message(referrer_id, text)
-    except Exception:
-        logger.warning("could not notify referrer %s of reward", referrer_id)
 
 
 # ---------------------------------------------------------------------------
@@ -152,12 +172,7 @@ async def handle_admin_panel(message: Message):
         "👑 <b>Админ-панель Peeppo</b>\n\n"
         f"Юзеров: <b>{stats['users']}</b>\n"
         f"Карточек в каталоге: <b>{stats['cards']}</b>\n"
-        f"Всего сфармлено: <b>{stats['total_farmed']}</b>\n"
-        f"Гемов в обороте: <b>{stats['gems_total']}</b> 💎\n\n"
-        "Команды:\n"
-        "/addgem id_или_@username количество — начислить (или списать отрицательным числом) гемы\n"
-        "/givecard id_или_@username card_id — выдать карточку по её ID из каталога\n"
-        "/finduser username — найти telegram_id и баланс по юзернейму",
+        f"Гемов в обороте: <b>{stats['gems_total']}</b> 💎",
         parse_mode="HTML",
     )
 
@@ -228,6 +243,210 @@ async def handle_admin_find_user(message: Message):
         f"гемов: {user['gems']}",
         parse_mode="HTML",
     )
+
+
+GEM_DROP_AMOUNT = 25
+
+# Auto-scheduler: fires roughly once an hour, only between 06:00 and 22:00 Tallinn
+# local time. GEM_DROP_MIN_GAP_SECONDS guards against firing a second drop too soon
+# if the bot process restarts a few times in a row (e.g. during a deploy).
+GEM_DROP_TZ = ZoneInfo("Europe/Tallinn")
+GEM_DROP_START_HOUR = 6
+GEM_DROP_END_HOUR = 22
+GEM_DROP_INTERVAL_SECONDS = 3600
+GEM_DROP_MIN_GAP_SECONDS = 1800
+
+
+async def _post_gem_drop(amount: int = GEM_DROP_AMOUNT) -> bool:
+    """Creates a gem drop and posts the "Забрать" button into PUBLIC_CHAT. Shared by
+    the manual /gem command and the automatic hourly scheduler."""
+    drop_id = db.create_gem_drop(amount)
+    kb = InlineKeyboardBuilder()
+    kb.button(text="Забрать", callback_data=f"gem_claim:{drop_id}")
+    try:
+        await bot.send_message(
+            PUBLIC_CHAT,
+            f"💎 Дроп {amount} гемов! Кто первый нажмёт «Забрать» — тому и достанется.",
+            reply_markup=kb.as_markup(),
+        )
+        return True
+    except Exception:
+        logger.warning("could not post gem drop to %s", PUBLIC_CHAT)
+        return False
+
+
+@dp.message(Command("gem"))
+async def handle_admin_gem_drop(message: Message):
+    """Admin-only: posts a first-come-first-served gem drop with a "Забрать" button
+    into PUBLIC_CHAT, no matter which chat (including a private DM) the admin typed
+    /gem from."""
+    if not _is_admin(message.from_user.id):
+        return
+    ok = await _post_gem_drop()
+    if not ok:
+        await message.answer(f"Не удалось отправить дроп в {PUBLIC_CHAT} — бот точно там состоит?")
+
+
+async def gem_drop_scheduler():
+    """Background loop living for the lifetime of the bot process: roughly once an
+    hour, checks whether it's currently 06:00-22:00 in Tallinn and — if no drop went
+    out too recently — posts an automatic 25-gem drop into PUBLIC_CHAT."""
+    logger.info("gem drop scheduler started (06:00-22:00 Europe/Tallinn, ~hourly)")
+    while True:
+        try:
+            now_local = datetime.now(GEM_DROP_TZ)
+            if GEM_DROP_START_HOUR <= now_local.hour < GEM_DROP_END_HOUR:
+                last = db.get_last_gem_drop_time()
+                due = True
+                if last:
+                    last_dt = datetime.fromisoformat(last)
+                    due = (datetime.now(timezone.utc) - last_dt).total_seconds() >= GEM_DROP_MIN_GAP_SECONDS
+                if due:
+                    ok = await _post_gem_drop()
+                    if ok:
+                        logger.info("auto gem drop posted at %s Tallinn time", now_local.strftime("%H:%M"))
+        except Exception:
+            logger.exception("gem drop scheduler iteration failed")
+        await asyncio.sleep(GEM_DROP_INTERVAL_SECONDS + random.randint(-180, 180))
+
+
+@dp.callback_query(F.data.startswith("gem_claim:"))
+async def handle_gem_claim(call: CallbackQuery):
+    drop_id = int(call.data.split(":")[1])
+    # Register the claimer even if they've never DM'd the bot before — anyone in the
+    # group chat can tap "Забрать", not just people who already opened the webapp.
+    db.get_or_create_user(
+        telegram_id=call.from_user.id,
+        username=call.from_user.username,
+        first_name=call.from_user.first_name,
+        ref_by=None,
+    )
+    result = db.claim_gem_drop(drop_id, call.from_user.id)
+    if result["ok"]:
+        who = f"@{call.from_user.username}" if call.from_user.username else (call.from_user.first_name or "игрок")
+        try:
+            await call.message.edit_text(f"✅ Дроп {result['amount']} 💎 забрал(а) {who}")
+        except Exception:
+            logger.warning("could not edit gem drop message %s after claim", drop_id)
+        await call.answer(f"Тебе начислено {result['amount']} 💎!", show_alert=True)
+    elif result["claimed_by_name"]:
+        await call.answer(f"Уже забрал(а) {result['claimed_by_name']}", show_alert=True)
+    else:
+        await call.answer("Дроп больше не активен", show_alert=True)
+
+
+# ---------------------------------------------------------------------------
+# Channel giveaways: /giveaway [гемов] [победителей] [часов] (admin-only, all args
+# optional — defaults 200/10/24) posts a "Розыгрыш" into CHANNEL_USERNAME with a
+# deep-link "Участвовать" button (?start=giveaway<id>). Anyone who taps it and opens
+# the bot is entered — new player or existing, doesn't matter. After the given number
+# of hours, giveaway_scheduler auto-draws winners_count random entrants and edits
+# that same channel post with the results.
+# ---------------------------------------------------------------------------
+
+def _format_hours(hours: float) -> str:
+    if float(hours).is_integer():
+        return f"{int(hours)} ч."
+    return f"{hours:g} ч."
+
+
+@dp.message(Command("giveaway"))
+async def handle_admin_giveaway(message: Message):
+    if not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    amount, winners_count, hours = 200, 10, 24.0
+    try:
+        if len(parts) > 1:
+            amount = int(parts[1])
+        if len(parts) > 2:
+            winners_count = int(parts[2])
+        if len(parts) > 3:
+            hours = float(parts[3])
+    except ValueError:
+        await message.answer("Формат: /giveaway [гемов] [победителей] [часов], например /giveaway 200 10 24")
+        return
+
+    giveaway_id = db.create_giveaway(amount, winners_count, hours)
+    link = f"https://t.me/{BOT_USERNAME}?start=giveaway{giveaway_id}"
+    kb = InlineKeyboardBuilder()
+    kb.button(text="Участвовать", url=link)
+    text = (
+        f"🎉 Розыгрыш!\n\n"
+        f"{winners_count} игроков получат по {amount} 💎 каждый.\n"
+        f"Жми «Участвовать» — итоги подведём тут же через {_format_hours(hours)}."
+    )
+    try:
+        sent = await bot.send_message(CHANNEL_USERNAME, text, reply_markup=kb.as_markup())
+    except Exception:
+        await message.answer(f"Не удалось опубликовать в {CHANNEL_USERNAME} — бот точно там админ?")
+        return
+    db.set_giveaway_message(giveaway_id, sent.message_id)
+    await message.answer(f"Розыгрыш #{giveaway_id} опубликован в {CHANNEL_USERNAME}. Итоги через {_format_hours(hours)}.")
+
+
+async def _announce_giveaway_result(giveaway: dict, result: dict):
+    winners = result["winners"]
+    if winners:
+        names = ", ".join(
+            (f"@{w['username']}" if w["username"] else (w["first_name"] or str(w["telegram_id"])))
+            for w in winners
+        )
+        text = (
+            f"🎉 Розыгрыш завершён!\n\n"
+            f"Участников: {result['total_entries']}\n"
+            f"Победители (+{result['amount']} 💎 каждому): {names}"
+        )
+    else:
+        text = "🎉 Розыгрыш завершён — участников не набралось, увы. Ждите следующий!"
+    try:
+        if giveaway.get("message_id"):
+            await bot.edit_message_text(chat_id=CHANNEL_USERNAME, message_id=giveaway["message_id"], text=text)
+        else:
+            await bot.send_message(CHANNEL_USERNAME, text)
+    except Exception:
+        logger.warning("could not announce giveaway %s result", giveaway["id"])
+
+
+async def giveaway_scheduler():
+    """Background loop living for the lifetime of the bot process: every few minutes,
+    checks for giveaways whose draw time has passed and draws them."""
+    logger.info("giveaway scheduler started")
+    while True:
+        try:
+            for giveaway in db.get_due_giveaways():
+                result = db.draw_giveaway(giveaway["id"])
+                await _announce_giveaway_result(giveaway, result)
+        except Exception:
+            logger.exception("giveaway scheduler iteration failed")
+        await asyncio.sleep(300)
+
+
+async def check_hundred_club():
+    """Fires (at most once, ever) the "hundred club" contest the moment there are
+    HUNDRED_CLUB_SIZE registered players: draws 10 random winners from the first 100
+    and announces the result in PUBLIC_CHAT. Cheap and idempotent — safe to call on
+    every new registration and on every bot startup."""
+    try:
+        result = db.maybe_run_hundred_club_contest()
+    except Exception:
+        logger.exception("hundred club check failed")
+        return
+    if result is None:
+        return
+    names = ", ".join(
+        (f"@{w['username']}" if w["username"] else (w["first_name"] or str(w["telegram_id"])))
+        for w in result["winners"]
+    )
+    text = (
+        f"🎊 Нас стало {result['total_entrants']}!\n\n"
+        f"Конкурс среди первых {result['total_entrants']} игроков подведён — "
+        f"победители (+{result['amount']} 💎 каждому): {names}"
+    )
+    try:
+        await bot.send_message(PUBLIC_CHAT, text)
+    except Exception:
+        logger.warning("could not announce hundred club contest result")
 
 
 async def _handle_claim(message: Message, payload: str):
@@ -483,9 +702,24 @@ async def handle_inline_share(inline_query: InlineQuery):
         logger.warning("could not answer inline share query for card %s", user_card_id)
 
 
+async def notify_pvp_chat_join(who_name: str, cards_count: int):
+    """Pings the public PvP chat only when someone opens a brand-new round (the
+    first stake in it) — pinging on every single stake afterward was too noisy.
+    Best-effort — the bot must already be a member of PUBLIC_CHAT for this to work."""
+    cards_word = "карту" if cards_count == 1 else "карт(ы)"
+    text = f"🎴 {who_name} открыл(а) новый раунд PvP, поставив {cards_count} {cards_word}! Успей присоединиться."
+    try:
+        await bot.send_message(PUBLIC_CHAT, text)
+    except Exception:
+        logger.warning("could not notify %s of a new PvP round", PUBLIC_CHAT)
+
+
 async def main():
     db.init_db()
     logger.info("Peeppo bot starting (polling)...")
+    await check_hundred_club()  # in case we already had 100+ users before this deploy
+    asyncio.create_task(gem_drop_scheduler())
+    asyncio.create_task(giveaway_scheduler())
     await dp.start_polling(bot)
 
 

@@ -154,9 +154,17 @@ class StakeBody(InitDataBody):
     user_card_id: int
 
 
+class CraftBody(InitDataBody):
+    user_card_id: int
+
+
 class SwapOfferBody(InitDataBody):
     user_card_id: int
     offered_user_card_ids: list[int]
+
+
+class PvpJoinBody(InitDataBody):
+    user_card_ids: list[int]
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +184,12 @@ def auth(body: InitDataBody):
         "gems": db.get_gems(user["telegram_id"]),
         "is_new": user["_is_new"],
         "daily_bonus": daily_bonus,
+        # In-app "you earned 25 gems for a referral" popup — read-once, replaces the
+        # old bot-DM notification (see db.set_referral_notice / /api/farm below).
+        "referral_reward_notice": db.get_and_clear_referral_notice(user["telegram_id"]),
+        # Whether today's (UTC) fortune-wheel spin is still unused — the frontend
+        # shows the wheel overlay and calls /api/wheel/spin itself when this is true.
+        "wheel_available": db.wheel_available(user["telegram_id"]),
     }
 
 
@@ -199,7 +213,7 @@ def leaderboard():
 
 
 @app.post("/api/farm")
-def farm(body: InitDataBody):
+async def farm(body: InitDataBody):
     user = _authenticate(body.initData)
     try:
         result = db.farm(user["telegram_id"])
@@ -207,11 +221,17 @@ def farm(body: InitDataBody):
         raise HTTPException(400, "not enough gems")
     if result is None:
         raise HTTPException(503, "card catalog is empty — add images first")
-    # drop_number is per-user (how many cards this player has ever farmed), so wiping a
-    # player's inventory naturally restarts their next drops at 1, 2, 3...
+    # drop_number is now global (position among every card ever farmed/crafted by
+    # anyone), not per-user — see database.py's get_inventory()/farm() docstrings.
     result["farm_number"] = result["drop_number"]
     result["total_farmed"] = db.get_total_farmed()
     result["gems"] = db.get_gems(user["telegram_id"])
+
+    referral_reward = result.pop("referral_reward", None)
+    if referral_reward:
+        who_name = f"@{user['username']}" if user.get("username") else (user.get("first_name") or "Реферал")
+        db.set_referral_notice(referral_reward["referrer_id"], who_name)
+
     return result
 
 
@@ -394,13 +414,31 @@ def swap_unlist(body: SwapListBody):
     return {"ok": True}
 
 
+@app.post("/api/craft")
+def craft(body: CraftBody):
+    user = _authenticate(body.initData)
+    try:
+        result = db.craft_card(user["telegram_id"], body.user_card_id)
+    except db.CraftNotOwned:
+        raise HTTPException(404, "card not found in your inventory")
+    except db.CraftNotAllowed:
+        raise HTTPException(400, "diamond cards can't be crafted")
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
+    result["gems"] = db.get_gems(user["telegram_id"])
+    return result
+
+
 @app.post("/api/stake/list")
 def stake_list(body: StakeBody):
     user = _authenticate(body.initData)
-    ok = db.stake_card(body.user_card_id, user["telegram_id"])
+    try:
+        ok = db.stake_card(body.user_card_id, user["telegram_id"])
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
     if not ok:
         raise HTTPException(400, "card not found in your inventory, or already staked/listed for sale or swap")
-    return {"ok": True}
+    return {"ok": True, "gems": db.get_gems(user["telegram_id"])}
 
 
 @app.post("/api/stake/unstake")
@@ -409,7 +447,7 @@ def stake_unstake(body: StakeBody):
     ok = db.unstake_card(body.user_card_id, user["telegram_id"])
     if not ok:
         raise HTTPException(404, "card isn't staked")
-    return {"ok": True}
+    return {"ok": True, "gems": db.get_gems(user["telegram_id"])}
 
 
 @app.post("/api/swap/offer")
@@ -430,3 +468,65 @@ async def swap_offer(body: SwapOfferBody):
         result["listing_name"], photo_path, result["offered_names"],
     )
     return {"ok": True}
+
+
+@app.post("/api/pvp/state")
+async def pvp_state(body: InitDataBody):
+    user = _authenticate(body.initData)
+    # Round results are no longer DM'd — the in-app spin-the-wheel reveal (unseen_result
+    # in get_pvp_state) is the only place a result is shown now. Still have to resolve
+    # any round whose countdown elapsed, just without notifying anyone by DM for it.
+    db.resolve_due_pvp_rounds()
+    return db.get_pvp_state(user["telegram_id"])
+
+
+@app.post("/api/pvp/join")
+async def pvp_join(body: PvpJoinBody):
+    user = _authenticate(body.initData)
+    db.resolve_due_pvp_rounds()
+    if not body.user_card_ids:
+        raise HTTPException(400, "stake at least one card")
+    try:
+        state = db.join_pvp_round(user["telegram_id"], body.user_card_ids)
+    except db.PvpCardNotOwned:
+        raise HTTPException(400, "one of the cards isn't yours, or is already busy (listed/staked/in a round)")
+    except db.PvpRoundLocked:
+        raise HTTPException(409, "round already locked, try again in a moment")
+
+    total_players = len(state.get("participants", []))
+    if total_players == 1:
+        # Only ping the chat for whoever opens a fresh round — pinging on every
+        # single stake afterward was too noisy.
+        import bot as bot_module
+
+        who_name = f"@{user['username']}" if user.get("username") else (user.get("first_name") or "Игрок")
+        await bot_module.notify_pvp_chat_join(who_name, len(body.user_card_ids))
+
+    return state
+
+
+@app.post("/api/market/history")
+def market_history(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"trades": db.get_market_history()}
+
+
+@app.post("/api/swap/history")
+def swap_history(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"trades": db.get_swap_history()}
+
+
+@app.post("/api/pvp/history")
+def pvp_history(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"rounds": db.get_pvp_history()}
+
+
+@app.post("/api/wheel/spin")
+def wheel_spin(body: InitDataBody):
+    user = _authenticate(body.initData)
+    result = db.spin_fortune_wheel(user["telegram_id"])
+    if not result["ok"]:
+        raise HTTPException(409, "already spun today")
+    return {"amount": result["amount"]}

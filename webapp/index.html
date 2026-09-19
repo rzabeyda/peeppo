@@ -16,6 +16,16 @@
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   button{transition:transform .1s ease;}
   button:active{transform:scale(.94);}
+
+  @keyframes tapVibrate{
+    0%{transform:scale(1) translateX(0);}
+    20%{transform:scale(.93) translateX(-2px);}
+    40%{transform:scale(.97) translateX(2px);}
+    60%{transform:scale(.94) translateX(-1.5px);}
+    80%{transform:scale(.98) translateX(1px);}
+    100%{transform:scale(1) translateX(0);}
+  }
+  .tap-vibrate{animation:tapVibrate .28s ease;}
   html,body{height:100%;}
   body{
     margin:0;
@@ -348,20 +358,33 @@
   /* ---------- Market ---------- */
   #market-screen .empty-state{padding:100px 20px;}
   #market-screen .emoji{font-size:40px; display:block; margin-bottom:10px;}
-  .market-header-row{display:flex; gap:8px; margin-bottom:10px; justify-content:space-between;}
-  #market-sort{
+  .market-header-row{display:flex; gap:8px; margin-bottom:10px; justify-content:space-between; align-items:center;}
+  .history-btn{
     flex-shrink:0; box-sizing:border-box;
-    background:var(--card-bg); color:#fff;
+    background:var(--card-bg); color:#ccc;
     border:1px solid var(--card-border);
     border-radius:10px;
-    padding:6px 8px;
+    padding:7px 10px;
     font-size:11px; font-weight:700;
     cursor:pointer; white-space:nowrap;
   }
-  #market-sort:active{transform:scale(.95);}
-  #market-sort.hidden{visibility:hidden; pointer-events:none;}
+  .history-btn:active{transform:scale(.95);}
+  .market-subrow{display:flex; flex-wrap:wrap; justify-content:flex-start; gap:6px; margin-bottom:10px;}
+  .market-subrow.hidden{display:none;}
+  .market-filter-btn{
+    flex-shrink:0; box-sizing:border-box;
+    background:var(--card-bg); color:#ccc;
+    border:1px solid var(--card-border);
+    border-radius:10px;
+    padding:6px 10px;
+    font-size:11px; font-weight:700;
+    cursor:pointer; white-space:nowrap;
+  }
+  .market-filter-btn:active{transform:scale(.95);}
+  .market-filter-btn.active{background:rgba(139,92,246,.18); color:var(--accent); border-color:var(--accent);}
   .mode-switch{
-    flex-shrink:0;
+    flex:1 1 auto;
+    min-width:0;
     display:flex;
     gap:2px;
     background:rgba(255,255,255,.05);
@@ -370,13 +393,16 @@
     padding:3px;
   }
   .mode-switch-btn{
+    flex:1 1 0;
+    min-width:0;
     border:none; background:none;
     color:#888;
     font-size:11px; font-weight:800;
-    padding:7px 12px;
+    padding:9px 8px;
     border-radius:9px;
     cursor:pointer;
     white-space:nowrap;
+    text-align:center;
   }
   .mode-switch-btn.active{background:rgba(139,92,246,.18); color:var(--accent);}
   .mode-switch-btn:active{transform:scale(.95);}
@@ -415,9 +441,9 @@
     position:absolute; top:6px; right:6px;
     background:rgba(37,99,235,.9);
     color:#fff;
-    font-size:5.4px; font-weight:800;
-    text-transform:uppercase; letter-spacing:.18px;
-    padding:1.8px 4.2px; border-radius:4.8px;
+    font-size:3.02px; font-weight:800;
+    text-transform:uppercase; letter-spacing:.1px;
+    padding:1.01px 2.35px; border-radius:2.69px;
   }
 
   /* ---------- Market item quick-action popup ---------- */
@@ -484,6 +510,245 @@
   .picker-item.selected{outline:3px solid var(--accent);}
   .picker-item.selected .check{background:var(--accent); border-color:var(--accent); color:#fff;}
 
+  /* ---------- PvP ---------- */
+  #market-list{width:100%; max-width:100%; overflow-x:hidden;}
+  #pvp-list{width:100%; max-width:100%; overflow-x:hidden;}
+  .pvp-arena{
+    width:100%; max-width:100%; box-sizing:border-box; overflow:hidden;
+    background:linear-gradient(180deg, #1a1a1a, #0d0d0d);
+    border:1px solid var(--card-border); border-radius:18px;
+    padding:16px 14px; margin-bottom:14px;
+    display:flex; flex-direction:column; align-items:stretch;
+  }
+  .pvp-arena-top{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    margin-bottom:14px; width:100%;
+  }
+  .pvp-arena-title{font-size:14px; font-weight:800;}
+  .pvp-live{
+    display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:#666;
+  }
+  .pvp-live-dot{width:7px; height:7px; border-radius:50%; background:#444; flex-shrink:0;}
+  .pvp-live.on{color:#4ade80;}
+  .pvp-live.on .pvp-live-dot{background:#4ade80; box-shadow:0 0 6px #4ade80; animation:pvpPulse 1.2s infinite;}
+  @keyframes pvpPulse{0%,100%{opacity:1;} 50%{opacity:.35;}}
+
+  .pvp-wheel-wrap{
+    position:relative; width:180px; height:180px; max-width:60vw; max-height:60vw;
+    margin:0 auto 16px; flex-shrink:0;
+  }
+  .pvp-wheel{
+    width:100%; height:100%; border-radius:50%;
+    background:conic-gradient(#2a2a2a 0deg 360deg);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);
+    transition:transform 4.2s cubic-bezier(.15,.85,.25,1);
+  }
+  .pvp-wheel-hole{
+    position:absolute; inset:18%; border-radius:50%;
+    background:#0d0d0d; border:1px solid var(--card-border);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:4px;
+  }
+  .pvp-wheel-hole .big{font-size:20px; font-weight:800; line-height:1.1;}
+  .pvp-wheel-hole .small{font-size:10px; color:#888; margin-top:2px; line-height:1.2;}
+  .pvp-wheel-pointer{
+    position:absolute; top:-8px; left:50%; transform:translateX(-50%);
+    width:0; height:0; z-index:2;
+    border-left:9px solid transparent; border-right:9px solid transparent;
+    border-top:14px solid var(--accent2);
+    filter:drop-shadow(0 2px 3px rgba(0,0,0,.5));
+  }
+
+  .pvp-last-result{
+    font-size:11.5px; color:#999; text-align:center;
+    background:var(--card-bg); border:1px solid var(--card-border); border-radius:10px;
+    padding:8px 10px; margin-bottom:12px;
+  }
+  .pvp-header{
+    display:flex; align-items:center; justify-content:center; flex-wrap:wrap;
+    gap:8px 10px; margin-bottom:2px; width:100%;
+  }
+  .pvp-timer{font-size:13px; font-weight:700; color:#ccc; min-width:0; text-align:center;}
+  .pvp-timer.counting{color:var(--accent2);}
+  #pvp-join-btn{
+    background:var(--accent); color:#fff; border:none; border-radius:12px;
+    padding:12px 14px; font-size:13px; font-weight:800; cursor:pointer;
+    width:100%; margin-top:10px;
+  }
+  #pvp-join-btn:disabled{background:#3a3a3a; color:#888; cursor:not-allowed;}
+  .pvp-legend{width:100%; margin-top:12px; display:flex; flex-direction:column; gap:8px;}
+  .pvp-participant{
+    background:var(--card-bg); border:1px solid var(--card-border); border-radius:14px;
+    padding:10px 12px;
+    width:100%; max-width:100%; box-sizing:border-box; overflow:hidden;
+  }
+  .pvp-participant-head{
+    display:flex; align-items:center; gap:8px; margin-bottom:8px;
+  }
+  .pvp-swatch{width:10px; height:10px; border-radius:50%; flex-shrink:0;}
+  .pvp-participant-name{
+    font-size:13px; font-weight:700; min-width:0; flex:1 1 auto;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .pvp-participant-name.you::after{content:" (ты)"; color:#666; font-weight:400;}
+  .pvp-participant-chance{font-size:13px; font-weight:800; color:var(--accent2); flex-shrink:0; white-space:nowrap;}
+  .pvp-participant-cards{display:flex; flex-wrap:wrap; gap:6px;}
+  .pvp-participant-cards img{width:36px; height:36px; object-fit:cover; border-radius:8px; border:1px solid var(--card-border); flex-shrink:0;}
+
+  /* ---------- PvP reveal overlay (spin-the-wheel result) ---------- */
+  #pvp-reveal-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.92);
+    display:none; align-items:center; justify-content:center; z-index:85; padding:24px;
+  }
+  #pvp-reveal-overlay.active{display:flex;}
+  #pvp-reveal-card{
+    width:100%; max-width:320px; max-height:86vh; overflow-y:auto;
+    background:var(--card-bg); border:1px solid var(--card-border); border-radius:20px;
+    padding:20px 16px; display:flex; flex-direction:column; align-items:center; text-align:center;
+    box-sizing:border-box;
+  }
+  #pvp-reveal-title{font-size:15px; font-weight:800; margin-bottom:14px;}
+  #pvp-reveal-legend{width:100%; margin-top:14px; display:flex; flex-direction:column; gap:6px;}
+  .pvp-reveal-row{
+    display:flex; align-items:center; gap:8px; font-size:12px;
+    background:rgba(255,255,255,.03); border-radius:8px; padding:6px 8px;
+  }
+  .pvp-reveal-row.winner{background:rgba(250,204,21,.12); border:1px solid rgba(250,204,21,.4);}
+  .pvp-reveal-row .name{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600;}
+  #pvp-reveal-outcome{
+    display:none; margin-top:16px; font-size:14px; font-weight:800; line-height:1.4;
+  }
+  #pvp-reveal-outcome.won{color:var(--accent2);}
+  #pvp-reveal-close{
+    display:none; margin-top:16px; width:100%;
+    background:var(--accent); color:#fff; border:none; border-radius:12px;
+    padding:12px; font-size:13px; font-weight:700; cursor:pointer;
+  }
+
+  /* ---------- Daily fortune wheel ---------- */
+  #fortune-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.92);
+    display:none; align-items:center; justify-content:center; z-index:97; padding:24px;
+  }
+  #fortune-overlay.active{display:flex;}
+  #fortune-card{
+    width:100%; max-width:300px;
+    background:var(--card-bg); border:1px solid var(--card-border); border-radius:20px;
+    padding:22px 18px 18px; display:flex; flex-direction:column; align-items:center; text-align:center;
+    box-sizing:border-box;
+  }
+  #fortune-title{font-size:16px; font-weight:800; margin-bottom:14px;}
+  .fortune-legend{width:100%; margin-top:14px; display:flex; flex-direction:column; gap:6px;}
+  .fortune-legend-row{
+    display:flex; align-items:center; gap:8px; font-size:12px;
+    background:rgba(255,255,255,.03); border-radius:8px; padding:6px 10px;
+  }
+  .fortune-legend-row .name{flex:1 1 auto; text-align:left; font-weight:600;}
+  #fortune-outcome{
+    display:none; margin-top:16px; font-size:14px; font-weight:800; line-height:1.4;
+  }
+  #fortune-outcome.won{color:var(--accent2);}
+  #fortune-close{
+    display:none; margin-top:16px; width:100%;
+    background:var(--accent); color:#fff; border:none; border-radius:12px;
+    padding:12px; font-size:13px; font-weight:700; cursor:pointer;
+  }
+
+  /* ---------- История (trade/swap/PvP round log) ---------- */
+  #history-overlay{
+    position:absolute; inset:0;
+    background:#0d0d0d;
+    display:none; flex-direction:column;
+    z-index:88; padding:16px;
+    box-sizing:border-box;
+  }
+  #history-overlay.active{display:flex;}
+  #history-head{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:14px; flex-shrink:0;
+  }
+  #history-title{font-size:15px; font-weight:800;}
+  #history-close{
+    background:var(--card-bg); border:1px solid var(--card-border); color:#fff;
+    border-radius:10px; width:32px; height:32px; font-size:14px; font-weight:700; cursor:pointer;
+  }
+  #history-list{flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px;}
+  .history-row{
+    background:var(--card-bg); border:1px solid var(--card-border); border-radius:12px;
+    padding:10px 12px 10px 0; font-size:12.5px; display:flex; gap:10px; align-items:stretch;
+    width:100%; max-width:100%; box-sizing:border-box; overflow:visible;
+  }
+  .history-row.market-history-row{padding-top:15px; padding-bottom:15px;}
+  .history-row.pvp-history-row{padding-top:28px; padding-bottom:28px;}
+  .history-row.pvp-history-row .info .line1{font-size:13.5px;}
+  .history-row.pvp-history-row .info .line2{font-size:12px;}
+  .history-row .thumbs{margin-left:-1px;}
+  .history-row .thumbs img:first-child{border-top-left-radius:11px; border-bottom-left-radius:11px;}
+  .history-row .thumbs{display:flex; flex-shrink:0; align-items:stretch;}
+  .history-row .thumbs img{width:auto; height:auto; aspect-ratio:1/1; align-self:stretch; border-radius:8px; object-fit:cover; border:1px solid var(--card-border); margin-left:-10px; background:#000;}
+  .history-row .thumbs img.rarity-border-bronze{border-color:#cd7f32; box-shadow:0 0 6px rgba(205,127,50,.4);}
+  .history-row .thumbs img.rarity-border-silver{border-color:#9ca3af; box-shadow:0 0 6px rgba(156,163,175,.4);}
+  .history-row .thumbs img.rarity-border-gold{border-color:#facc15; box-shadow:0 0 6px rgba(250,204,21,.45);}
+  .history-row .thumbs img.rarity-border-platinum{border-color:#a78bfa; box-shadow:0 0 6px rgba(167,139,250,.45);}
+  .history-row .thumbs img.rarity-border-diamond{border-color:#ff2fb0; box-shadow:0 0 6px rgba(255,47,176,.5);}
+  .history-row .thumbs img:first-child{margin-left:0;}
+  .history-row .info{min-width:0; flex:1 1 auto; display:flex; flex-direction:column; justify-content:center;}
+  .history-row .info .line1{font-weight:700; white-space:normal; word-break:break-word; line-height:1.35;}
+  .history-row .info .line2{color:#888; font-size:11px; margin-top:2px; white-space:normal; word-break:break-word; line-height:1.35;}
+  .history-row .price{flex-shrink:0; font-weight:800; color:var(--accent2); font-size:12px; white-space:nowrap; display:flex; align-items:center;}
+
+  /* ---------- PvP rules modal ---------- */
+  #pvp-rules-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.92);
+    display:none; align-items:center; justify-content:center;
+    z-index:92; padding:24px;
+  }
+  #pvp-rules-overlay.active{display:flex;}
+  #pvp-rules-card{
+    position:relative;
+    width:100%; max-width:320px; max-height:86vh; overflow-y:auto;
+    background:var(--card-bg); border:1px solid var(--card-border); border-radius:20px;
+    padding:22px 18px 18px; box-sizing:border-box;
+  }
+  #pvp-rules-title{font-size:16px; font-weight:800; margin-bottom:12px;}
+  #pvp-rules-text{font-size:13px; color:#ccc; line-height:1.5; margin-bottom:14px;}
+  #pvp-rules-weights{display:flex; flex-direction:column; gap:6px; margin-bottom:14px;}
+  .pvp-rules-row{
+    display:flex; align-items:center; justify-content:space-between;
+    background:rgba(255,255,255,.03); border-radius:8px; padding:7px 10px;
+  }
+  .pvp-rules-row .rarity-tag{position:static; font-size:11px; padding:4px 9px;}
+  .pvp-rules-row .w{font-size:13px; font-weight:800; color:#eee;}
+  #pvp-rules-footnote{font-size:11.5px; color:#888; line-height:1.5;}
+
+  /* ---------- PvP picker overlay (same look as the swap picker) ---------- */
+  #pvp-picker-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.9);
+    display:none;
+    align-items:center; justify-content:center;
+    z-index:70;
+    padding:24px;
+  }
+  #pvp-picker-overlay.active{display:flex;}
+  #pvp-picker-card{
+    width:100%; max-width:340px; max-height:80vh;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-radius:20px;
+    padding:18px;
+    display:flex; flex-direction:column;
+  }
+  #pvp-picker-title{font-weight:700; margin-bottom:14px; text-align:center;}
+  #pvp-picker-grid{
+    overflow-y:auto;
+    max-height:44vh;
+    margin-bottom:14px;
+  }
+
   /* ---------- Models (full catalog) overlay ---------- */
   #models-overlay{
     position:absolute; inset:0;
@@ -509,7 +774,7 @@
   #models-sort:active{transform:scale(.95);}
   #models-rarity-summary{display:flex; gap:6px; margin:0 10px 12px 2px; font-size:10.625px; font-weight:800; letter-spacing:.2px; white-space:nowrap;}
   #models-rarity-summary .diamond{color:#ff2fb0;}
-  #models-rarity-summary .platina{color:#a78bfa;}
+  #models-rarity-summary .platinum{color:#a78bfa;}
   #models-rarity-summary .gold{color:#facc15;}
   #models-rarity-summary .silver{color:#9ca3af;}
   #models-rarity-summary .bronze{color:#cd7f32;}
@@ -536,25 +801,39 @@
   }
   .rarity-tag{
     position:absolute; top:6px; left:6px;
-    font-size:5.6px; font-weight:800;
-    padding:1.6px 4px; border-radius:4.8px;
-    text-transform:uppercase; letter-spacing:.3px;
+    font-size:4.48px; font-weight:800;
+    padding:1.28px 3.2px; border-radius:3.84px;
+    text-transform:uppercase; letter-spacing:.24px;
   }
   .rarity-tag.bronze{background:linear-gradient(135deg,#8c5a2b,#cd7f32); color:#fff8ee; box-shadow:0 0 8px rgba(140,90,43,.5);}
   .rarity-tag.silver{background:linear-gradient(135deg,#8e97a3,#e5e7eb); color:#1f2530; box-shadow:0 0 8px rgba(156,163,175,.5);}
   .rarity-tag.gold{background:linear-gradient(135deg,#d4a017,#fde68a); color:#4a3500; box-shadow:0 0 8px rgba(250,204,21,.5);}
-  .rarity-tag.platina{background:linear-gradient(135deg,#7c3aed,#c4b5fd); color:#fff; box-shadow:0 0 8px rgba(139,92,246,.5);}
+  .rarity-tag.platinum{background:linear-gradient(135deg,#7c3aed,#c4b5fd); color:#fff; box-shadow:0 0 8px rgba(139,92,246,.5);}
   .rarity-tag.diamond{background:linear-gradient(135deg,#ff2fb0,#ffb3ec); color:#3a0022; box-shadow:0 0 8px rgba(255,47,176,.55);}
+
+  /* ---------- Rarity-colored card borders — same colors as the rarity pill above,
+     so the card's frame alone tells you bronze/silver/gold/platinum/diamond at a
+     glance, everywhere a card image shows up (profile, market, PvP, catalog, etc). ---------- */
+  .grid-item.rarity-border-bronze, img.rarity-border-bronze, .history-row.rarity-border-bronze{border-color:#cd7f32; box-shadow:0 0 8px rgba(205,127,50,.4);}
+  .grid-item.rarity-border-silver, img.rarity-border-silver, .history-row.rarity-border-silver{border-color:#9ca3af; box-shadow:0 0 8px rgba(156,163,175,.4);}
+  .grid-item.rarity-border-gold, img.rarity-border-gold, .history-row.rarity-border-gold{border-color:#facc15; box-shadow:0 0 8px rgba(250,204,21,.45);}
+  .grid-item.rarity-border-platinum, img.rarity-border-platinum, .history-row.rarity-border-platinum{border-color:#a78bfa; box-shadow:0 0 8px rgba(167,139,250,.45);}
+  .grid-item.rarity-border-diamond, img.rarity-border-diamond, .history-row.rarity-border-diamond{border-color:#ff2fb0; box-shadow:0 0 8px rgba(255,47,176,.5);}
+  .grid-item[class*="rarity-border-"], .history-row[class*="rarity-border-"]{border-width:2px;}
+  img.rarity-border-bronze, img.rarity-border-silver, img.rarity-border-gold, img.rarity-border-platinum, img.rarity-border-diamond{
+    border-style:solid; border-width:2px; box-sizing:border-box;
+  }
+
   #farm-result-rarity{font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.4px; min-height:14px; margin-bottom:4px;}
   #farm-result-rarity.bronze{color:#cd7f32;}
   #farm-result-rarity.silver{color:#9ca3af;}
   #farm-result-rarity.gold{color:#facc15;}
-  #farm-result-rarity.platina{color:#a78bfa;}
+  #farm-result-rarity.platinum{color:#a78bfa;}
   #farm-result-rarity.diamond{color:#ff2fb0;}
   #farm-result-name.chance-hint{font-size:11px; font-weight:700; color:#888; letter-spacing:.2px; line-height:1.6;}
   #farm-result-name.chance-hint b{font-weight:800;}
   #farm-result-name.chance-hint .diamond{color:#ff2fb0;}
-  #farm-result-name.chance-hint .platina{color:#a78bfa;}
+  #farm-result-name.chance-hint .platinum{color:#a78bfa;}
   #farm-result-name.chance-hint .gold{color:#facc15;}
   #farm-result-name.chance-hint .silver{color:#9ca3af;}
   #farm-result-name.chance-hint .bronze{color:#cd7f32;}
@@ -594,7 +873,7 @@
   .tops-name{flex:1; font-weight:700; font-size:13px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .tops-count{font-size:12px; font-weight:800; color:var(--accent2); flex-shrink:0; display:flex; align-items:center; gap:3px;}
   .tops-count img{width:13px; height:13px;}
-  .tops-switch{display:flex; gap:6px; margin:0 30px 14px 2px;}
+  .tops-switch{display:flex; gap:6px; margin:0 0 14px;}
   .tops-switch-btn{
     flex:1; padding:8px 0; border-radius:10px; border:1px solid var(--card-border);
     background:var(--card-bg); color:#999; font-size:12px; font-weight:700;
@@ -697,7 +976,7 @@
   #modal-card .btn-stake .stake-bonus img{width:12px; height:12px; aspect-ratio:auto; object-fit:contain; margin-bottom:0; flex-shrink:0; display:block;}
   .btn-stake.active{background:#ec4899; color:#fff; cursor:pointer;}
   .btn-stake.staked{background:rgba(239,68,68,.15); color:var(--danger); cursor:pointer;}
-  .btn-craft{background:#1f1f1f; color:#ccc; width:100%; cursor:pointer;}
+  .btn-craft{background:#8c5a2b; color:#fff8ee; width:100%; cursor:pointer;}
   .btn-craft:active{transform:scale(.97);}
   .btn-back{background:#161616; color:#999; width:100%;}
   .btn-close{
@@ -747,6 +1026,31 @@
   #alert-text{font-size:14px; color:#eee; line-height:1.5; margin-bottom:18px; font-weight:600;}
   #alert-ok{width:100%; padding:13px; border-radius:12px; border:none; background:var(--accent); color:#fff; font-weight:700; font-size:14px; cursor:pointer;}
   #alert-ok:active{transform:scale(.97);}
+
+  #referral-reward-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.55);
+    display:none;
+    align-items:center; justify-content:center;
+    z-index:96;
+    padding:24px;
+    pointer-events:none;
+  }
+  #referral-reward-overlay.active{display:flex; pointer-events:auto;}
+  #referral-reward-card{
+    width:100%; max-width:290px;
+    background:linear-gradient(180deg, #1a1a1a, #0d0d0d);
+    border:1px solid rgba(250,204,21,.5);
+    box-shadow:0 0 24px rgba(250,204,21,.25);
+    border-radius:20px;
+    padding:22px 20px;
+    text-align:center;
+    animation:refRewardPop .25s ease;
+  }
+  @keyframes refRewardPop{from{transform:scale(.85); opacity:0;} to{transform:scale(1); opacity:1;}}
+  #referral-reward-card .emoji{font-size:30px; display:block; margin-bottom:8px;}
+  #referral-reward-text{font-size:14px; color:#eee; line-height:1.5; font-weight:700;}
+  #referral-reward-text .who{color:var(--accent2);}
 
   #gems-choice-overlay{
     position:absolute; inset:0;
@@ -914,14 +1218,29 @@
     </section>
 
     <!-- MARKET -->
+    <!-- PVP -->
+    <section id="pvp-screen" class="screen">
+      <div class="market-header-row">
+        <button type="button" id="pvp-rules-btn" class="history-btn">Правила</button>
+        <button type="button" id="pvp-history-btn" class="history-btn">История</button>
+      </div>
+      <div id="pvp-list"></div>
+    </section>
+
     <section id="market-screen" class="screen">
       <div class="market-header-row">
-        <button type="button" id="market-sort">Цена ↓</button>
+        <button type="button" id="market-history-btn" class="history-btn">История</button>
         <div class="mode-switch" id="market-mode-switch">
           <button class="mode-switch-btn active" data-mode="trade">Торговля</button>
           <button class="mode-switch-btn" data-mode="swap">Обмен</button>
-          <button class="mode-switch-btn" data-mode="pvp">PvP</button>
         </div>
+      </div>
+      <div class="market-subrow" id="market-filter-row">
+        <button type="button" class="market-filter-btn active" data-sort="price_asc">Цена ↑</button>
+        <button type="button" class="market-filter-btn" data-sort="price_desc">Цена ↓</button>
+        <button type="button" class="market-filter-btn" data-sort="new">Новое</button>
+        <button type="button" class="market-filter-btn" data-sort="rarity_bronze">Bronze</button>
+        <button type="button" class="market-filter-btn" data-sort="rarity_diamond">Diamond</button>
       </div>
       <div id="market-list"></div>
     </section>
@@ -939,7 +1258,7 @@
           </div>
         </div>
         <div class="profile-stats">
-          <div class="stat-tile">
+          <div class="stat-tile clickable" id="stat-cards-tile">
             <div class="stat-value" id="stat-total">0</div>
             <div class="stat-label">Карты</div>
           </div>
@@ -956,8 +1275,7 @@
       <div class="section-label-row">
         <div class="section-label">Коллекция</div>
         <div class="profile-sort-buttons">
-          <button id="profile-sort-btn" class="active-sort">№ ↓</button>
-          <button id="profile-rarity-sort-btn">Ранг ↓</button>
+          <button id="profile-rarity-sort-btn" class="active-sort">Ранг ↓</button>
         </div>
       </div>
       <div class="grid" id="profile-grid"></div>
@@ -966,6 +1284,7 @@
 
   <nav>
     <button class="nav-btn active" data-screen="farm-screen"><img class="icon-img" src="/static/icons/farm.png" alt="">Фарм</button>
+    <button class="nav-btn" data-screen="pvp-screen"><img class="icon-img" src="/static/icons/swords.png" alt="">PvP</button>
     <button class="nav-btn" data-screen="market-screen"><img class="icon-img" src="/static/icons/cage.png" alt="">Рынок</button>
     <button class="nav-btn" data-screen="profile-screen"><img class="icon-img" src="/static/icons/profile_red.png" alt="">Профиль</button>
   </nav>
@@ -995,6 +1314,7 @@
         Заходи каждый день в игру и получай 25 <img src="/static/icons/diamond.png" alt=""><br>
         Приглашай друзей и получай по 25 <img src="/static/icons/diamond.png" alt=""> за каждого<br>
         Стейкай свои карточки и зарабатывай гемы<br>
+        Крафти карточки, чтобы получить взамен более редкую<br>
         Продавай или обменивай карточки на рынке
       </div>
     </div>
@@ -1021,7 +1341,7 @@
       <button class="btn-close" id="chance-close">✕</button>
       <div id="chance-title">Сфармлено</div>
       <div class="chance-row"><span class="rarity-tag diamond">diamond</span><span class="chance-pct" id="farmed-diamond">0</span></div>
-      <div class="chance-row"><span class="rarity-tag platina">platina</span><span class="chance-pct" id="farmed-platina">0</span></div>
+      <div class="chance-row"><span class="rarity-tag platinum">platinum</span><span class="chance-pct" id="farmed-platinum">0</span></div>
       <div class="chance-row"><span class="rarity-tag gold">gold</span><span class="chance-pct" id="farmed-gold">0</span></div>
       <div class="chance-row"><span class="rarity-tag silver">silver</span><span class="chance-pct" id="farmed-silver">0</span></div>
       <div class="chance-row"><span class="rarity-tag bronze">bronze</span><span class="chance-pct" id="farmed-bronze">0</span></div>
@@ -1042,6 +1362,13 @@
     </div>
   </div>
 
+  <div id="referral-reward-overlay">
+    <div id="referral-reward-card">
+      <img class="emoji" src="/static/icons/diamond.png" alt="" style="width:30px;height:30px;object-fit:contain;">
+      <div id="referral-reward-text"></div>
+    </div>
+  </div>
+
   <div id="modal-overlay">
     <div id="modal-card">
       <button class="btn-close" id="modal-close">✕</button>
@@ -1053,7 +1380,8 @@
           <button class="btn-give" id="modal-give">Передать</button>
         </div>
         <button class="btn-sell" id="modal-sell">Продать</button>
-        <button class="btn-swap" id="modal-swap">Обменять</button>
+        <button class="btn-swap" id="modal-swap">Обмен</button>
+        <button class="btn-stake" id="modal-stake">Застейкать</button>
         <button class="btn-craft" id="modal-craft">Крафт</button>
         <button class="btn-back" id="modal-back">Назад</button>
       </div>
@@ -1101,6 +1429,72 @@
     </div>
   </div>
 
+  <div id="pvp-picker-overlay">
+    <div id="pvp-picker-card">
+      <div id="pvp-picker-title">Выбери карты для PvP — заберут навсегда, если проиграешь</div>
+      <div class="grid" id="pvp-picker-grid"></div>
+      <div id="input-actions">
+        <button id="pvp-picker-cancel">Отмена</button>
+        <button id="pvp-picker-confirm">Поставить</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="pvp-reveal-overlay">
+    <div id="pvp-reveal-card">
+      <div id="pvp-reveal-title">🎲 Розыгрыш банка...</div>
+      <div class="pvp-wheel-wrap">
+        <div class="pvp-wheel-pointer"></div>
+        <div class="pvp-wheel" id="pvp-reveal-wheel"></div>
+        <div class="pvp-wheel-hole" id="pvp-reveal-hole"><div class="big">🎁</div></div>
+      </div>
+      <div id="pvp-reveal-legend"></div>
+      <div id="pvp-reveal-outcome"></div>
+      <button id="pvp-reveal-close">Закрыть</button>
+    </div>
+  </div>
+
+  <div id="fortune-overlay">
+    <div id="fortune-card">
+      <div id="fortune-title">🎡 Колесо фортуны</div>
+      <div class="pvp-wheel-wrap">
+        <div class="pvp-wheel-pointer"></div>
+        <div class="pvp-wheel" id="fortune-wheel"></div>
+        <div class="pvp-wheel-hole" id="fortune-hole"><div class="big">🎡</div></div>
+      </div>
+      <div class="fortune-legend" id="fortune-legend"></div>
+      <div id="fortune-outcome"></div>
+      <button id="fortune-close">Закрыть</button>
+    </div>
+  </div>
+
+  <div id="history-overlay">
+    <div id="history-head">
+      <div id="history-title">История</div>
+      <button id="history-close">✕</button>
+    </div>
+    <div id="history-list"></div>
+  </div>
+
+  <div id="pvp-rules-overlay">
+    <div id="pvp-rules-card">
+      <button class="btn-close" id="pvp-rules-close">✕</button>
+      <div id="pvp-rules-title">⚔️ Правила PvP</div>
+      <div id="pvp-rules-text">
+        Ставь свои карты в общий банк — как только зашёл первый игрок, запускается обратный отсчёт 60 секунд. Победитель определяется случайно и забирает <b>ВСЕ</b> карты банка.<br><br>
+        Шанс на победу зависит от того, какие карты ты поставил — у каждой редкости свой «вес»:
+      </div>
+      <div id="pvp-rules-weights">
+        <div class="pvp-rules-row"><span class="rarity-tag bronze">bronze</span><span class="w">1</span></div>
+        <div class="pvp-rules-row"><span class="rarity-tag silver">silver</span><span class="w">3</span></div>
+        <div class="pvp-rules-row"><span class="rarity-tag gold">gold</span><span class="w">8</span></div>
+        <div class="pvp-rules-row"><span class="rarity-tag platinum">platinum</span><span class="w">20</span></div>
+        <div class="pvp-rules-row"><span class="rarity-tag diamond">diamond</span><span class="w">50</span></div>
+      </div>
+      <div id="pvp-rules-footnote">Например, одна Diamond-карта по шансам равна 50 Bronze-картам. Твой шанс на победу = твой вес ÷ суммарный вес всех карт в банке.</div>
+    </div>
+  </div>
+
   <div id="models-overlay">
     <div id="models-card">
       <button class="btn-close" id="models-close">✕</button>
@@ -1142,11 +1536,16 @@ if (tg) {
   tg.onEvent("viewportChanged", applyTgViewportHeight);
 }
 
-// Light haptic tap on every button/card press, app-wide — one listener instead of
-// wiring tg.HapticFeedback into every individual click handler.
+// Light haptic tap + a quick visual "vibrate" bounce on every button/card/nav
+// press, app-wide — one listener instead of wiring it into every click handler.
 document.addEventListener("click", (e)=>{
-  if(e.target.closest("button, .grid-item")){
+  const el = e.target.closest("button, .grid-item, .nav-btn, .history-row, .picker-item, .mode-switch-btn, .tops-switch-btn");
+  if(el){
     tg?.HapticFeedback?.impactOccurred("light");
+    el.classList.remove("tap-vibrate");
+    void el.offsetWidth; // restart the animation even on rapid repeated taps
+    el.classList.add("tap-vibrate");
+    el.addEventListener("animationend", ()=> el.classList.remove("tap-vibrate"), { once: true });
   }
 }, true);
 
@@ -1181,6 +1580,16 @@ function showAlert(text){
 document.getElementById("alert-ok").addEventListener("click", ()=>{
   document.getElementById("alert-overlay").classList.remove("active");
 });
+
+function confirmAction(text){
+  return new Promise(resolve=>{
+    if(tg?.showConfirm){
+      tg.showConfirm(text, (ok)=>resolve(!!ok));
+    }else{
+      resolve(window.confirm(text));
+    }
+  });
+}
 
 // ---------- Generic input modal (buy gems / list price / offer / gift username) ----------
 let inputResolve = null;
@@ -1245,8 +1654,10 @@ function switchScreen(screenId){
   document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
   document.querySelector(`.nav-btn[data-screen="${screenId}"]`)?.classList.add("active");
   document.getElementById(screenId).classList.add("active");
+  if(screenId !== "pvp-screen") stopPvpPolling();
   if(screenId === "profile-screen") loadProfile();
   if(screenId === "market-screen") refreshMarketScreen();
+  if(screenId === "pvp-screen") loadPvpState();
 }
 document.querySelectorAll(".nav-btn").forEach(btn=>{
   btn.addEventListener("click", ()=>switchScreen(btn.dataset.screen));
@@ -1268,14 +1679,34 @@ async function refreshGems(){
   try{
     const auth = await api("/auth");
     document.getElementById("gems-amount").textContent = auth.gems;
+    myTelegramId = auth.telegram_id;
     if(auth.is_new){
       document.getElementById("welcome-overlay").classList.add("active");
     }else if(auth.daily_bonus > 0){
       document.getElementById("daily-bonus-overlay").classList.add("active");
     }
+    if(auth.referral_reward_notice){
+      showReferralRewardModal(auth.referral_reward_notice);
+    }
+    if(auth.wheel_available){
+      // Small delay so it doesn't visually collide with the welcome/daily-bonus
+      // overlays above if one of those is also showing right now.
+      setTimeout(maybeOpenFortuneWheel, 1200);
+    }
   }catch(e){ /* non-critical */ }
 }
 refreshGems();
+
+// Read-once in-app popup for "you earned 25 gems for a referral" — replaces the old
+// bot-DM notifications, auto-closes on its own after 3s (no button to tap).
+function showReferralRewardModal(whoName){
+  const el = document.getElementById("referral-reward-overlay");
+  document.getElementById("referral-reward-text").innerHTML =
+    `Ты получил 25 гемов за реферала — <span class="who">${whoName}</span>`;
+  el.classList.add("active");
+  clearTimeout(el._hideTimer);
+  el._hideTimer = setTimeout(()=>el.classList.remove("active"), 3000);
+}
 
 document.getElementById("welcome-ok").addEventListener("click", ()=>{
   document.getElementById("welcome-overlay").classList.remove("active");
@@ -1285,14 +1716,16 @@ document.getElementById("daily-bonus-ok").addEventListener("click", ()=>{
   document.getElementById("daily-bonus-overlay").classList.remove("active");
 });
 
-document.getElementById("farm-total-pill").addEventListener("click", ()=>{
+function showCardsBreakdown(){
   document.getElementById("farmed-diamond").textContent = inventory.filter(c=>c.rarity==="diamond").length;
-  document.getElementById("farmed-platina").textContent = inventory.filter(c=>c.rarity==="platina").length;
+  document.getElementById("farmed-platinum").textContent = inventory.filter(c=>c.rarity==="platinum").length;
   document.getElementById("farmed-gold").textContent = inventory.filter(c=>c.rarity==="gold").length;
   document.getElementById("farmed-silver").textContent = inventory.filter(c=>c.rarity==="silver").length;
   document.getElementById("farmed-bronze").textContent = inventory.filter(c=>c.rarity==="bronze").length;
   document.getElementById("chance-overlay").classList.add("active");
-});
+}
+document.getElementById("farm-total-pill").addEventListener("click", showCardsBreakdown);
+document.getElementById("stat-cards-tile").addEventListener("click", showCardsBreakdown);
 document.getElementById("chance-close").addEventListener("click", ()=>{
   document.getElementById("chance-overlay").classList.remove("active");
 });
@@ -1313,9 +1746,15 @@ document.getElementById("gems-choice-overlay").addEventListener("click", (e)=>{
     document.getElementById("gems-choice-overlay").classList.remove("active");
   }
 });
+const GEMS_SELL_MIN = 1000;
 document.getElementById("gems-choice-sell").addEventListener("click", ()=>{
   document.getElementById("gems-choice-overlay").classList.remove("active");
-  toast("В разработке");
+  const currentGems = parseInt(document.getElementById("gems-amount").textContent, 10) || 0;
+  if(currentGems < GEMS_SELL_MIN){
+    showAlert(`Вывод гемов доступен от ${GEMS_SELL_MIN} гемов`);
+  }else{
+    showAlert("В разработке");
+  }
 });
 document.getElementById("gems-choice-buy").addEventListener("click", async ()=>{
   document.getElementById("gems-choice-overlay").classList.remove("active");
@@ -1356,13 +1795,14 @@ async function loadMarket(){
 }
 
 let marketSortMode = "price_asc"; // "price_asc" | "price_desc" | "new" | "old" | "number"
-const MARKET_SORT_LABELS = { price_asc: "Цена ↓", price_desc: "Цена ↑", new: "Новые", old: "Старые", number: "№" };
-const MARKET_SORT_CYCLE = ["price_asc", "price_desc", "new", "old", "number"];
-document.getElementById("market-sort").addEventListener("click", ()=>{
-  const idx = MARKET_SORT_CYCLE.indexOf(marketSortMode);
-  marketSortMode = MARKET_SORT_CYCLE[(idx + 1) % MARKET_SORT_CYCLE.length];
-  document.getElementById("market-sort").textContent = MARKET_SORT_LABELS[marketSortMode];
-  renderMarket();
+document.querySelectorAll("#market-filter-row .market-filter-btn").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    marketSortMode = btn.dataset.sort;
+    document.querySelectorAll("#market-filter-row .market-filter-btn").forEach(b=>{
+      b.classList.toggle("active", b === btn);
+    });
+    renderMarket();
+  });
 });
 
 function renderMarket(){
@@ -1376,10 +1816,10 @@ function renderMarket(){
   const sortMode = marketSortMode;
   const sorted = [...marketListings].sort((a, b) => {
     switch(sortMode){
-      case "old": return a.user_card_id - b.user_card_id;
-      case "new": return b.user_card_id - a.user_card_id;
       case "price_desc": return b.listed_price - a.listed_price;
-      case "number": return a.card_id - b.card_id;
+      case "new": return b.user_card_id - a.user_card_id;
+      case "rarity_bronze": return (RARITY_ORDER[b.rarity] ?? 4) - (RARITY_ORDER[a.rarity] ?? 4);
+      case "rarity_diamond": return (RARITY_ORDER[a.rarity] ?? 4) - (RARITY_ORDER[b.rarity] ?? 4);
       case "price_asc":
       default: return a.listed_price - b.listed_price;
     }
@@ -1387,7 +1827,7 @@ function renderMarket(){
 
   list.className = "grid";
   list.innerHTML = sorted.map(l => `
-      <div class="grid-item" data-uc="${l.user_card_id}">
+      <div class="grid-item rarity-border-${l.rarity}" data-uc="${l.user_card_id}">
         <img src="/static/cards/${l.filename}" alt="${l.name||''}">
         <div class="rarity-tag ${l.rarity}">${l.rarity}</div>
         <div class="market-price-tag"><img src="/static/icons/diamond.png" alt="">${l.listed_price}</div>
@@ -1405,8 +1845,8 @@ let marketMode = "trade"; // "trade" | "swap"
 let swapListings = [];
 
 function refreshMarketScreen(){
-  if(marketMode === "swap") loadSwapListings();
-  else loadMarket();
+  if(marketMode === "swap"){ loadSwapListings(); }
+  else { loadMarket(); }
 }
 
 function setMarketMode(mode){
@@ -1414,7 +1854,7 @@ function setMarketMode(mode){
   document.querySelectorAll(".mode-switch-btn").forEach(b=>{
     b.classList.toggle("active", b.dataset.mode === mode);
   });
-  document.getElementById("market-sort").classList.toggle("hidden", mode === "swap");
+  document.getElementById("market-filter-row").classList.toggle("hidden", mode !== "trade");
 }
 
 // Called right after successfully listing a card for swap, so the player lands
@@ -1424,12 +1864,118 @@ function goToMarketSwapTab(){
   switchScreen("market-screen");
 }
 
+// ---------- История (trade/swap/PvP round log — mode-aware, one shared panel) ----------
+function fmtHistoryDate(iso){
+  if(!iso) return "";
+  try{
+    const d = new Date(iso.endsWith("Z") || iso.includes("+") ? iso : iso + "Z");
+    return d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  }catch(e){ return ""; }
+}
+
+async function openHistory(explicitMode){
+  const overlay = document.getElementById("history-overlay");
+  const title = document.getElementById("history-title");
+  const list = document.getElementById("history-list");
+  overlay.classList.add("active");
+  list.innerHTML = `<div class="empty-state">Загрузка...</div>`;
+
+  const mode = explicitMode || marketMode;
+  if(mode === "swap"){
+    title.textContent = "История обменов";
+    try{
+      const data = await api("/swap/history");
+      renderSwapHistory(data.trades || []);
+    }catch(e){ list.innerHTML = `<div class="empty-state">Не удалось загрузить историю</div>`; }
+  }else if(mode === "pvp"){
+    title.textContent = "История PvP";
+    try{
+      const data = await api("/pvp/history");
+      renderPvpHistory(data.rounds || []);
+    }catch(e){ list.innerHTML = `<div class="empty-state">Не удалось загрузить историю</div>`; }
+  }else{
+    title.textContent = "История продаж";
+    try{
+      const data = await api("/market/history");
+      renderMarketHistory(data.trades || []);
+    }catch(e){ list.innerHTML = `<div class="empty-state">Не удалось загрузить историю</div>`; }
+  }
+}
+
+function renderMarketHistory(trades){
+  const list = document.getElementById("history-list");
+  if(!trades.length){
+    list.innerHTML = `<div class="empty-state"><span class="emoji">🛒</span>Сделок пока не было.</div>`;
+    return;
+  }
+  list.innerHTML = trades.map(t => `
+    <div class="history-row market-history-row rarity-border-${t.rarity}">
+      <div class="thumbs"><img class="rarity-border-${t.rarity}" src="/static/cards/${t.filename}" alt=""></div>
+      <div class="info">
+        <div class="line1">${t.name || "Без названия"}</div>
+        <div class="line2">${fmtHistoryDate(t.completed_at)}</div>
+      </div>
+      <div class="price">${t.price_gems} <img src="/static/icons/diamond.png" alt="" style="width:12px;height:12px;vertical-align:-1px;"></div>
+    </div>
+  `).join("");
+}
+
+function renderSwapHistory(trades){
+  const list = document.getElementById("history-list");
+  if(!trades.length){
+    list.innerHTML = `<div class="empty-state"><span class="emoji">🔄</span>Обменов пока не было.</div>`;
+    return;
+  }
+  list.innerHTML = trades.map(t => {
+    const firstOffered = t.offered_cards[0];
+    const offeredThumb = firstOffered ? `<img class="rarity-border-${firstOffered.rarity}" src="/static/cards/${firstOffered.filename}" alt="">` : "";
+    const offeredNames = t.offered_cards.map(c=>c.name).filter(Boolean);
+    const offeredLabel = offeredNames.length > 1
+      ? `${offeredNames[0]} +${offeredNames.length - 1}`
+      : (offeredNames[0] || "?");
+    return `
+      <div class="history-row rarity-border-${t.listed_card.rarity}">
+        <div class="thumbs"><img class="rarity-border-${t.listed_card.rarity}" src="/static/cards/${t.listed_card.filename}" alt="">${offeredThumb}</div>
+        <div class="info">
+          <div class="line1">${t.listed_card.name || "Без названия"} ⇄ ${offeredLabel}</div>
+          <div class="line2">${fmtHistoryDate(t.accepted_at)}</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderPvpHistory(rounds){
+  const list = document.getElementById("history-list");
+  if(!rounds.length){
+    list.innerHTML = `<div class="empty-state"><span class="emoji">⚔️</span>Раундов пока не было.</div>`;
+    return;
+  }
+  list.innerHTML = rounds.map(r => `
+    <div class="history-row pvp-history-row">
+      <div class="info">
+        <div class="line1">🏆 ${r.winner_name} забрал банк — ${r.total_cards} карт(ы)</div>
+        <div class="line2">у ${r.total_players} игроков · ${fmtHistoryDate(r.resolved_at)}</div>
+      </div>
+    </div>
+  `).join("");
+}
+
+document.getElementById("market-history-btn").addEventListener("click", ()=>openHistory());
+document.getElementById("pvp-history-btn").addEventListener("click", ()=>openHistory("pvp"));
+document.getElementById("history-close").addEventListener("click", ()=>{
+  document.getElementById("history-overlay").classList.remove("active");
+});
+
+document.getElementById("pvp-rules-btn").addEventListener("click", ()=>{
+  document.getElementById("pvp-rules-overlay").classList.add("active");
+});
+document.getElementById("pvp-rules-close").addEventListener("click", ()=>{
+  document.getElementById("pvp-rules-overlay").classList.remove("active");
+});
+
 document.querySelectorAll(".mode-switch-btn").forEach(btn=>{
   btn.addEventListener("click", ()=>{
-    if(btn.dataset.mode === "pvp"){
-      showAlert("В разработке");
-      return;
-    }
     if(btn.dataset.mode === marketMode) return;
     setMarketMode(btn.dataset.mode);
     refreshMarketScreen();
@@ -1456,7 +2002,7 @@ function renderSwapListings(){
 
   list.className = "grid";
   list.innerHTML = swapListings.map(l => `
-      <div class="grid-item" data-uc="${l.user_card_id}">
+      <div class="grid-item rarity-border-${l.rarity}" data-uc="${l.user_card_id}">
         <img src="/static/cards/${l.filename}" alt="${l.name||''}">
         <div class="rarity-tag ${l.rarity}">${l.rarity}</div>
         ${l.is_mine ? `<div class="market-mine-badge">Твой</div>` : ""}
@@ -1481,7 +2027,9 @@ function closeMarketItem(){
 function openMarketItem(ucId, mode){
   const item = findListing(ucId, mode);
   if(!item) return;
-  document.getElementById("market-item-img").src = `/static/cards/${item.filename}`;
+  const marketItemImgEl = document.getElementById("market-item-img");
+  marketItemImgEl.src = `/static/cards/${item.filename}`;
+  setRarityBorder(marketItemImgEl, item.rarity);
   document.getElementById("market-item-name").textContent = item.name || "Без названия";
   const priceRow = document.getElementById("market-item-price-row");
   const actions = document.getElementById("market-item-actions");
@@ -1567,9 +2115,15 @@ function renderSwapPickerGrid(){
     grid.innerHTML = `<div class="empty-state">Нечего предложить — иди фармить 🌱</div>`;
     return;
   }
-  grid.innerHTML = inventory.map(c => `
-    <div class="grid-item picker-item ${swapPickerSelected.has(c.user_card_id) ? 'selected' : ''}" data-uc="${c.user_card_id}">
+  const swapAvailable = inventory.filter(c => !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at);
+  if(swapAvailable.length === 0){
+    grid.innerHTML = `<div class="empty-state">Нет свободных карт — сними с продажи/обмена/PvP-банка или иди фармить 🌱</div>`;
+    return;
+  }
+  grid.innerHTML = swapAvailable.map(c => `
+    <div class="grid-item picker-item rarity-border-${c.rarity} ${swapPickerSelected.has(c.user_card_id) ? 'selected' : ''}" data-uc="${c.user_card_id}">
       <img src="/static/cards/${c.filename}" alt="${c.name||''}">
+      <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
       <div class="check">✓</div>
     </div>
   `).join("");
@@ -1598,6 +2152,356 @@ document.getElementById("swap-picker-confirm").addEventListener("click", async (
   }
 });
 
+// ---------- PvP (shared jackpot — stake any number of cards, one winner takes the pot) ----------
+let pvpState = null;
+let pvpPollTimer = null;
+let myTelegramId = null; // set once we know it, from /auth — used to mark "(ты)" in the list
+// NOTE: whether this player has already seen a given round's reveal is tracked
+// server-side (pvp_last_seen_round_id on the user) via unseen_result, NOT in
+// localStorage — Telegram WebApp has no localStorage, and the client re-runs from
+// scratch on every open anyway, so a local JS variable can't remember this either.
+
+const PVP_PALETTE = ["#8b5cf6","#facc15","#4ade80","#f87171","#38bdf8","#fb923c","#f472b6","#a3e635"];
+
+// Turns a participants list (each with chance_pct) into conic-gradient stops plus
+// per-participant angle info (start/end/mid, clockwise degrees from 12 o'clock) —
+// shared by the live lobby wheel and the spin-to-a-winner reveal wheel.
+function pvpBuildWheel(participants){
+  if(!participants || !participants.length){
+    return { gradient: "#2a2a2a 0deg 360deg", segments: [] };
+  }
+  let acc = 0;
+  const stops = [];
+  const segments = [];
+  participants.forEach((p, i)=>{
+    const color = PVP_PALETTE[i % PVP_PALETTE.length];
+    const size = Math.max(0, (p.chance_pct / 100) * 360);
+    const start = acc;
+    let end = acc + size;
+    if(i === participants.length - 1) end = 360; // close any rounding gap
+    stops.push(`${color} ${start}deg ${end}deg`);
+    segments.push({ ...p, color, start, end, mid: (start + end) / 2 });
+    acc = end;
+  });
+  return { gradient: stops.join(", "), segments };
+}
+
+function startPvpPolling(){
+  stopPvpPolling();
+  pvpPollTimer = setInterval(loadPvpState, 3000);
+}
+function stopPvpPolling(){
+  if(pvpPollTimer){ clearInterval(pvpPollTimer); pvpPollTimer = null; }
+}
+
+async function loadPvpState(){
+  try{
+    pvpState = await api("/pvp/state");
+    renderPvp();
+    startPvpPolling();
+  }catch(e){
+    toast("Не удалось загрузить PvP: " + e.message);
+  }
+}
+
+function renderPvp(){
+  const list = document.getElementById("pvp-list");
+  if(!pvpState){ list.innerHTML = ""; return; }
+
+  const { seconds_left, participants, last_result, unseen_result } = pvpState;
+  const counting = seconds_left !== null && seconds_left !== undefined;
+  const PVP_JOIN_CUTOFF_SECONDS = 5;
+  const joinClosed = counting && seconds_left <= PVP_JOIN_CUTOFF_SECONDS;
+
+  let timerText, holeBig, holeSmall;
+  if(joinClosed){
+    timerText = `Ставки закрыты — старт через ${seconds_left}с`;
+    holeBig = String(seconds_left);
+    holeSmall = "ставки закрыты";
+  }else if(counting){
+    timerText = `До начала: ${seconds_left}с`;
+    holeBig = String(seconds_left);
+    holeSmall = "сек до старта";
+  }else if(participants.length === 1){
+    timerText = "Ждём ещё одного игрока...";
+    holeBig = "⏳";
+    holeSmall = "ждём соперника";
+  }else{
+    timerText = "Банк пуст — стань первым!";
+    holeBig = "🎁";
+    holeSmall = "банк пуст";
+  }
+
+  const { gradient, segments } = pvpBuildWheel(participants);
+
+  const legendRows = segments.map(p=>{
+    const name = p.username ? `@${p.username}` : (p.first_name || "Игрок");
+    const you = p.user_id === myTelegramId ? " you" : "";
+    const cards = p.cards.map(c=>`<img class="rarity-border-${c.rarity}" src="/static/cards/${c.filename}" alt="${c.name||''}" title="${c.name||''}">`).join("");
+    return `
+      <div class="pvp-participant">
+        <div class="pvp-participant-head">
+          <span class="pvp-swatch" style="background:${p.color}"></span>
+          <span class="pvp-participant-name${you}">${name}</span>
+          <span class="pvp-participant-chance">${p.chance_pct}%</span>
+        </div>
+        <div class="pvp-participant-cards">${cards}</div>
+      </div>`;
+  }).join("") || `<div class="empty-state"><span class="emoji">⚔️</span>Пока никто не поставил карты.<br>Стань первым в банке!</div>`;
+
+  // Past-round results now live in "История" (see openHistory) instead of an inline
+  // banner here — last_result is kept in the API response only so the unseen_result
+  // reveal check below still has something to compare against.
+  list.innerHTML = `
+    <div class="pvp-arena">
+      <div class="pvp-arena-top">
+        <span class="pvp-arena-title">⚔️ Общий банк</span>
+        <span class="pvp-live ${counting ? 'on' : ''}"><span class="pvp-live-dot"></span>${counting ? 'Live' : 'Ожидание'}</span>
+      </div>
+      <div class="pvp-wheel-wrap">
+        <div class="pvp-wheel-pointer"></div>
+        <div class="pvp-wheel" style="background:conic-gradient(${gradient})"></div>
+        <div class="pvp-wheel-hole"><div class="big">${holeBig}</div><div class="small">${holeSmall}</div></div>
+      </div>
+      <div class="pvp-header">
+        <div class="pvp-timer ${counting ? 'counting' : ''}">${timerText}</div>
+      </div>
+      <button id="pvp-join-btn" ${joinClosed ? "disabled" : ""}>${joinClosed ? "Ставки закрыты" : "Поставить карты"}</button>
+      <div class="pvp-legend">${legendRows}</div>
+    </div>
+  `;
+  if(!joinClosed){
+    document.getElementById("pvp-join-btn").addEventListener("click", openPvpPicker);
+  }
+
+  // Reveal the previous round's outcome exactly once per player — the server tells us
+  // via unseen_result (and marks it seen the moment it hands it to us), since there's
+  // nowhere on the client to remember this across reloads in a Telegram WebApp. This
+  // now drives an actual spin-the-wheel animation instead of a plain text alert.
+  if(unseen_result){
+    openPvpReveal(unseen_result);
+  }
+}
+
+// ---------- PvP reveal (spin the wheel to the winner) ----------
+function openPvpReveal(result){
+  const { segments } = pvpBuildWheel(result.participants || []);
+  const wheel = document.getElementById("pvp-reveal-wheel");
+  const legend = document.getElementById("pvp-reveal-legend");
+  const outcome = document.getElementById("pvp-reveal-outcome");
+  const closeBtn = document.getElementById("pvp-reveal-close");
+  const title = document.getElementById("pvp-reveal-title");
+
+  title.textContent = "🎲 Розыгрыш банка...";
+  outcome.style.display = "none";
+  outcome.className = "";
+  outcome.textContent = "";
+  closeBtn.style.display = "none";
+
+  const gradient = segments.length
+    ? segments.map(s=>`${s.color} ${s.start}deg ${s.end}deg`).join(", ")
+    : "#2a2a2a 0deg 360deg";
+
+  legend.innerHTML = segments.map(p=>{
+    const name = p.username ? `@${p.username}` : (p.first_name || "Игрок");
+    const isWinner = p.user_id === result.winner_id;
+    return `
+      <div class="pvp-reveal-row${isWinner ? ' winner' : ''}">
+        <span class="pvp-swatch" style="background:${p.color}"></span>
+        <span class="name">${name}</span>
+        <span>${p.chance_pct}%</span>
+      </div>`;
+  }).join("");
+
+  wheel.style.transition = "none";
+  wheel.style.transform = "rotate(0deg)";
+  wheel.style.background = `conic-gradient(${gradient})`;
+  void wheel.offsetWidth; // force reflow so the transition-reset above actually applies
+
+  const winnerSeg = segments.find(s => s.user_id === result.winner_id);
+  const targetMid = winnerSeg ? winnerSeg.mid : 0;
+  const spins = 5;
+  const finalDeg = spins * 360 + ((360 - targetMid) % 360);
+
+  document.getElementById("pvp-reveal-overlay").classList.add("active");
+
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      wheel.style.transition = "transform 4.2s cubic-bezier(.15,.85,.25,1)";
+      wheel.style.transform = `rotate(${finalDeg}deg)`;
+    });
+  });
+
+  let finished = false;
+  const finish = ()=>{
+    if(finished) return;
+    finished = true;
+    const iWon = result.winner_id === myTelegramId;
+    title.textContent = "🏆 Победитель!";
+    outcome.style.display = "block";
+    outcome.className = iWon ? "won" : "";
+    outcome.textContent = iWon
+      ? `Ты выиграл! Забрал весь банк — ${result.total_cards} карт(ы).`
+      : `Победил ${result.winner_name} — забрал ${result.total_cards} карт(ы) у ${result.total_players} игроков.`;
+    closeBtn.style.display = "block";
+  };
+  wheel.addEventListener("transitionend", finish, { once: true });
+  setTimeout(finish, 4600); // fallback in case transitionend doesn't fire
+}
+
+document.getElementById("pvp-reveal-close").addEventListener("click", ()=>{
+  document.getElementById("pvp-reveal-overlay").classList.remove("active");
+});
+
+// ---------- Daily fortune wheel ----------
+// Fixed visual layout — 8 equal 45° slices, 6 empty + one "25" + one "50". The
+// server never reveals the real odds (10% for 25, 1% for 50 — see database.py's
+// spin_fortune_wheel), so these slice sizes are NOT the true chances, just 8 even
+// slots to spin across. On a loss the wheel lands on a random empty slice.
+const FORTUNE_SEGMENTS = [
+  { color:"#262626", amount:0 },
+  { color:"#333333", amount:0 },
+  { color:"#facc15", amount:25 },
+  { color:"#262626", amount:0 },
+  { color:"#333333", amount:0 },
+  { color:"#4ade80", amount:50 },
+  { color:"#262626", amount:0 },
+  { color:"#333333", amount:0 },
+].map((s, i)=>{
+  const size = 360 / 8;
+  const start = i * size, end = start + size;
+  return { ...s, start, end, mid: (start + end) / 2 };
+});
+
+function fortuneGradient(){
+  return FORTUNE_SEGMENTS.map(s=>`${s.color} ${s.start}deg ${s.end}deg`).join(", ");
+}
+
+async function maybeOpenFortuneWheel(){
+  let spinResult;
+  try{
+    spinResult = await api("/wheel/spin");
+  }catch(e){ return; } // already spun today (or offline) — skip silently
+  openFortuneWheel(spinResult.amount);
+}
+
+function openFortuneWheel(amount){
+  const wheel = document.getElementById("fortune-wheel");
+  const legend = document.getElementById("fortune-legend");
+  const outcome = document.getElementById("fortune-outcome");
+  const closeBtn = document.getElementById("fortune-close");
+  const title = document.getElementById("fortune-title");
+
+  title.textContent = "🎡 Колесо фортуны крутится...";
+  outcome.style.display = "none";
+  outcome.className = "";
+  outcome.textContent = "";
+  closeBtn.style.display = "none";
+
+  legend.innerHTML = `
+    <div class="fortune-legend-row"><span class="pvp-swatch" style="background:#333"></span><span class="name">Пусто</span></div>
+    <div class="fortune-legend-row"><span class="pvp-swatch" style="background:#facc15"></span><span class="name">+25 <img src="/static/icons/diamond.png" alt="" style="width:12px;height:12px;vertical-align:-1px;"></span></div>
+    <div class="fortune-legend-row"><span class="pvp-swatch" style="background:#4ade80"></span><span class="name">+50 <img src="/static/icons/diamond.png" alt="" style="width:12px;height:12px;vertical-align:-1px;"></span></div>
+  `;
+
+  wheel.style.transition = "none";
+  wheel.style.transform = "rotate(0deg)";
+  wheel.style.background = `conic-gradient(${fortuneGradient()})`;
+  void wheel.offsetWidth; // force reflow so the transition-reset above actually applies
+
+  const matching = FORTUNE_SEGMENTS.filter(s=>s.amount === amount);
+  const targetSeg = matching[Math.floor(Math.random() * matching.length)];
+  const spins = 5;
+  const finalDeg = spins * 360 + ((360 - targetSeg.mid) % 360);
+
+  document.getElementById("fortune-overlay").classList.add("active");
+
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      wheel.style.transition = "transform 4.2s cubic-bezier(.15,.85,.25,1)";
+      wheel.style.transform = `rotate(${finalDeg}deg)`;
+    });
+  });
+
+  let finished = false;
+  const finish = ()=>{
+    if(finished) return;
+    finished = true;
+    title.textContent = amount > 0 ? "🎉 Повезло!" : "🎡 Колесо фортуны";
+    outcome.style.display = "block";
+    outcome.className = amount > 0 ? "won" : "";
+    outcome.textContent = amount > 0
+      ? `Ты выиграл ${amount} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">! Приходи завтра ещё раз.`
+      : "Сегодня не повезло — приходи завтра, будет ещё попытка.";
+    closeBtn.style.display = "block";
+  };
+  wheel.addEventListener("transitionend", finish, { once: true });
+  setTimeout(finish, 4600); // fallback in case transitionend doesn't fire
+}
+
+document.getElementById("fortune-close").addEventListener("click", ()=>{
+  document.getElementById("fortune-overlay").classList.remove("active");
+});
+
+// ---------- PvP picker (choose which of your own cards to stake — no taking them back) ----------
+let pvpPickerSelected = new Set();
+
+function openPvpPicker(){
+  pvpPickerSelected = new Set();
+  renderPvpPickerGrid();
+  document.getElementById("pvp-picker-overlay").classList.add("active");
+}
+
+function renderPvpPickerGrid(){
+  const grid = document.getElementById("pvp-picker-grid");
+  const available = inventory
+    .filter(c => !c.listed_price && !c.swap_listed && !c.staked_at && !c.pvp_round_id)
+    // Bronze always first (same "worst first" ordering as the market's Bronze filter) —
+    // makes it easy to stake your least valuable cards without hunting for them.
+    .sort((a, b) => (RARITY_ORDER[b.rarity] ?? 4) - (RARITY_ORDER[a.rarity] ?? 4));
+  if(available.length === 0){
+    grid.innerHTML = `<div class="empty-state">Нет свободных карт — сними с продажи/обмена/стейкинга или иди фармить 🌱</div>`;
+    return;
+  }
+  grid.innerHTML = available.map(c => `
+    <div class="grid-item picker-item rarity-border-${c.rarity} ${pvpPickerSelected.has(c.user_card_id) ? 'selected' : ''}" data-uc="${c.user_card_id}">
+      <img src="/static/cards/${c.filename}" alt="${c.name||''}">
+      <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
+      <div class="check">✓</div>
+    </div>
+  `).join("");
+  grid.querySelectorAll(".picker-item").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      const ucId = parseInt(el.dataset.uc);
+      if(pvpPickerSelected.has(ucId)) pvpPickerSelected.delete(ucId);
+      else pvpPickerSelected.add(ucId);
+      el.classList.toggle("selected");
+    });
+  });
+}
+
+document.getElementById("pvp-picker-cancel").addEventListener("click", ()=>{
+  document.getElementById("pvp-picker-overlay").classList.remove("active");
+});
+
+document.getElementById("pvp-picker-confirm").addEventListener("click", async ()=>{
+  if(pvpPickerSelected.size === 0){ toast("Выбери хотя бы одну карту"); return; }
+  try{
+    pvpState = await api("/pvp/join", { user_card_ids: [...pvpPickerSelected] });
+    // Refresh the inventory so the cards just staked disappear from every picker
+    // (pvp_round_id is now set on them) instead of still showing as available.
+    try{
+      const data = await api("/profile");
+      inventory = data.inventory;
+    }catch(e){ /* non-critical — next profile visit will pick it up anyway */ }
+    renderPvp();
+    document.getElementById("pvp-picker-overlay").classList.remove("active");
+    toast("Карты поставлены в банк");
+  }catch(e){
+    toast("Не получилось: " + e.message);
+  }
+});
+
 // ---------- Card catalog (all models — used by the farm animation and the gallery) ----------
 let allCardsCache = null;
 async function ensureAllCards(){
@@ -1619,7 +2523,9 @@ let zoomStartX = 0, zoomStartY = 0, zoomJustSwiped = false;
 function renderZoom(){
   const c = zoomList[zoomIndex];
   if(!c) return;
-  document.getElementById("zoom-img").src = `/static/cards/${c.filename}`;
+  const zoomImgEl = document.getElementById("zoom-img");
+  zoomImgEl.src = `/static/cards/${c.filename}`;
+  setRarityBorder(zoomImgEl, c.rarity);
   document.getElementById("zoom-name").textContent = c.name || "";
 }
 
@@ -1650,24 +2556,31 @@ zoomOverlayEl.addEventListener("click", ()=>{
   zoomOverlayEl.classList.remove("active");
 });
 
-const RARITY_ORDER = { diamond: 0, platina: 1, gold: 2, silver: 3, bronze: 4 };
+const RARITY_ORDER = { diamond: 0, platinum: 1, gold: 2, silver: 3, bronze: 4 };
 
-let modelsSortMode = "best_first"; // "best_first" | "worst_first" | "alpha"
-const MODELS_SORT_LABELS = { best_first: "DIAMOND → BRONZE", worst_first: "BRONZE → DIAMOND", alpha: "По алфавиту" };
-const MODELS_SORT_CYCLE = ["best_first", "worst_first", "alpha"];
+// Sets/refreshes the rarity-colored border class on a single standalone <img> (the
+// grid-rendered lists set this class directly in their template strings instead —
+// see the .rarity-border-* CSS rules).
+function setRarityBorder(el, rarity){
+  el.classList.remove("rarity-border-bronze","rarity-border-silver","rarity-border-gold","rarity-border-platinum","rarity-border-diamond");
+  if(rarity) el.classList.add("rarity-border-" + rarity);
+}
+
+let modelsSortMode = "best_first"; // "best_first" | "worst_first"
+const MODELS_SORT_LABELS = { best_first: "DIAMOND → BRONZE", worst_first: "BRONZE → DIAMOND" };
+const MODELS_SORT_CYCLE = ["best_first", "worst_first"];
 
 function renderModelsGrid(){
   const cards = allCardsCache || [];
   const sortMode = modelsSortMode;
   const sorted = [...cards].sort((a, b) => {
-    if(sortMode === "alpha") return (a.name || "").localeCompare(b.name || "", "ru");
     const ra = RARITY_ORDER[a.rarity] ?? 4, rb = RARITY_ORDER[b.rarity] ?? 4;
     if(ra !== rb) return sortMode === "worst_first" ? rb - ra : ra - rb;
     return (a.name || "").localeCompare(b.name || "", "ru");
   });
   const grid = document.getElementById("models-grid");
   grid.innerHTML = sorted.map(c => `
-    <div class="grid-item" data-src="/static/cards/${c.filename}">
+    <div class="grid-item rarity-border-${c.rarity}" data-src="/static/cards/${c.filename}">
       <img src="/static/cards/${c.filename}" alt="${c.name||''}">
       <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
       <div class="model-name-tag">${c.name || ""}</div>
@@ -1685,10 +2598,10 @@ document.getElementById("models-sort").addEventListener("click", ()=>{
 });
 
 function updateModelsRaritySummary(cards){
-  const counts = {diamond:0, platina:0, gold:0, silver:0, bronze:0};
+  const counts = {diamond:0, platinum:0, gold:0, silver:0, bronze:0};
   cards.forEach(c=>{ if(counts[c.rarity]!==undefined) counts[c.rarity]++; });
   document.getElementById("models-rarity-summary").innerHTML =
-    `<span class="diamond">DIAMOND ${counts.diamond}</span><span class="platina">PLATINA ${counts.platina}</span><span class="gold">GOLD ${counts.gold}</span><span class="silver">SILVER ${counts.silver}</span><span class="bronze">BRONZE ${counts.bronze}</span>`;
+    `<span class="diamond">DIAMOND ${counts.diamond}</span><span class="platinum">PLATINUM ${counts.platinum}</span><span class="gold">GOLD ${counts.gold}</span><span class="silver">SILVER ${counts.silver}</span><span class="bronze">BRONZE ${counts.bronze}</span>`;
 }
 document.getElementById("models-btn").addEventListener("click", async ()=>{
   const cards = await ensureAllCards();
@@ -1719,7 +2632,7 @@ function renderTops(){
   const sorted = [...topsPlayers].sort((a, b) => {
     if(topsMetric === "gems") return b.gems_earned - a.gems_earned;
     return b.total_cards - a.total_cards;
-  }).slice(0, 50);
+  }).slice(0, 10);
   list.innerHTML = sorted.map((p, i) => `
     <div class="tops-row">
       <div class="tops-rank ${i===0?'top1':i===1?'top2':i===2?'top3':''}">${i+1}</div>
@@ -1765,12 +2678,13 @@ document.getElementById("tops-overlay").addEventListener("click", (e)=>{
 let farmCycleTimer = null;
 let farmProgressTimer = null;
 
-function startFarmAnimation(cards){
+const FARM_DEFAULT_HINT = '<span class="diamond">DIAMOND 1%</span> · <span class="platinum">PLATINUM 7%</span> · <span class="gold">GOLD 13%</span><br><span class="silver">SILVER 29%</span> · <span class="bronze">BRONZE 50%</span>';
+function startFarmAnimation(cards, hintHTML){
   const stage = document.getElementById("farm-stage");
   const progressWrap = document.getElementById("farm-progress-wrap");
   const progressBar = document.getElementById("farm-progress-bar");
   const nameEl0 = document.getElementById("farm-result-name");
-  nameEl0.innerHTML = '<span class="diamond">DIAMOND 1%</span> · <span class="platina">PLATINA 7%</span> · <span class="gold">GOLD 13%</span><br><span class="silver">SILVER 29%</span> · <span class="bronze">BRONZE 50%</span>';
+  nameEl0.innerHTML = hintHTML || FARM_DEFAULT_HINT;
   nameEl0.classList.add("chance-hint");
   document.getElementById("farm-result-number").textContent = "";
   const rarityEl0 = document.getElementById("farm-result-rarity");
@@ -1830,7 +2744,7 @@ document.getElementById("farm-btn").addEventListener("click", async ()=>{
     const card = await api("/farm");
     if(mySeq !== farmRequestSeq) return;
     const stage = document.getElementById("farm-stage");
-    stage.innerHTML = `<img src="/static/cards/${card.filename}" alt="${card.name||''}">`;
+    stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}" alt="${card.name||''}">`;
     const nameEl = document.getElementById("farm-result-name");
     nameEl.classList.remove("chance-hint");
     nameEl.textContent = card.name || "Новая картинка!";
@@ -1882,37 +2796,21 @@ async function loadProfile(){
   }
 }
 
-// ---------- Collection sort (by drop number, or by rarity) ----------
-let profileSortAsc = false; // false = biggest number (newest) first, matching the old default
+// ---------- Collection sort (by rarity) ----------
 let profileRarityAsc = false; // false = diamond -> silver, true = silver -> diamond
-let profileSortMode = "number"; // "number" | "rarity"
-
-document.getElementById("profile-sort-btn").addEventListener("click", ()=>{
-  profileSortMode = "number";
-  profileSortAsc = !profileSortAsc;
-  sortInventoryAndRender();
-});
 
 document.getElementById("profile-rarity-sort-btn").addEventListener("click", ()=>{
-  profileSortMode = "rarity";
   profileRarityAsc = !profileRarityAsc;
   sortInventoryAndRender();
 });
 
 function sortInventoryAndRender(){
-  if(profileSortMode === "rarity"){
-    inventory.sort((a, b) => {
-      const ra = RARITY_ORDER[a.rarity] ?? 4, rb = RARITY_ORDER[b.rarity] ?? 4;
-      if(ra !== rb) return profileRarityAsc ? rb - ra : ra - rb;
-      return b.user_card_id - a.user_card_id;
-    });
-  }else{
-    inventory.sort((a, b) => profileSortAsc ? a.user_card_id - b.user_card_id : b.user_card_id - a.user_card_id);
-  }
-  document.getElementById("profile-sort-btn").textContent = profileSortAsc ? "№ ↑" : "№ ↓";
+  inventory.sort((a, b) => {
+    const ra = RARITY_ORDER[a.rarity] ?? 4, rb = RARITY_ORDER[b.rarity] ?? 4;
+    if(ra !== rb) return profileRarityAsc ? rb - ra : ra - rb;
+    return b.user_card_id - a.user_card_id;
+  });
   document.getElementById("profile-rarity-sort-btn").textContent = profileRarityAsc ? "Ранг ↑" : "Ранг ↓";
-  document.getElementById("profile-sort-btn").classList.toggle("active-sort", profileSortMode === "number");
-  document.getElementById("profile-rarity-sort-btn").classList.toggle("active-sort", profileSortMode === "rarity");
   renderProfileGrid();
 }
 
@@ -1926,7 +2824,7 @@ function renderProfileGrid(){
   }
   document.getElementById("empty-hint")?.remove();
   grid.innerHTML = inventory.map(c => `
-    <div class="grid-item" data-uc="${c.user_card_id}">
+    <div class="grid-item rarity-border-${c.rarity}" data-uc="${c.user_card_id}">
       <img src="/static/cards/${c.filename}" alt="${c.name||''}">
       <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
       <div class="drop-number">#${c.drop_number}</div>
@@ -1957,12 +2855,15 @@ function openModalAt(index){
   const item = inventory[index];
   selectedUserCardId = item.user_card_id;
   selectedItem = item;
-  document.getElementById("modal-img").src = `/static/cards/${item.filename}`;
+  const modalImgEl = document.getElementById("modal-img");
+  modalImgEl.src = `/static/cards/${item.filename}`;
+  setRarityBorder(modalImgEl, item.rarity);
   document.getElementById("modal-name").textContent = `${item.name || "Без названия"} #${item.drop_number}`;
   document.getElementById("modal-overlay").classList.add("active");
   document.getElementById("modal-card").dataset.filename = item.filename;
   updateSellButton(item);
   updateSwapButton(item);
+  updateStakeButton(item);
 }
 
 function updateSellButton(item){
@@ -1973,7 +2874,7 @@ function updateSellButton(item){
     return;
   }
   if(item.listed_price){
-    btn.textContent = `Убрать с продажи (${item.listed_price} 💎)`;
+    btn.innerHTML = `Убрать с продажи (${item.listed_price} <img src="/static/icons/diamond.png" alt="" style="width:12px;height:12px;vertical-align:-1px;">)`;
     btn.classList.add("listed");
   }else{
     btn.textContent = "Продать";
@@ -1992,7 +2893,19 @@ function updateSwapButton(item){
     btn.textContent = "Снять с обмена";
     btn.classList.add("listed");
   }else{
-    btn.textContent = "Обменять";
+    btn.textContent = "Обмен";
+    btn.classList.add("active");
+  }
+}
+
+function updateStakeButton(item){
+  const btn = document.getElementById("modal-stake");
+  btn.classList.remove("active", "staked");
+  if(item.staked_at){
+    btn.textContent = `Забрать со стейкинга (${formatStakedDuration(item.staked_at)})`;
+    btn.classList.add("staked");
+  }else{
+    btn.textContent = "Стейк";
     btn.classList.add("active");
   }
 }
@@ -2106,6 +3019,7 @@ document.getElementById("modal-sell").addEventListener("click", async ()=>{
       selectedItem.listed_price = price;
       updateSellButton(selectedItem);
       toast("Выставлено на рынок!");
+      document.getElementById("modal-overlay").classList.remove("active");
     }catch(e){
       toast("Не получилось выставить: " + e.message);
     }
@@ -2134,15 +3048,126 @@ document.getElementById("modal-swap").addEventListener("click", async ()=>{
       updateSwapButton(selectedItem);
       toast("Выставлено на обмен!");
       document.getElementById("modal-overlay").classList.remove("active");
-      goToMarketSwapTab();
     }catch(e){
       toast("Не получилось выставить: " + e.message);
     }
   }
 });
 
-document.getElementById("modal-craft").addEventListener("click", ()=>{
-  showAlert("В разработке");
+// Mirrors database.py's STAKE_DAILY_RATES — client-side copy for the fee pre-check + toast text.
+const STAKE_DAILY_RATES = { bronze: 5, silver: 10, gold: 25, platinum: 50, diamond: 100 };
+document.getElementById("modal-stake").addEventListener("click", async ()=>{
+  if(!selectedItem) return;
+  if(selectedItem.staked_at){
+    try{
+      const res = await api("/stake/unstake", { user_card_id: selectedUserCardId });
+      selectedItem.staked_at = null;
+      updateStakeButton(selectedItem);
+      updateSellButton(selectedItem);
+      updateSwapButton(selectedItem);
+      if(res && typeof res.gems === "number") document.getElementById("gems-amount").textContent = res.gems;
+      toast("Снято со стейкинга");
+    }catch(e){
+      toast("Не получилось: " + e.message);
+    }
+  }else{
+    if(selectedItem.listed_price || selectedItem.swap_listed){
+      toast("Сначала снимите карту с продажи/обмена");
+      return;
+    }
+    const fee = STAKE_DAILY_RATES[selectedItem.rarity] ?? 5;
+    const currentGems = parseInt(document.getElementById("gems-amount").textContent, 10) || 0;
+    if(currentGems < fee){
+      toastHTML(`Не хватает гемов — нужно ${fee} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
+      return;
+    }
+    const stakeConfirmed = await confirmAction(`Стейкинг стоит ${fee} гемов. Продолжить?`);
+    if(!stakeConfirmed) return;
+    try{
+      const res = await api("/stake/list", { user_card_id: selectedUserCardId });
+      selectedItem.staked_at = new Date().toISOString();
+      updateStakeButton(selectedItem);
+      updateSellButton(selectedItem);
+      updateSwapButton(selectedItem);
+      if(res && typeof res.gems === "number") document.getElementById("gems-amount").textContent = res.gems;
+      toast(`В стейкинге! +${fee} гемов в сутки за карту`);
+    }catch(e){
+      if(String(e.message).includes("not enough gems")){
+        toastHTML(`Не хватает гемов — нужно ${fee} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
+      }else{
+        toast("Не получилось: " + e.message);
+      }
+    }
+  }
+});
+
+const CRAFT_COST_GEMS = 25;
+// Mirrors database.py's CRAFT_WEIGHTS — client-side copy for the chance-hint display only.
+const CRAFT_CHANCES = {
+  bronze:  { bronze: 50, silver: 35, gold: 12, platinum: 2.5, diamond: 0.5 },
+  silver:  { bronze: 20, silver: 45, gold: 27, platinum: 6,   diamond: 2 },
+  gold:    { bronze: 5,  silver: 20, gold: 45, platinum: 22,  diamond: 8 },
+  platinum: { bronze: 1,  silver: 5,  gold: 24, platinum: 50,  diamond: 20 },
+};
+function craftHintHTML(rarity){
+  const t = CRAFT_CHANCES[rarity] || CRAFT_CHANCES.bronze;
+  const fmt = (v) => (v % 1 === 0 ? v : v.toFixed(1));
+  return `<span class="diamond">DIAMOND ${fmt(t.diamond)}%</span> · <span class="platinum">PLATINUM ${fmt(t.platinum)}%</span> · <span class="gold">GOLD ${fmt(t.gold)}%</span><br><span class="silver">SILVER ${fmt(t.silver)}%</span> · <span class="bronze">BRONZE ${fmt(t.bronze)}%</span>`;
+}
+document.getElementById("modal-craft").addEventListener("click", async ()=>{
+  if(!selectedItem) return;
+  if(selectedItem.rarity === "diamond"){
+    showAlert("Diamond-карты нельзя крафтить");
+    return;
+  }
+  if(selectedItem.staked_at || selectedItem.listed_price || selectedItem.swap_listed){
+    toast("Сначала снимите карту с продажи/обмена/стейкинга");
+    return;
+  }
+  const currentGems = parseInt(document.getElementById("gems-amount").textContent, 10) || 0;
+  if(currentGems < CRAFT_COST_GEMS){
+    toastHTML(`Не хватает гемов — нужно ${CRAFT_COST_GEMS} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
+    return;
+  }
+  const craftConfirmed = await confirmAction(`Крафт стоит ${CRAFT_COST_GEMS} гемов, карта будет уничтожена. Продолжить?`);
+  if(!craftConfirmed) return;
+
+  const craftUserCardId = selectedUserCardId;
+  const craftInputRarity = selectedItem.rarity;
+  document.getElementById("modal-overlay").classList.remove("active");
+  switchScreen("farm-screen");
+
+  const mySeq = ++farmRequestSeq; // also invalidates any in-flight farm, so it can't clobber this result
+  try{
+    const cards = await ensureAllCards();
+    await startFarmAnimation(cards, craftHintHTML(craftInputRarity));
+    if(mySeq !== farmRequestSeq) return;
+    const card = await api("/craft", { user_card_id: craftUserCardId });
+    if(mySeq !== farmRequestSeq) return;
+    const stage = document.getElementById("farm-stage");
+    stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}" alt="${card.name||''}">`;
+    const nameEl = document.getElementById("farm-result-name");
+    nameEl.classList.remove("chance-hint");
+    nameEl.textContent = card.name || "Новая картинка!";
+    document.getElementById("farm-result-number").textContent = `№${card.drop_number}`;
+    const rarityEl = document.getElementById("farm-result-rarity");
+    rarityEl.textContent = card.rarity || "";
+    rarityEl.className = card.rarity || "";
+    document.getElementById("gems-amount").textContent = card.gems;
+    tg?.HapticFeedback?.notificationOccurred("success");
+  }catch(e){
+    if(mySeq !== farmRequestSeq) return;
+    document.getElementById("farm-progress-wrap").classList.remove("active");
+    clearInterval(farmCycleTimer);
+    clearInterval(farmProgressTimer);
+    if(String(e.message).includes("not enough gems")){
+      toastHTML(`Не хватает гемов — нужно ${CRAFT_COST_GEMS} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
+    }else if(String(e.message).includes("diamond")){
+      showAlert("Diamond-карты нельзя крафтить");
+    }else{
+      toast("Ошибка крафта: " + e.message);
+    }
+  }
 });
 
 // ---------- Referral modal (tap the "Рефералы" stat tile in Profile) ----------
