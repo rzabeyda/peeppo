@@ -1824,15 +1824,9 @@ document.getElementById("gems-choice-overlay").addEventListener("click", (e)=>{
     document.getElementById("gems-choice-overlay").classList.remove("active");
   }
 });
-const GEMS_SELL_MIN = 1000;
 document.getElementById("gems-choice-sell").addEventListener("click", ()=>{
   document.getElementById("gems-choice-overlay").classList.remove("active");
-  const currentGems = parseInt(document.getElementById("gems-amount").textContent, 10) || 0;
-  if(currentGems < GEMS_SELL_MIN){
-    showAlert(`Вывод гемов доступен от ${GEMS_SELL_MIN} гемов`);
-  }else{
-    showAlert("В разработке");
-  }
+  showAlert("Функция пока недоступна");
 });
 document.getElementById("gems-choice-buy").addEventListener("click", async ()=>{
   document.getElementById("gems-choice-overlay").classList.remove("active");
@@ -2766,7 +2760,7 @@ function renderTops(){
     <div class="tops-row">
       <div class="tops-rank ${i===0?'top1':i===1?'top2':i===2?'top3':''}">${i+1}</div>
       <div class="tops-avatar">${p.photo_url ? `<img src="${p.photo_url}" alt="">` : (p.username || p.first_name || "?")[0].toUpperCase()}</div>
-      <div class="tops-name">${p.username ? "@"+p.username : (p.first_name || "Игрок")}</div>
+      <div class="tops-name">${p.username || p.first_name || "Игрок"}</div>
       <div class="tops-count">${topsMetric === "gems" ? `<img src="/static/icons/diamond.png" alt="">${p.gems_earned}` : p.total_cards}</div>
     </div>
   `).join("");
