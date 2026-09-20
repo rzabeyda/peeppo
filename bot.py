@@ -247,14 +247,14 @@ async def handle_admin_find_user(message: Message):
 
 GEM_DROP_AMOUNT = 25
 
-# Auto-scheduler: fires roughly once an hour, only between 06:00 and 22:00 Tallinn
-# local time. GEM_DROP_MIN_GAP_SECONDS guards against firing a second drop too soon
-# if the bot process restarts a few times in a row (e.g. during a deploy).
+# Auto-scheduler: fires roughly once every 2 hours, only between 06:00 and 22:00
+# Tallinn local time. GEM_DROP_MIN_GAP_SECONDS guards against firing a second drop too
+# soon if the bot process restarts a few times in a row (e.g. during a deploy).
 GEM_DROP_TZ = ZoneInfo("Europe/Tallinn")
 GEM_DROP_START_HOUR = 6
 GEM_DROP_END_HOUR = 22
-GEM_DROP_INTERVAL_SECONDS = 3600
-GEM_DROP_MIN_GAP_SECONDS = 1800
+GEM_DROP_INTERVAL_SECONDS = 7200
+GEM_DROP_MIN_GAP_SECONDS = 3600
 
 
 async def _post_gem_drop(amount: int = GEM_DROP_AMOUNT) -> bool:
@@ -288,10 +288,10 @@ async def handle_admin_gem_drop(message: Message):
 
 
 async def gem_drop_scheduler():
-    """Background loop living for the lifetime of the bot process: roughly once an
-    hour, checks whether it's currently 06:00-22:00 in Tallinn and — if no drop went
+    """Background loop living for the lifetime of the bot process: roughly once every
+    2 hours, checks whether it's currently 06:00-22:00 in Tallinn and — if no drop went
     out too recently — posts an automatic 25-gem drop into PUBLIC_CHAT."""
-    logger.info("gem drop scheduler started (06:00-22:00 Europe/Tallinn, ~hourly)")
+    logger.info("gem drop scheduler started (06:00-22:00 Europe/Tallinn, ~every 2h)")
     while True:
         try:
             now_local = datetime.now(GEM_DROP_TZ)

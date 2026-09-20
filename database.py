@@ -1716,7 +1716,7 @@ def get_last_resolved_pvp_round() -> dict | None:
         p["chance_pct"] = round(p["total_weight"] / total_weight * 100, 1) if total_weight else 0
 
     if winner is not None and winner["username"]:
-        winner_name = f"@{winner['username']}"
+        winner_name = winner["username"]
     elif winner is not None and winner["first_name"]:
         winner_name = winner["first_name"]
     else:
@@ -1757,7 +1757,7 @@ def get_pvp_history(limit: int = 50) -> list[dict]:
                 "SELECT COUNT(DISTINCT user_id) FROM pvp_entries WHERE round_id = ?", (r["id"],)
             ).fetchone()[0]
             winner_name = (
-                f"@{r['winner_username']}" if r["winner_username"]
+                r["winner_username"] if r["winner_username"]
                 else (r["winner_first_name"] or "игрок")
             )
             out.append({
