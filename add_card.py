@@ -21,7 +21,7 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 ACRONYMS = {
     "btc": "BTC", "gta": "GTA", "cs": "CS", "kfc": "KFC", "ny": "NY",
     "ea": "EA", "cd": "CD", "mp3": "MP3", "bmw": "BMW", "ak-47": "AK-47",
-    "pc": "PC",
+    "pc": "PC", "rr": "RR",
 }
 SPECIAL_WORDS = {
     "iphone": "iPhone", "ipad": "iPad", "ipod": "iPod", "imac": "iMac",

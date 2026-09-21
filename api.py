@@ -158,6 +158,10 @@ class CraftBody(InitDataBody):
     user_card_id: int
 
 
+class CaseOpenBody(InitDataBody):
+    case_key: str
+
+
 class SwapOfferBody(InitDataBody):
     user_card_id: int
     offered_user_card_ids: list[int]
@@ -423,9 +427,22 @@ def craft(body: CraftBody):
     try:
         result = db.craft_card(user["telegram_id"], body.user_card_id)
     except db.CraftNotOwned:
-        raise HTTPException(404, "card not found in your inventory")
+        raise HTTPException(404, "card not found in your inventory, or it's busy (staked/listed for sale or swap/in a PvP round)")
     except db.CraftNotAllowed:
         raise HTTPException(400, "diamond cards can't be crafted")
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
+    result["gems"] = db.get_gems(user["telegram_id"])
+    return result
+
+
+@app.post("/api/case/open")
+def case_open(body: CaseOpenBody):
+    user = _authenticate(body.initData)
+    try:
+        result = db.open_case(user["telegram_id"], body.case_key)
+    except db.CaseNotFound:
+        raise HTTPException(404, "unknown case")
     except db.InsufficientGems:
         raise HTTPException(400, "not enough gems")
     result["gems"] = db.get_gems(user["telegram_id"])

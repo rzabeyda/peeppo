@@ -153,6 +153,14 @@
   }
   .models-btn:active{transform:scale(.95);}
   .tops-btn{left:auto; right:0;}
+  .case-btn{
+    position:absolute; right:0; bottom:0;
+    background:linear-gradient(135deg,#22c55e,#facc15);
+    color:#111; border:none; border-radius:999px;
+    padding:9px 16px; font-size:12px; font-weight:800; cursor:pointer;
+    box-shadow:0 4px 10px rgba(0,0,0,.35);
+  }
+  .case-btn:active{transform:scale(.95);}
   .farm-total-pill{
     position:absolute; top:0; left:50%; transform:translateX(-50%);
     font-size:12px; color:#999;
@@ -778,6 +786,50 @@
   }
 
   /* ---------- Models (full catalog) overlay ---------- */
+  #case-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.94);
+    display:none;
+    z-index:65;
+  }
+  #case-overlay.active{display:block;}
+  #case-scroll{
+    position:absolute; inset:0;
+    padding:20px 16px calc(20px + env(safe-area-inset-bottom));
+    overflow-y:auto;
+  }
+  #case-header-row{display:flex; align-items:center; gap:8px; margin:0 2px 14px;}
+  #case-title{font-size:12px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:.6px; margin:0; flex:1;}
+  #case-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .case-item{
+    position:relative;
+    background:var(--card-bg); border:1px solid var(--card-border); border-radius:16px;
+    padding:14px; display:flex; flex-direction:column; align-items:center; text-align:center; gap:8px;
+  }
+  .case-info-btn{
+    position:absolute; top:8px; right:8px; z-index:2;
+    width:22px; height:22px; border-radius:50%;
+    background:#3b82f6; border:1px solid #3b82f6;
+    color:#fff; font-size:12px; font-weight:800; line-height:1;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; padding:0;
+  }
+  .case-info-btn:active{transform:scale(.9);}
+  #alert-text .diamond{color:#ff2fb0;}
+  #alert-text .platinum{color:#a78bfa;}
+  #alert-text .gold{color:#facc15;}
+  #alert-text .silver{color:#9ca3af;}
+  #alert-text .bronze{color:#cd7f32;}
+  .case-item img{width:100%; aspect-ratio:1; object-fit:cover; border-radius:12px;}
+  .case-item .case-name{font-size:13px; font-weight:800; text-transform:uppercase;}
+  .case-item .case-price{display:flex; align-items:center; gap:4px; font-size:13px; font-weight:800; color:var(--accent2);}
+  .case-item .case-price img{width:14px; height:14px; border-radius:0;}
+  .case-open-btn{
+    width:100%; padding:10px; border:none; border-radius:12px;
+    font-weight:800; font-size:13px; cursor:pointer;
+    background:#22c55e; color:#0a2e17;
+  }
+  .case-open-btn:disabled{background:#3a3a3a; color:#888; cursor:not-allowed;}
   #models-overlay{
     position:absolute; inset:0;
     background:rgba(0,0,0,.94);
@@ -1036,6 +1088,20 @@
   .btn-stake.active{background:#ec4899; color:#fff; cursor:pointer;}
   .btn-stake.staked{background:rgba(239,68,68,.15); color:var(--danger); cursor:pointer;}
   .btn-craft{background:#8c5a2b; color:#fff8ee; cursor:pointer;}
+  .btn-craft.disabled{background:#3a3a3a; color:#888; cursor:not-allowed;}
+  .nav-pulse-dot{
+    position:absolute; top:2px; right:calc(50% - 22px);
+    width:10px; height:10px; border-radius:50%;
+    background:#4ade80;
+    display:none;
+    box-shadow:0 0 0 0 rgba(74,222,128,.7);
+  }
+  .nav-pulse-dot.visible{display:block; animation:navPulse 1.2s ease-out infinite;}
+  @keyframes navPulse{
+    0%{box-shadow:0 0 0 0 rgba(74,222,128,.7);}
+    70%{box-shadow:0 0 0 8px rgba(74,222,128,0);}
+    100%{box-shadow:0 0 0 0 rgba(74,222,128,0);}
+  }
   .btn-craft:active{transform:scale(.97);}
   .btn-back{background:#161616; color:#999; width:100%;}
   .btn-close{
@@ -1282,6 +1348,7 @@
         <div class="farm-cost-badge">25<img src="/static/icons/diamond.png" alt=""></div>
       </div>
       <div id="farm-hint"></div>
+      <button class="case-btn" id="cases-btn">🎁 Кейсы</button>
     </section>
 
     <!-- MARKET -->
@@ -1351,7 +1418,7 @@
 
   <nav>
     <button class="nav-btn" data-screen="farm-screen"><img class="icon-img" src="/static/icons/farm.png" alt="">Фарм</button>
-    <button class="nav-btn" data-screen="pvp-screen"><img class="icon-img" src="/static/icons/swords.png" alt="">PvP</button>
+    <button class="nav-btn" data-screen="pvp-screen" style="position:relative;"><img class="icon-img" src="/static/icons/swords.png" alt="">PvP<span class="nav-pulse-dot" id="pvp-nav-pulse"></span></button>
     <button class="nav-btn" data-screen="market-screen"><img class="icon-img" src="/static/icons/cage.png" alt="">Рынок</button>
     <button class="nav-btn active" data-screen="profile-screen"><img class="icon-img" src="/static/icons/profile_red.png" alt="">Профиль</button>
   </nav>
@@ -1580,6 +1647,18 @@
     <button type="button" id="models-scroll-top" class="scroll-top-btn">↑</button>
   </div>
 
+  <div id="case-overlay">
+    <div id="case-scroll">
+      <div id="case-card">
+        <div id="case-header-row">
+          <div id="case-title">Кейсы</div>
+          <button class="panel-close" id="case-close">✕</button>
+        </div>
+        <div class="grid" id="case-grid"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="tops-overlay">
     <div id="tops-card">
       <div id="tops-head">
@@ -1651,6 +1730,10 @@ function notEnoughGemsToast(){
 }
 function showAlert(text){
   document.getElementById("alert-text").textContent = text;
+  document.getElementById("alert-overlay").classList.add("active");
+}
+function showAlertHTML(html){
+  document.getElementById("alert-text").innerHTML = html;
   document.getElementById("alert-overlay").classList.add("active");
 }
 document.getElementById("alert-ok").addEventListener("click", ()=>{
@@ -1733,8 +1816,31 @@ function switchScreen(screenId){
   if(screenId !== "pvp-screen") stopPvpPolling();
   if(screenId === "profile-screen") loadProfile();
   if(screenId === "market-screen") refreshMarketScreen();
-  if(screenId === "pvp-screen") loadPvpState();
+  if(screenId === "pvp-screen"){ loadPvpState(); setPvpPulse(false); }
 }
+
+// Ambient PvP check — runs regardless of which tab is open, so a round starting
+// (the join countdown ticking) shows up as a pulsing dot on the PvP tab even if
+// the player is off browsing Farm/Market/Profile.
+let pvpAmbientTimer = null;
+function setPvpPulse(on){
+  document.getElementById("pvp-nav-pulse")?.classList.toggle("visible", !!on);
+}
+async function checkPvpAmbient(){
+  const activeScreen = document.querySelector(".nav-btn.active")?.dataset.screen;
+  if(activeScreen === "pvp-screen") return; // already looking at it, no need for a dot
+  try{
+    const state = await api("/pvp/state");
+    const counting = state.seconds_left !== null && state.seconds_left !== undefined;
+    setPvpPulse(counting);
+  }catch(e){ /* ambient check — stay silent on failure */ }
+}
+function startPvpAmbientPolling(){
+  if(pvpAmbientTimer) return;
+  checkPvpAmbient();
+  pvpAmbientTimer = setInterval(checkPvpAmbient, 5000);
+}
+startPvpAmbientPolling();
 document.querySelectorAll(".nav-btn").forEach(btn=>{
   btn.addEventListener("click", ()=>switchScreen(btn.dataset.screen));
 });
@@ -2351,7 +2457,7 @@ function renderPvp(){
   const { gradient, segments } = pvpBuildWheel(participants);
 
   const legendRows = segments.map(p=>{
-    const name = p.username ? `@${p.username}` : (p.first_name || "Игрок");
+    const name = p.username || p.first_name || "Игрок";
     const you = p.user_id === myTelegramId ? " you" : "";
     const cards = p.cards.map(c=>`<img class="rarity-border-${c.rarity}" src="/static/cards/${c.filename}" alt="${c.name||''}" title="${c.name||''}">`).join("");
     return `
@@ -2419,7 +2525,7 @@ function openPvpReveal(result){
     : "#2a2a2a 0deg 360deg";
 
   legend.innerHTML = segments.map(p=>{
-    const name = p.username ? `@${p.username}` : (p.first_name || "Игрок");
+    const name = p.username || p.first_name || "Игрок";
     const isWinner = p.user_id === result.winner_id;
     return `
       <div class="pvp-reveal-row${isWinner ? ' winner' : ''}">
@@ -2987,6 +3093,24 @@ function openModalAt(index){
   updateSellButton(item);
   updateSwapButton(item);
   updateStakeButton(item);
+  updateCraftButton(item);
+}
+
+function updateCraftButton(item){
+  const btn = document.getElementById("modal-craft");
+  const busy = !!(item.staked_at || item.listed_price || item.swap_listed || item.pvp_round_id);
+  const isDiamond = item.rarity === "diamond";
+  btn.disabled = busy || isDiamond;
+  btn.classList.toggle("disabled", busy || isDiamond);
+  if(item.staked_at){
+    btn.textContent = "Крафт (в стейкинге)";
+  }else if(item.listed_price || item.swap_listed){
+    btn.textContent = "Крафт (карта выставлена)";
+  }else if(isDiamond){
+    btn.textContent = "Крафт недоступен";
+  }else{
+    btn.textContent = "Крафт";
+  }
 }
 
 function updateSellButton(item){
@@ -3269,6 +3393,7 @@ function craftHintHTML(rarity){
   return parts.length > 3 ? parts.slice(0,3).join(" · ") + "<br>" + parts.slice(3).join(" · ") : parts.join(" · ");
 }
 document.getElementById("modal-craft").addEventListener("click", async ()=>{
+  if(document.getElementById("modal-craft").disabled) return;
   if(!selectedItem) return;
   if(selectedItem.rarity === "diamond"){
     showAlert("Diamond-карты нельзя крафтить");
@@ -3331,6 +3456,117 @@ document.getElementById("modal-craft").addEventListener("click", async ()=>{
     }
   }
 });
+
+// ---------- Gem cases ("Кейсы") ----------
+const CASES = [
+  {key:"hamster", name:"Хомяк", price:50, image:"case/case_hamster.jpg",
+   weights:{bronze:55, silver:30, gold:12, platinum:2.5, diamond:0.5}},
+  {key:"duck", name:"Уточка", price:100, image:"case/case_utya.jpg",
+   weights:{bronze:35, silver:35, gold:22, platinum:6, diamond:2}},
+  {key:"capybara", name:"Капибара", price:200, image:"case/case_capybara.jpg",
+   weights:{bronze:15, silver:30, gold:33, platinum:17, diamond:5}},
+  {key:"pepe", name:"Пепе", price:500, image:"case/case_pep.jpg",
+   weights:{silver:10, gold:35, platinum:40, diamond:15}},
+];
+
+function caseHintHTML(def){
+  const t = def.weights;
+  const fmt = (v) => (v % 1 === 0 ? v : v.toFixed(1));
+  const parts = ["diamond", "platinum", "gold", "silver", "bronze"]
+    .filter(r => t[r] !== undefined)
+    .map(r => `<span class="${r}">${r.toUpperCase()} ${fmt(t[r])}%</span>`);
+  return parts.length > 3 ? parts.slice(0,3).join(" · ") + "<br>" + parts.slice(3).join(" · ") : parts.join(" · ");
+}
+
+function renderCaseGrid(){
+  const grid = document.getElementById("case-grid");
+  grid.innerHTML = CASES.map(c => `
+    <div class="case-item">
+      <button type="button" class="case-info-btn" data-key="${c.key}">?</button>
+      <img src="/static/${c.image}" alt="${c.name}">
+      <div class="case-name">${c.name}</div>
+      <div class="case-price"><img src="/static/icons/diamond.png" alt="">${c.price}</div>
+      <button type="button" class="case-open-btn" data-key="${c.key}">Открыть</button>
+    </div>
+  `).join("");
+  grid.querySelectorAll(".case-open-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=> openCase(btn.dataset.key));
+  });
+  grid.querySelectorAll(".case-info-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=> showCaseInfo(btn.dataset.key));
+  });
+}
+
+function showCaseInfo(caseKey){
+  const def = CASES.find(c => c.key === caseKey);
+  if(!def) return;
+  showAlertHTML(`<b>${def.name}</b> — ${def.price} <img src="/static/icons/diamond.png" alt="" style="width:13px;height:13px;vertical-align:-2px;"><br><br>Шансы выпадения:<br>${caseHintHTML(def)}`);
+}
+
+document.getElementById("cases-btn").addEventListener("click", ()=>{
+  renderCaseGrid();
+  document.getElementById("case-overlay").classList.add("active");
+});
+document.getElementById("case-close").addEventListener("click", ()=>{
+  document.getElementById("case-overlay").classList.remove("active");
+});
+document.getElementById("case-overlay").addEventListener("click", (e)=>{
+  if(e.target.id === "case-overlay" || e.target.id === "case-scroll"){
+    document.getElementById("case-overlay").classList.remove("active");
+  }
+});
+
+let caseOpenBusy = false;
+async function openCase(caseKey){
+  if(caseOpenBusy) return;
+  const def = CASES.find(c => c.key === caseKey);
+  if(!def) return;
+
+  const currentGems = parseInt(document.getElementById("gems-amount").textContent, 10) || 0;
+  if(currentGems < def.price){
+    toastHTML(`Не хватает гемов — нужно ${def.price} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
+    return;
+  }
+  const confirmed = await confirmAction(`Открыть кейс «${def.name}» за ${def.price} гемов?`);
+  if(!confirmed) return;
+
+  caseOpenBusy = true;
+  document.getElementById("case-overlay").classList.remove("active");
+  switchScreen("farm-screen");
+
+  const mySeq = ++farmRequestSeq; // invalidates any in-flight farm/craft so it can't clobber this result
+  try{
+    const cards = await ensureAllCards();
+    await startFarmAnimation(cards, caseHintHTML(def));
+    if(mySeq !== farmRequestSeq) return;
+    const card = await api("/case/open", { case_key: caseKey });
+    if(mySeq !== farmRequestSeq) return;
+    const stage = document.getElementById("farm-stage");
+    stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}" alt="${card.name||''}">`;
+    const nameEl = document.getElementById("farm-result-name");
+    nameEl.classList.remove("chance-hint");
+    nameEl.textContent = card.name || "Новая картинка!";
+    document.getElementById("farm-result-number").textContent = `№${card.drop_number}`;
+    const rarityEl = document.getElementById("farm-result-rarity");
+    rarityEl.textContent = card.rarity || "";
+    rarityEl.className = card.rarity || "";
+    document.getElementById("gems-amount").textContent = card.gems;
+    document.getElementById("total-farmed").textContent = card.drop_number; // drop_number IS the new global total (same COUNT(*) as farm's total_farmed)
+    tg?.HapticFeedback?.notificationOccurred("success");
+  }catch(e){
+    if(mySeq !== farmRequestSeq) return;
+    document.getElementById("farm-progress-wrap").classList.remove("active");
+    clearInterval(farmCycleTimer);
+    clearInterval(farmProgressTimer);
+    if(String(e.message).includes("not enough gems")){
+      toastHTML(`Не хватает гемов — нужно ${def.price} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
+    }else{
+      toast("Ошибка открытия кейса: " + e.message);
+    }
+  }finally{
+    caseOpenBusy = false;
+  }
+}
 
 // ---------- Referral modal (tap the "Рефералы" stat tile in Profile) ----------
 document.getElementById("profile-info-btn").addEventListener("click", ()=>{

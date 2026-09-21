@@ -136,6 +136,17 @@ CREATE TABLE IF NOT EXISTS hundred_club (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     drawn_at      TEXT NOT NULL
 );
+
+-- Auto-compensation: whenever a card is retired (is_active 1 -> 0), every
+-- current owner gets +25 gems per copy they hold, automatically — no matter
+-- how the deactivation happens (script, admin query, anything).
+CREATE TRIGGER IF NOT EXISTS trg_card_retire_compensation
+AFTER UPDATE OF is_active ON cards
+WHEN NEW.is_active = 0 AND OLD.is_active = 1
+BEGIN
+    UPDATE users SET gems = gems + 25
+    WHERE telegram_id IN (SELECT user_id FROM user_cards WHERE card_id = NEW.id);
+END;
 """
 
 
@@ -397,6 +408,14 @@ def draw_random_card() -> sqlite3.Row | None:
     """Pick one active card, weighted by rarity (RARITY_WEIGHTS) — most drops are BRONZE,
     then SILVER, GOLD and PLATINUM progressively less common. Returns None if the catalog is empty.
     Falls back gracefully (equal weight) if a tier has no active cards yet."""
+    return _draw_card_weighted(RARITY_WEIGHTS)
+
+
+def _draw_card_weighted(weights: dict[str, float]) -> sqlite3.Row | None:
+    """Shared weighted-draw helper — pick one active card, weighted by the given
+    per-rarity weights dict. Used by draw_random_card() (RARITY_WEIGHTS) and the
+    gem-cases (each case has its own, richer odds). Falls back to equal weight
+    across whatever tiers exist if none of them have a positive weight."""
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM cards WHERE is_active = 1").fetchall()
         if not rows:
@@ -404,10 +423,61 @@ def draw_random_card() -> sqlite3.Row | None:
         by_rarity: dict[str, list] = {}
         for r in rows:
             by_rarity.setdefault(r["rarity"] or "silver", []).append(r)
-        tiers = list(by_rarity.keys())
-        weights = [RARITY_WEIGHTS.get(t, 1) for t in tiers]
-        chosen_tier = random.choices(tiers, weights=weights, k=1)[0]
+        tiers = [t for t in by_rarity if weights.get(t, 0) > 0]
+        if tiers:
+            tier_weights = [weights[t] for t in tiers]
+        else:
+            tiers = list(by_rarity.keys())
+            tier_weights = [1 for _ in tiers]
+        chosen_tier = random.choices(tiers, weights=tier_weights, k=1)[0]
         return random.choice(by_rarity[chosen_tier])
+
+
+CASE_DEFS = {
+    "hamster": {"name": "Хомяк", "price": 50, "image": "case/case_hamster.jpg",
+                "weights": {"bronze": 55, "silver": 30, "gold": 12, "platinum": 2.5, "diamond": 0.5}},
+    "duck": {"name": "Уточка", "price": 100, "image": "case/case_utya.jpg",
+             "weights": {"bronze": 35, "silver": 35, "gold": 22, "platinum": 6, "diamond": 2}},
+    "capybara": {"name": "Капибара", "price": 200, "image": "case/case_capybara.jpg",
+                 "weights": {"bronze": 15, "silver": 30, "gold": 33, "platinum": 17, "diamond": 5}},
+    "pepe": {"name": "Пепе", "price": 500, "image": "case/case_pep.jpg",
+             "weights": {"silver": 10, "gold": 35, "platinum": 40, "diamond": 15}},
+}
+
+
+class CaseNotFound(Exception):
+    """Raised by open_case() when case_key isn't in CASE_DEFS."""
+
+
+def open_case(user_id: int, case_key: str) -> dict:
+    """Spends the case's gem price for one random card, weighted by that case's own
+    (better-than-farm) odds. Raises CaseNotFound for a bad key, InsufficientGems if the
+    balance check fails (checked and deducted atomically, same pattern as farm())."""
+    case_def = CASE_DEFS.get(case_key)
+    if case_def is None:
+        raise CaseNotFound()
+    card = _draw_card_weighted(case_def["weights"])
+    if card is None:
+        raise ValueError("catalog is empty")
+    with get_conn() as conn:
+        row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        if row is None or row["gems"] < case_def["price"]:
+            raise InsufficientGems()
+        conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (case_def["price"], user_id))
+        cur = conn.execute(
+            "INSERT INTO user_cards (user_id, card_id, obtained_at) VALUES (?, ?, ?)",
+            (user_id, card["id"], _now()),
+        )
+        user_card_id = cur.lastrowid
+        drop_number = conn.execute("SELECT COUNT(*) FROM user_cards").fetchone()[0]
+    return {
+        "user_card_id": user_card_id,
+        "card_id": card["id"],
+        "filename": card["filename"],
+        "name": card["name"],
+        "rarity": card["rarity"],
+        "drop_number": drop_number,
+    }
 
 
 def grant_card(user_id: int, card_id: int) -> int:
