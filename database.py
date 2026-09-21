@@ -480,6 +480,75 @@ def open_case(user_id: int, case_key: str) -> dict:
     }
 
 
+class CardGiveawayError(Exception):
+    """Raised by create_card_giveaway() when the admin has no matching cards to give
+    away, or there's no one to give them to."""
+
+
+def create_card_giveaway(admin_id: int, rarity: str, total_cards: int,
+                          min_per_winner: int = 1, max_per_winner: int = 5) -> dict:
+    """Instantly gives away up to total_cards of the ADMIN'S OWN owned cards of the
+    given rarity (skipping any that are busy — staked, listed for sale/swap, or in a
+    PvP round) — reassigns ownership in place (UPDATE user_cards.user_id) rather than
+    minting new ones, so the admin's own collection really does shrink by what's given
+    away. Winners are drawn by shuffling every OTHER registered user and handing out a
+    random min_per_winner..max_per_winner chunk per pick, looping back through a fresh
+    shuffle of the same participant list as many times as needed until the card pool
+    (or the requested total_cards, whichever is smaller) runs out — so a small pool of
+    participants naturally ends up sharing everything, one chunk at a time. Runs and
+    resolves immediately, no waiting window. Returns {"winners": [{"telegram_id",
+    "username", "first_name", "count"}, ...], "total_distributed": int}."""
+    with get_conn() as conn:
+        pool_rows = conn.execute(
+            "SELECT uc.id FROM user_cards uc JOIN cards c ON c.id = uc.card_id "
+            "WHERE uc.user_id = ? AND c.rarity = ? "
+            "AND uc.listed_price IS NULL AND uc.swap_listed = 0 "
+            "AND uc.staked_at IS NULL AND uc.pvp_round_id IS NULL",
+            (admin_id, rarity),
+        ).fetchall()
+        pool_ids = [r["id"] for r in pool_rows]
+        if not pool_ids:
+            raise CardGiveawayError(f"нет доступных карт редкости {rarity} в твоём профиле")
+        random.shuffle(pool_ids)
+        pool_ids = pool_ids[:total_cards]
+
+        participants = conn.execute(
+            "SELECT telegram_id, username, first_name FROM users WHERE telegram_id != ?",
+            (admin_id,),
+        ).fetchall()
+        if not participants:
+            raise CardGiveawayError("нет участников (в боте кроме тебя никого нет)")
+        participants = list(participants)
+
+        winners: dict[int, dict] = {}
+        shuffled = random.sample(participants, len(participants))
+        pos = 0
+        while pool_ids:
+            if pos >= len(shuffled):
+                shuffled = random.sample(participants, len(participants))
+                pos = 0
+            p = shuffled[pos]
+            pos += 1
+            amount = min(random.randint(min_per_winner, max_per_winner), len(pool_ids))
+            given_ids = [pool_ids.pop() for _ in range(amount)]
+            placeholders = ",".join("?" for _ in given_ids)
+            conn.execute(
+                f"UPDATE user_cards SET user_id = ?, listed_price = NULL, swap_listed = 0, "
+                f"staked_at = NULL, pvp_round_id = NULL WHERE id IN ({placeholders})",
+                (p["telegram_id"], *given_ids),
+            )
+            w = winners.setdefault(p["telegram_id"], {
+                "telegram_id": p["telegram_id"], "username": p["username"],
+                "first_name": p["first_name"], "count": 0,
+            })
+            w["count"] += amount
+
+    return {
+        "winners": sorted(winners.values(), key=lambda w: -w["count"]),
+        "total_distributed": sum(w["count"] for w in winners.values()),
+    }
+
+
 def grant_card(user_id: int, card_id: int) -> int:
     with get_conn() as conn:
         cur = conn.execute(

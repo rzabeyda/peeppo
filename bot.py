@@ -171,8 +171,11 @@ async def handle_admin_panel(message: Message):
     await message.answer(
         "👑 <b>Админ-панель Peeppo</b>\n\n"
         f"Юзеров: <b>{stats['users']}</b>\n"
-        f"Карточек в каталоге: <b>{stats['cards']}</b>\n"
-        f"Гемов в обороте: <b>{stats['gems_total']}</b> 💎",
+        f"Карт в обороте: <b>{stats['total_farmed']}</b>\n"
+        f"Гемов в обороте: <b>{stats['gems_total']}</b> 💎\n\n"
+        "<b>Команды:</b>\n"
+        "/addgem id_или_@username кол-во — начислить гемы\n"
+        "/cardgiveaway [редкость] [кол-во] [мин] [макс] — мгновенный розыгрыш ТВОИХ карт среди всех юзеров бота",
         parse_mode="HTML",
     )
 
@@ -383,6 +386,53 @@ async def handle_admin_giveaway(message: Message):
         return
     db.set_giveaway_message(giveaway_id, sent.message_id)
     await message.answer(f"Розыгрыш #{giveaway_id} опубликован в {CHANNEL_USERNAME}. Итоги через {_format_hours(hours)}.")
+
+
+@dp.message(Command("cardgiveaway"))
+async def handle_admin_card_giveaway(message: Message):
+    """Admin-only: /cardgiveaway [редкость] [кол-во карт] [мин] [макс] — instantly gives
+    away up to that many of the ADMIN'S OWN cards of that rarity (defaults:
+    bronze/100/1/5), min..max at a time, randomly among every other registered user
+    (no chat-activity tracking involved — anyone who has ever started the bot is
+    eligible). Resolves immediately and posts the results into PUBLIC_CHAT — unlike
+    /giveaway there's no waiting window."""
+    if not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    rarity, total_cards, min_c, max_c = "bronze", 100, 1, 5
+    try:
+        if len(parts) > 1:
+            rarity = parts[1].lower()
+        if len(parts) > 2:
+            total_cards = int(parts[2])
+        if len(parts) > 3:
+            min_c = int(parts[3])
+        if len(parts) > 4:
+            max_c = int(parts[4])
+    except ValueError:
+        await message.answer("Формат: /cardgiveaway [редкость] [кол-во] [мин] [макс], например /cardgiveaway bronze 100 1 5")
+        return
+
+    try:
+        result = db.create_card_giveaway(message.from_user.id, rarity, total_cards, min_c, max_c)
+    except db.CardGiveawayError as e:
+        await message.answer(f"Не удалось разыграть: {e}")
+        return
+
+    lines = "\n".join(
+        f"{('@' + w['username']) if w['username'] else (w['first_name'] or str(w['telegram_id']))} — {w['count']} шт."
+        for w in result["winners"]
+    )
+    text = (
+        f"🎉 Розыгрыш {rarity}-карт завершён!\n\n"
+        f"Разыграно {result['total_distributed']} карт(ы) среди {len(result['winners'])} игроков:\n\n"
+        f"{lines}"
+    )
+    try:
+        await bot.send_message(PUBLIC_CHAT, text)
+    except Exception:
+        logger.warning("could not announce card giveaway to %s", PUBLIC_CHAT)
+    await message.answer(f"Готово — {result['total_distributed']} карт разыграно среди {len(result['winners'])} игроков, результат опубликован в {PUBLIC_CHAT}.")
 
 
 async def _announce_giveaway_result(giveaway: dict, result: dict):
