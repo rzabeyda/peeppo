@@ -141,8 +141,13 @@
   }
   #farm-result-name{font-size:15px; color:#ccc; min-height:20px;}
   #farm-result-number{font-size:12px; color:var(--accent2); font-weight:700; min-height:16px; margin-bottom:18px;}
+  .farm-top-row-left, .farm-top-row-right{
+    position:absolute; top:0;
+    display:flex; align-items:center; gap:8px;
+  }
+  .farm-top-row-left{left:0;}
+  .farm-top-row-right{right:0;}
   .models-btn{
-    position:absolute; top:0; left:0;
     background:rgba(255,255,255,.06);
     color:#ccc;
     border:1px solid var(--card-border);
@@ -152,7 +157,15 @@
     cursor:pointer;
   }
   .models-btn:active{transform:scale(.95);}
-  .tops-btn{left:auto; right:0;}
+  .day-counter-pill{
+    font-size:12px; color:#999;
+    background:rgba(255,255,255,.05);
+    border:1px solid var(--card-border);
+    padding:8px 14px;
+    border-radius:999px;
+    white-space:nowrap;
+  }
+  .day-counter-pill b{color:#fff; font-weight:800;}
   .case-btn{
     position:absolute; right:0; bottom:0;
     background:linear-gradient(135deg,#22c55e,#facc15);
@@ -162,17 +175,16 @@
   }
   .case-btn:active{transform:scale(.95);}
   .farm-total-pill{
-    position:absolute; top:0; left:50%; transform:translateX(-50%);
     font-size:12px; color:#999;
     background:rgba(255,255,255,.05);
     border:1px solid var(--card-border);
     padding:8px 14px;
     border-radius:999px;
     white-space:nowrap;
+    cursor:pointer;
   }
   .farm-total-pill b{color:#fff; font-weight:800;}
-  .farm-total-pill{cursor:pointer;}
-  .farm-total-pill:active{transform:translateX(-50%) scale(.95);}
+  .farm-total-pill:active{transform:scale(.95);}
   .farm-btn-wrap{position:relative; display:inline-block;}
   #farm-btn{
     border:1px solid rgba(139,92,246,.5);
@@ -303,6 +315,13 @@
   }
   #profile-sort-btn.active-sort, #profile-rarity-sort-btn.active-sort{opacity:1;}
   #profile-sort-btn:active, #profile-rarity-sort-btn:active{transform:scale(.95);}
+  .burn-open-btn{
+    background:linear-gradient(135deg,#f97316,#ef4444);
+    color:#fff; border:none; border-radius:999px;
+    padding:5px 12px; font-size:11px; font-weight:800;
+    cursor:pointer;
+  }
+  .burn-open-btn:active{transform:scale(.95);}
   .grid{
     display:grid;
     grid-template-columns:repeat(3,1fr);
@@ -356,6 +375,14 @@
   .grid-item .profile-stake-tag{
     position:absolute; bottom:6px; right:6px;
     background:#22c55e;
+    color:#fff;
+    font-size:8px; font-weight:800;
+    text-transform:uppercase; letter-spacing:.2px;
+    padding:2px 5px; border-radius:7px;
+  }
+  .grid-item .profile-pvp-tag{
+    position:absolute; bottom:6px; right:6px;
+    background:#ff2fb0;
     color:#fff;
     font-size:8px; font-weight:800;
     text-transform:uppercase; letter-spacing:.2px;
@@ -487,8 +514,8 @@
   #market-item-actions{display:flex; flex-direction:column; gap:10px;}
   #market-item-actions button{padding:12px; border-radius:12px; border:none; font-weight:700; font-size:13px; cursor:pointer; width:100%;}
 
-  /* ---------- Swap picker overlay ---------- */
-  #swap-picker-overlay{
+  /* ---------- Swap / burn picker overlays (share the same look) ---------- */
+  #swap-picker-overlay, #burn-picker-overlay{
     position:absolute; inset:0;
     background:rgba(0,0,0,.9);
     display:none;
@@ -496,8 +523,8 @@
     z-index:70;
     padding:24px;
   }
-  #swap-picker-overlay.active{display:flex;}
-  #swap-picker-card{
+  #swap-picker-overlay.active, #burn-picker-overlay.active{display:flex;}
+  #swap-picker-card, #burn-picker-card{
     width:100%; max-width:340px; max-height:80vh;
     background:var(--card-bg);
     border:1px solid var(--card-border);
@@ -505,8 +532,8 @@
     padding:18px;
     display:flex; flex-direction:column;
   }
-  #swap-picker-title{font-weight:700; margin-bottom:14px; text-align:center;}
-  #swap-picker-grid{
+  #swap-picker-title, #burn-picker-title{font-weight:700; margin-bottom:14px; text-align:center;}
+  #swap-picker-grid, #burn-picker-grid{
     overflow-y:auto;
     max-height:44vh;
     margin-bottom:14px;
@@ -784,6 +811,39 @@
     max-height:44vh;
     margin-bottom:14px;
   }
+
+  /* ---------- Burn overlay ---------- */
+  #burn-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.94);
+    display:none;
+    z-index:65;
+  }
+  #burn-overlay.active{display:block;}
+  #burn-scroll{
+    position:absolute; inset:0;
+    padding:20px 16px calc(20px + env(safe-area-inset-bottom));
+    overflow-y:auto;
+  }
+  #burn-header-row{display:flex; align-items:center; gap:8px; margin:0 2px 8px;}
+  #burn-title{font-size:12px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:.6px; margin:0; flex:1;}
+  #burn-sub{font-size:12px; color:#999; line-height:1.5; margin:0 2px 16px;}
+  #burn-grid{display:flex; flex-direction:column; gap:12px;}
+  .burn-item{
+    background:var(--card-bg); border:1px solid var(--card-border); border-radius:16px;
+    padding:14px; display:flex; align-items:center; gap:12px;
+  }
+  .burn-item-icon{width:44px; height:44px; border-radius:12px; flex-shrink:0; object-fit:cover;}
+  .burn-item-info{flex:1; min-width:0;}
+  .burn-item-title{font-size:13px; font-weight:800;}
+  .burn-item-count{font-size:11px; color:#999; margin-top:2px;}
+  .burn-item-count.ready{color:#22c55e;}
+  .burn-btn{
+    padding:9px 14px; border:none; border-radius:12px;
+    font-weight:800; font-size:12px; cursor:pointer; flex-shrink:0;
+    background:linear-gradient(135deg,#f97316,#ef4444); color:#fff;
+  }
+  .burn-btn:disabled{background:#3a3a3a; color:#888; cursor:not-allowed;}
 
   /* ---------- Models (full catalog) overlay ---------- */
   #case-overlay{
@@ -1335,9 +1395,14 @@
   <main>
     <!-- FARM -->
     <section id="farm-screen" class="screen">
-      <button class="models-btn" id="models-btn">Модели</button>
-      <div class="farm-total-pill" id="farm-total-pill">Всего: <b id="total-farmed">0</b></div>
-      <button class="models-btn tops-btn" id="tops-btn">Топы</button>
+      <div class="farm-top-row-left">
+        <button class="models-btn" id="models-btn">Модели</button>
+        <div class="day-counter-pill" id="day-counter-pill">День: <b id="bot-day-count">1</b></div>
+      </div>
+      <div class="farm-top-row-right">
+        <div class="farm-total-pill" id="farm-total-pill">Карты: <b id="total-farmed">0</b></div>
+        <button class="models-btn tops-btn" id="tops-btn">Топы</button>
+      </div>
       <div class="farm-stage" id="farm-stage"><div class="placeholder">?</div></div>
       <div id="farm-progress-wrap"><div id="farm-progress-bar"></div></div>
       <div id="farm-result-rarity"></div>
@@ -1409,6 +1474,7 @@
       <div class="section-label-row">
         <div class="section-label">Коллекция</div>
         <div class="profile-sort-buttons">
+          <button id="burn-open-btn" class="burn-open-btn">🔥 Сжечь</button>
           <button id="profile-rarity-sort-btn" class="active-sort">Ранг ↓</button>
         </div>
       </div>
@@ -1459,7 +1525,7 @@
     <div id="income-card">
       <button class="btn-close-inline" id="income-close">✕</button>
       <div id="income-title">Ваш доход</div>
-      <div id="income-text">25 <img src="/static/icons/diamond.png" alt=""> в день — заходи и забирай каждый день!</div>
+      <div id="income-text"><span id="income-text-amount">25</span> <img src="/static/icons/diamond.png" alt=""> в день — заходи и забирай каждый день!<br><span id="income-text-next" style="color:#888; font-size:12px;"></span></div>
     </div>
   </div>
 
@@ -1566,6 +1632,17 @@
     </div>
   </div>
 
+  <div id="burn-picker-overlay">
+    <div id="burn-picker-card">
+      <div id="burn-picker-title">Выбери карты для сжигания</div>
+      <div class="grid" id="burn-picker-grid"></div>
+      <div id="input-actions">
+        <button id="burn-picker-cancel">Отмена</button>
+        <button id="burn-picker-confirm">Сжечь</button>
+      </div>
+    </div>
+  </div>
+
   <div id="pvp-picker-overlay">
     <div id="pvp-picker-card">
       <div id="pvp-picker-title">Выбери карты для PvP — заберут навсегда, если проиграешь</div>
@@ -1659,6 +1736,19 @@
     </div>
   </div>
 
+  <div id="burn-overlay">
+    <div id="burn-scroll">
+      <div id="burn-card">
+        <div id="burn-header-row">
+          <div id="burn-title">Сжигание карт</div>
+          <button class="panel-close" id="burn-close">✕</button>
+        </div>
+        <div id="burn-sub">Сжигаешь N карт одной редкости — 97% шанс получить 1 карту ступенью выше, 3% что всё сгорит без результата.</div>
+        <div id="burn-grid"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="tops-overlay">
     <div id="tops-card">
       <div id="tops-head">
@@ -1708,6 +1798,7 @@ const FARM_COST_GEMS = 25;
 const MIN_LISTING_PRICE_GEMS = 20; // mirrors database.py's MIN_LISTING_PRICE_GEMS
 let initData = tg?.initData || "";
 let inventory = [];
+let daysUntilNextIncome = null;
 let selectedUserCardId = null;
 let selectedItem = null;
 
@@ -1814,6 +1905,7 @@ function switchScreen(screenId){
   document.querySelector(`.nav-btn[data-screen="${screenId}"]`)?.classList.add("active");
   document.getElementById(screenId).classList.add("active");
   if(screenId !== "pvp-screen") stopPvpPolling();
+  if(screenId === "farm-screen") loadStats(); // re-sync "Всего" — it drifts stale otherwise, since it only updates from THIS player's own farm/craft/case/burn actions
   if(screenId === "profile-screen") loadProfile();
   if(screenId === "market-screen") refreshMarketScreen();
   if(screenId === "pvp-screen"){ loadPvpState(); setPvpPulse(false); }
@@ -1864,6 +1956,7 @@ async function refreshGems(){
     const auth = await api("/auth");
     document.getElementById("gems-amount").textContent = auth.gems;
     myTelegramId = auth.telegram_id;
+    document.getElementById("bot-day-count").textContent = auth.bot_day || 1;
     if(auth.is_new){
       document.getElementById("welcome-overlay").classList.add("active");
     }else if(auth.daily_bonus > 0){
@@ -3014,6 +3107,8 @@ async function loadProfile(){
     }
     document.getElementById("stat-refs").textContent = auth.referrals || 0;
     document.getElementById("gems-amount").textContent = auth.gems || 0;
+    document.getElementById("stat-income").textContent = auth.daily_bonus_amount || 25;
+    daysUntilNextIncome = auth.daily_bonus_days_until_next ?? null;
 
     const data = await api("/profile");
     inventory = data.inventory;
@@ -3060,6 +3155,7 @@ function renderProfileGrid(){
       ${c.listed_price ? `<div class="profile-sale-tag"><img src="/static/icons/diamond.png" alt=""><span>${c.listed_price}</span></div>` : ""}
       ${c.swap_listed ? `<div class="profile-swap-tag">Обмен</div>` : ""}
       ${c.staked_at ? `<div class="profile-stake-tag">${formatStakedDuration(c.staked_at)}</div>` : ""}
+      ${c.pvp_round_id ? `<div class="profile-pvp-tag">PvP</div>` : ""}
     </div>
   `).join("");
 
@@ -3099,15 +3195,10 @@ function openModalAt(index){
 function updateCraftButton(item){
   const btn = document.getElementById("modal-craft");
   const busy = !!(item.staked_at || item.listed_price || item.swap_listed || item.pvp_round_id);
-  const isDiamond = item.rarity === "diamond";
-  btn.disabled = busy || isDiamond;
-  btn.classList.toggle("disabled", busy || isDiamond);
-  if(item.staked_at){
-    btn.textContent = "Крафт (в стейкинге)";
-  }else if(item.listed_price || item.swap_listed){
-    btn.textContent = "Крафт (карта выставлена)";
-  }else if(isDiamond){
-    btn.textContent = "Крафт недоступен";
+  btn.disabled = busy;
+  btn.classList.toggle("disabled", busy);
+  if(busy){
+    btn.textContent = "Недоступно";
   }else{
     btn.textContent = "Крафт";
   }
@@ -3116,6 +3207,12 @@ function updateCraftButton(item){
 function updateSellButton(item){
   const btn = document.getElementById("modal-sell");
   btn.classList.remove("active", "listed");
+  btn.disabled = false;
+  if(item.pvp_round_id){
+    btn.textContent = "В игре (PvP)";
+    btn.disabled = true;
+    return;
+  }
   if(item.staked_at){
     btn.textContent = "В стейкинге";
     return;
@@ -3132,6 +3229,12 @@ function updateSellButton(item){
 function updateSwapButton(item){
   const btn = document.getElementById("modal-swap");
   btn.classList.remove("active", "listed");
+  btn.disabled = false;
+  if(item.pvp_round_id){
+    btn.textContent = "В игре (PvP)";
+    btn.disabled = true;
+    return;
+  }
   if(item.staked_at){
     btn.textContent = "В стейкинге";
     return;
@@ -3148,6 +3251,12 @@ function updateSwapButton(item){
 function updateStakeButton(item){
   const btn = document.getElementById("modal-stake");
   btn.classList.remove("active", "staked");
+  btn.disabled = false;
+  if(item.pvp_round_id){
+    btn.textContent = "В игре (PvP)";
+    btn.disabled = true;
+    return;
+  }
   if(item.staked_at){
     btn.textContent = `Забрать со стейкинга (${formatStakedDuration(item.staked_at)})`;
     btn.classList.add("staked");
@@ -3257,6 +3366,10 @@ document.getElementById("modal-give").addEventListener("click", async ()=>{
 
 document.getElementById("modal-sell").addEventListener("click", async ()=>{
   if(!selectedItem) return;
+  if(selectedItem.pvp_round_id){
+    toast("Карта сейчас участвует в PvP игре");
+    return;
+  }
   if(selectedItem.staked_at){
     toast("Сначала снимите карту со стейкинга");
     return;
@@ -3295,6 +3408,10 @@ document.getElementById("modal-sell").addEventListener("click", async ()=>{
 
 document.getElementById("modal-swap").addEventListener("click", async ()=>{
   if(!selectedItem) return;
+  if(selectedItem.pvp_round_id){
+    toast("Карта сейчас участвует в PvP игре");
+    return;
+  }
   if(selectedItem.staked_at){
     toast("Сначала снимите карту со стейкинга");
     return;
@@ -3325,6 +3442,10 @@ document.getElementById("modal-swap").addEventListener("click", async ()=>{
 const STAKE_DAILY_RATES = { bronze: 5, silver: 10, gold: 25, platinum: 50, diamond: 100 };
 document.getElementById("modal-stake").addEventListener("click", async ()=>{
   if(!selectedItem) return;
+  if(selectedItem.pvp_round_id && !selectedItem.staked_at){
+    toast("Карта сейчас участвует в PvP игре");
+    return;
+  }
   if(selectedItem.staked_at){
     try{
       const res = await api("/stake/unstake", { user_card_id: selectedUserCardId });
@@ -3379,10 +3500,11 @@ const CRAFT_COST_GEMS = 25;
 // burned, so each row only lists tiers same-or-higher (burn Gold, only Gold/Platinum/
 // Diamond are possible).
 const CRAFT_CHANCES = {
-  bronze:   { bronze: 50, silver: 35, gold: 12, platinum: 2.5, diamond: 0.5 },
+  bronze:   { bronze: 40, silver: 35, gold: 15, platinum: 8, diamond: 2 },
   silver:   { silver: 55, gold: 35, platinum: 8, diamond: 2 },
   gold:     { gold: 55, platinum: 35, diamond: 10 },
   platinum: { platinum: 65, diamond: 35 },
+  diamond:  { diamond: 100 },
 };
 function craftHintHTML(rarity){
   const t = CRAFT_CHANCES[rarity] || CRAFT_CHANCES.bronze;
@@ -3395,10 +3517,6 @@ function craftHintHTML(rarity){
 document.getElementById("modal-craft").addEventListener("click", async ()=>{
   if(document.getElementById("modal-craft").disabled) return;
   if(!selectedItem) return;
-  if(selectedItem.rarity === "diamond"){
-    showAlert("Diamond-карты нельзя крафтить");
-    return;
-  }
   if(selectedItem.staked_at || selectedItem.listed_price || selectedItem.swap_listed){
     toast("Сначала снимите карту с продажи/обмена/стейкинга");
     return;
@@ -3410,10 +3528,12 @@ document.getElementById("modal-craft").addEventListener("click", async ()=>{
   }
   const craftRarityLabel = (r) => r ? r[0].toUpperCase() + r.slice(1) : "Bronze";
   const craftChances = CRAFT_CHANCES[selectedItem.rarity] || CRAFT_CHANCES.bronze;
-  const craftChanceLines = ["diamond", "platinum", "gold", "silver", "bronze"]
-    .filter(r => craftChances[r] !== undefined)
-    .map(r => `${craftRarityLabel(r)}: ${craftChances[r] % 1 === 0 ? craftChances[r] : craftChances[r].toFixed(1)}%`)
-    .join("\n");
+  const craftChanceLines = selectedItem.rarity === "diamond"
+    ? "Diamond: 95%\nКарта уничтожается без результата: 5%"
+    : ["diamond", "platinum", "gold", "silver", "bronze"]
+        .filter(r => craftChances[r] !== undefined)
+        .map(r => `${craftRarityLabel(r)}: ${craftChances[r] % 1 === 0 ? craftChances[r] : craftChances[r].toFixed(1)}%`)
+        .join("\n");
   const craftConfirmed = await confirmAction(
     `Крафт стоит ${CRAFT_COST_GEMS} гемов, карта (${craftRarityLabel(selectedItem.rarity)}) будет уничтожена.\n\nШансы получить:\n${craftChanceLines}\n\nПродолжить?`
   );
@@ -3427,21 +3547,35 @@ document.getElementById("modal-craft").addEventListener("click", async ()=>{
   const mySeq = ++farmRequestSeq; // also invalidates any in-flight farm, so it can't clobber this result
   try{
     const cards = await ensureAllCards();
-    await startFarmAnimation(cards, craftHintHTML(craftInputRarity));
+    const craftHint = craftInputRarity === "diamond"
+      ? `<span class="diamond">95% — новая DIAMOND карта</span><br><span class="bronze">5% — карта уничтожается без результата</span>`
+      : craftHintHTML(craftInputRarity);
+    await startFarmAnimation(cards, craftHint);
     if(mySeq !== farmRequestSeq) return;
     const card = await api("/craft", { user_card_id: craftUserCardId });
     if(mySeq !== farmRequestSeq) return;
+    document.getElementById("total-farmed").textContent = card.total_farmed; // a failed diamond craft destroys the card, so this can go DOWN
     const stage = document.getElementById("farm-stage");
-    stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}" alt="${card.name||''}">`;
     const nameEl = document.getElementById("farm-result-name");
-    nameEl.classList.remove("chance-hint");
-    nameEl.textContent = card.name || "Новая картинка!";
-    document.getElementById("farm-result-number").textContent = `№${card.drop_number}`;
     const rarityEl = document.getElementById("farm-result-rarity");
-    rarityEl.textContent = card.rarity || "";
-    rarityEl.className = card.rarity || "";
-    document.getElementById("gems-amount").textContent = card.gems;
-    tg?.HapticFeedback?.notificationOccurred("success");
+    nameEl.classList.remove("chance-hint");
+    if(card.success === false){
+      stage.innerHTML = `<div class="placeholder">🔥</div>`;
+      nameEl.textContent = "Карта уничтожена без результата";
+      document.getElementById("farm-result-number").textContent = "";
+      rarityEl.textContent = "";
+      rarityEl.className = "";
+      document.getElementById("gems-amount").textContent = card.gems;
+      tg?.HapticFeedback?.notificationOccurred("error");
+    }else{
+      stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}" alt="${card.name||''}">`;
+      nameEl.textContent = card.name || "Новая картинка!";
+      document.getElementById("farm-result-number").textContent = `№${card.drop_number}`;
+      rarityEl.textContent = card.rarity || "";
+      rarityEl.className = card.rarity || "";
+      document.getElementById("gems-amount").textContent = card.gems;
+      tg?.HapticFeedback?.notificationOccurred("success");
+    }
   }catch(e){
     if(mySeq !== farmRequestSeq) return;
     document.getElementById("farm-progress-wrap").classList.remove("active");
@@ -3449,8 +3583,6 @@ document.getElementById("modal-craft").addEventListener("click", async ()=>{
     clearInterval(farmProgressTimer);
     if(String(e.message).includes("not enough gems")){
       toastHTML(`Не хватает гемов — нужно ${CRAFT_COST_GEMS} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
-    }else if(String(e.message).includes("diamond")){
-      showAlert("Diamond-карты нельзя крафтить");
     }else{
       toast("Ошибка крафта: " + e.message);
     }
@@ -3460,13 +3592,13 @@ document.getElementById("modal-craft").addEventListener("click", async ()=>{
 // ---------- Gem cases ("Кейсы") ----------
 const CASES = [
   {key:"hamster", name:"Хомяк", price:50, image:"case/case_hamster.jpg",
-   weights:{bronze:55, silver:30, gold:12, platinum:2.5, diamond:0.5}},
+   weights:{bronze:40, silver:30, gold:18, platinum:9, diamond:3}},
   {key:"duck", name:"Уточка", price:100, image:"case/case_utya.jpg",
-   weights:{bronze:35, silver:35, gold:22, platinum:6, diamond:2}},
+   weights:{bronze:25, silver:30, gold:25, platinum:14, diamond:6}},
   {key:"capybara", name:"Капибара", price:200, image:"case/case_capybara.jpg",
-   weights:{bronze:15, silver:30, gold:33, platinum:17, diamond:5}},
+   weights:{bronze:10, silver:25, gold:33, platinum:22, diamond:10}},
   {key:"pepe", name:"Пепе", price:500, image:"case/case_pep.jpg",
-   weights:{silver:10, gold:35, platinum:40, diamond:15}},
+   weights:{silver:5, gold:25, platinum:45, diamond:25}},
 ];
 
 function caseHintHTML(def){
@@ -3568,6 +3700,188 @@ async function openCase(caseKey){
   }
 }
 
+// ---------- Burn (сжигание): sacrifice N same-rarity cards for a guaranteed shot at the
+// next tier up. Free, but a real 3% chance of total loss (unlike craft, which always
+// gives SOMETHING back). ----------
+const BURN_RECIPES = [
+  {rarity:"bronze", target:"silver", count:4},
+  {rarity:"silver", target:"gold", count:5},
+  {rarity:"gold", target:"platinum", count:5},
+  {rarity:"platinum", target:"diamond", count:6},
+];
+const RARITY_LABEL = {bronze:"Bronze", silver:"Silver", gold:"Gold", platinum:"Platinum", diamond:"Diamond"};
+const RARITY_COLOR = {bronze:"#cd7f32", silver:"#9ca3af", gold:"#facc15", platinum:"#a78bfa", diamond:"#ff2fb0"};
+
+function countEligibleCards(rarity){
+  return inventory.filter(c => c.rarity === rarity && !c.staked_at && !c.listed_price && !c.swap_listed && !c.pvp_round_id).length;
+}
+
+function renderBurnGrid(){
+  const grid = document.getElementById("burn-grid");
+  grid.innerHTML = BURN_RECIPES.map(r=>{
+    const have = countEligibleCards(r.rarity);
+    const ready = have >= r.count;
+    return `
+      <div class="burn-item">
+        <div class="burn-item-icon" style="background:${RARITY_COLOR[r.rarity]};"></div>
+        <div class="burn-item-info">
+          <div class="burn-item-title">${r.count} ${RARITY_LABEL[r.rarity]} → 1 ${RARITY_LABEL[r.target]}</div>
+          <div class="burn-item-count ${ready ? 'ready' : ''}">У тебя: ${have}/${r.count}</div>
+        </div>
+        <button type="button" class="burn-btn" data-rarity="${r.rarity}" ${ready ? '' : 'disabled'}>Сжечь</button>
+      </div>
+    `;
+  }).join("");
+  grid.querySelectorAll(".burn-btn:not([disabled])").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const recipe = BURN_RECIPES.find(r => r.rarity === btn.dataset.rarity);
+      if(recipe) openBurnPicker(recipe);
+    });
+  });
+}
+
+// ---------- Burn picker (choose which SPECIFIC cards to burn) ----------
+let burnPickerRarity = null;
+let burnPickerCount = 0;
+let burnPickerTarget = null;
+let burnPickerSelected = new Set();
+
+function burnPickerUpdateTitle(){
+  document.getElementById("burn-picker-title").textContent =
+    `Выбери ${burnPickerCount} карт(ы) ${RARITY_LABEL[burnPickerRarity]} (${burnPickerSelected.size}/${burnPickerCount})`;
+}
+
+function openBurnPicker(recipe){
+  burnPickerRarity = recipe.rarity;
+  burnPickerCount = recipe.count;
+  burnPickerTarget = recipe.target;
+  burnPickerSelected = new Set();
+  burnPickerUpdateTitle();
+  renderBurnPickerGrid();
+  document.getElementById("burn-overlay").classList.remove("active");
+  document.getElementById("burn-picker-overlay").classList.add("active");
+}
+
+function renderBurnPickerGrid(){
+  const grid = document.getElementById("burn-picker-grid");
+  const eligible = inventory.filter(c => c.rarity === burnPickerRarity && !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at);
+  if(eligible.length === 0){
+    grid.innerHTML = `<div class="empty-state">Нет подходящих карт</div>`;
+    return;
+  }
+  grid.innerHTML = eligible.map(c => `
+    <div class="grid-item picker-item rarity-border-${c.rarity} ${burnPickerSelected.has(c.user_card_id) ? 'selected' : ''}" data-uc="${c.user_card_id}">
+      <img src="/static/cards/${c.filename}" alt="${c.name || ''}">
+      <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
+      <div class="check">✓</div>
+    </div>
+  `).join("");
+  grid.querySelectorAll(".picker-item").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      const ucId = parseInt(el.dataset.uc);
+      if(burnPickerSelected.has(ucId)){
+        burnPickerSelected.delete(ucId);
+        el.classList.remove("selected");
+      }else{
+        if(burnPickerSelected.size >= burnPickerCount){
+          toast(`Уже выбрано ${burnPickerCount} — сними одну, чтобы заменить выбор`);
+          return;
+        }
+        burnPickerSelected.add(ucId);
+        el.classList.add("selected");
+      }
+      burnPickerUpdateTitle();
+    });
+  });
+}
+
+document.getElementById("burn-picker-cancel").addEventListener("click", ()=>{
+  document.getElementById("burn-picker-overlay").classList.remove("active");
+});
+
+document.getElementById("burn-picker-confirm").addEventListener("click", async ()=>{
+  if(burnPickerSelected.size !== burnPickerCount){
+    toast(`Нужно выбрать ровно ${burnPickerCount}`);
+    return;
+  }
+  const confirmed = await confirmAction(
+    `Сжечь эти ${burnPickerCount} карт(ы)?\n\n99% — получишь 1 карту редкости ${RARITY_LABEL[burnPickerTarget]}\n1% — всё сгорит без результата\n\nБесплатно, но карты уничтожаются безвозвратно. Продолжить?`
+  );
+  if(!confirmed) return;
+  const rarity = burnPickerRarity;
+  const ids = [...burnPickerSelected];
+  document.getElementById("burn-picker-overlay").classList.remove("active");
+  await runBurn(rarity, ids);
+});
+
+document.getElementById("burn-open-btn").addEventListener("click", ()=>{
+  renderBurnGrid();
+  document.getElementById("burn-overlay").classList.add("active");
+});
+document.getElementById("burn-close").addEventListener("click", ()=>{
+  document.getElementById("burn-overlay").classList.remove("active");
+});
+document.getElementById("burn-overlay").addEventListener("click", (e)=>{
+  if(e.target.id === "burn-overlay" || e.target.id === "burn-scroll"){
+    document.getElementById("burn-overlay").classList.remove("active");
+  }
+});
+
+let burnBusy = false;
+async function runBurn(rarity, userCardIds){
+  if(burnBusy) return;
+  const recipe = BURN_RECIPES.find(r => r.rarity === rarity);
+  if(!recipe) return;
+
+  burnBusy = true;
+  switchScreen("farm-screen");
+
+  const mySeq = ++farmRequestSeq; // invalidates any in-flight farm/craft/case so it can't clobber this result
+  try{
+    const cards = await ensureAllCards();
+    const hint = `<span class="${recipe.target}">99% — 1 ${RARITY_LABEL[recipe.target].toUpperCase()}</span><br><span class="bronze">1% — всё сгорает без результата</span>`;
+    await startFarmAnimation(cards, hint);
+    if(mySeq !== farmRequestSeq) return;
+    const result = await api("/burn", { rarity, user_card_ids: userCardIds });
+    if(mySeq !== farmRequestSeq) return;
+
+    document.getElementById("total-farmed").textContent = result.total_farmed; // burning DELETES cards, so this can go DOWN
+
+    const stage = document.getElementById("farm-stage");
+    const nameEl = document.getElementById("farm-result-name");
+    const rarityEl = document.getElementById("farm-result-rarity");
+    nameEl.classList.remove("chance-hint");
+    document.getElementById("farm-result-number").textContent = "";
+
+    if(result.success && result.new_card){
+      const card = result.new_card;
+      stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}" alt="${card.name || ''}">`;
+      nameEl.textContent = card.name || "Новая карта!";
+      rarityEl.textContent = card.rarity || "";
+      rarityEl.className = card.rarity || "";
+      tg?.HapticFeedback?.notificationOccurred("success");
+    }else{
+      stage.innerHTML = `<div class="placeholder">🔥</div>`;
+      nameEl.textContent = "Всё сгорело без результата";
+      rarityEl.textContent = "";
+      rarityEl.className = "";
+      tg?.HapticFeedback?.notificationOccurred("error");
+    }
+  }catch(e){
+    if(mySeq !== farmRequestSeq) return;
+    document.getElementById("farm-progress-wrap").classList.remove("active");
+    clearInterval(farmCycleTimer);
+    clearInterval(farmProgressTimer);
+    if(String(e.message).includes("not enough")){
+      toast("Недостаточно подходящих карт этой редкости (проверь стейк/продажу/обмен)");
+    }else{
+      toast("Ошибка сжигания: " + e.message);
+    }
+  }finally{
+    burnBusy = false;
+  }
+}
+
 // ---------- Referral modal (tap the "Рефералы" stat tile in Profile) ----------
 document.getElementById("profile-info-btn").addEventListener("click", ()=>{
   document.getElementById("profile-info-overlay").classList.add("active");
@@ -3582,6 +3896,11 @@ document.getElementById("profile-info-overlay").addEventListener("click", (e)=>{
 });
 
 document.getElementById("stat-income-tile").addEventListener("click", ()=>{
+  document.getElementById("income-text-amount").textContent = document.getElementById("stat-income").textContent;
+  const daysEl = document.getElementById("income-text-next");
+  daysEl.innerHTML = (daysUntilNextIncome != null)
+    ? `Следующее повышение (+25 <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">) через ${daysUntilNextIncome} дн.`
+    : "";
   document.getElementById("income-overlay").classList.add("active");
 });
 document.getElementById("income-close").addEventListener("click", ()=>{

@@ -162,6 +162,11 @@ class CaseOpenBody(InitDataBody):
     case_key: str
 
 
+class BurnBody(InitDataBody):
+    rarity: str
+    user_card_ids: list[int]
+
+
 class SwapOfferBody(InitDataBody):
     user_card_id: int
     offered_user_card_ids: list[int]
@@ -179,6 +184,7 @@ class PvpJoinBody(InitDataBody):
 def auth(body: InitDataBody):
     user = _authenticate(body.initData)
     daily_bonus = db.claim_daily_bonus(user["telegram_id"])
+    bonus_info = db.get_daily_bonus_info(user["telegram_id"])
     return {
         "telegram_id": user["telegram_id"],
         "username": user["username"],
@@ -188,12 +194,16 @@ def auth(body: InitDataBody):
         "gems": db.get_gems(user["telegram_id"]),
         "is_new": user["_is_new"],
         "daily_bonus": daily_bonus,
+        "daily_bonus_amount": bonus_info["amount"],
+        "daily_bonus_days_until_next": bonus_info["days_until_next"],
         # In-app "you earned 25 gems for a referral" popup — read-once, replaces the
         # old bot-DM notification (see db.set_referral_notice / /api/farm below).
         "referral_reward_notice": db.get_and_clear_referral_notice(user["telegram_id"]),
         # Whether today's (UTC) fortune-wheel spin is still unused — the frontend
         # shows the wheel overlay and calls /api/wheel/spin itself when this is true.
         "wheel_available": db.wheel_available(user["telegram_id"]),
+        # Days the bot has been running — shown as the "День: N" counter on Farm.
+        "bot_day": db.get_bot_uptime_days(),
     }
 
 
@@ -428,8 +438,6 @@ def craft(body: CraftBody):
         result = db.craft_card(user["telegram_id"], body.user_card_id)
     except db.CraftNotOwned:
         raise HTTPException(404, "card not found in your inventory, or it's busy (staked/listed for sale or swap/in a PvP round)")
-    except db.CraftNotAllowed:
-        raise HTTPException(400, "diamond cards can't be crafted")
     except db.InsufficientGems:
         raise HTTPException(400, "not enough gems")
     result["gems"] = db.get_gems(user["telegram_id"])
@@ -446,6 +454,18 @@ def case_open(body: CaseOpenBody):
     except db.InsufficientGems:
         raise HTTPException(400, "not enough gems")
     result["gems"] = db.get_gems(user["telegram_id"])
+    return result
+
+
+@app.post("/api/burn")
+def burn(body: BurnBody):
+    user = _authenticate(body.initData)
+    try:
+        result = db.burn_cards(user["telegram_id"], body.rarity, body.user_card_ids)
+    except db.BurnNotAllowed:
+        raise HTTPException(400, "this rarity can't be burned (already top tier, or unknown)")
+    except db.BurnNotEnoughCards:
+        raise HTTPException(400, "not enough eligible cards of this rarity (need more, or some are busy)")
     return result
 
 
@@ -513,15 +533,8 @@ async def pvp_join(body: PvpJoinBody):
     except db.PvpRoundLocked:
         raise HTTPException(409, "round already locked, try again in a moment")
 
-    total_players = len(state.get("participants", []))
-    if total_players == 1:
-        # Only ping the chat for whoever opens a fresh round — pinging on every
-        # single stake afterward was too noisy.
-        import bot as bot_module
-
-        who_name = f"@{user['username']}" if user.get("username") else (user.get("first_name") or "Игрок")
-        await bot_module.notify_pvp_chat_join(who_name, len(body.user_card_ids))
-
+    # No chat ping when a new round opens anymore — the in-app pulsing PvP dot
+    # (see webapp's checkPvpAmbient) is the only "something's happening" signal now.
     return state
 
 

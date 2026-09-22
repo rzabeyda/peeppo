@@ -752,18 +752,6 @@ async def handle_inline_share(inline_query: InlineQuery):
         logger.warning("could not answer inline share query for card %s", user_card_id)
 
 
-async def notify_pvp_chat_join(who_name: str, cards_count: int):
-    """Pings the public PvP chat only when someone opens a brand-new round (the
-    first stake in it) — pinging on every single stake afterward was too noisy.
-    Best-effort — the bot must already be a member of PUBLIC_CHAT for this to work."""
-    cards_word = "карту" if cards_count == 1 else "карт(ы)"
-    text = f"🎴 {who_name} открыл(а) новый раунд PvP, поставив {cards_count} {cards_word}! Успей присоединиться."
-    try:
-        await bot.send_message(PUBLIC_CHAT, text)
-    except Exception:
-        logger.warning("could not notify %s of a new PvP round", PUBLIC_CHAT)
-
-
 async def main():
     db.init_db()
     logger.info("Peeppo bot starting (polling)...")

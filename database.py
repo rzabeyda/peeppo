@@ -236,6 +236,10 @@ def init_db():
         # way as last_daily_bonus (UTC calendar day).
         if "last_wheel_spin" not in u_cols:
             conn.execute("ALTER TABLE users ADD COLUMN last_wheel_spin TEXT")
+        # migration for burn_cards() — see its docstring for why this is "soft destroy"
+        # (voided=1) rather than an actual DELETE.
+        if "voided" not in uc_cols:
+            conn.execute("ALTER TABLE user_cards ADD COLUMN voided INTEGER NOT NULL DEFAULT 0")
 
 
 DAILY_BONUS_GEMS = 25
@@ -302,21 +306,65 @@ def get_user(telegram_id: int) -> sqlite3.Row | None:
         return conn.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
 
 
+def _parse_utc(ts: str) -> datetime:
+    dt = datetime.fromisoformat(ts)
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _daily_bonus_amount_for(days_elapsed: int) -> int:
+    """DAILY_BONUS_GEMS, +25 more for every full 30-day "month" since signup — the daily
+    login reward keeps growing the longer a player sticks around."""
+    return DAILY_BONUS_GEMS + 25 * (days_elapsed // 30)
+
+
+def get_bot_uptime_days() -> int:
+    """Days the bot has been running, counting from the very first user's created_at
+    (there's no separate "bot launch date" stored anywhere, so the earliest signup is
+    used as a stand-in) — day 1 is launch day itself, so this is (elapsed days) + 1.
+    Shown as the "День: N" counter on the Farm screen. Returns 1 if there are no users yet."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT MIN(created_at) AS first FROM users").fetchone()
+    if row is None or row["first"] is None:
+        return 1
+    days_elapsed = (datetime.now(timezone.utc) - _parse_utc(row["first"])).days
+    return days_elapsed + 1
+
+
+def get_daily_bonus_info(user_id: int) -> dict:
+    """Current daily-bonus amount (see _daily_bonus_amount_for) and how many days remain
+    until it next steps up — for the "Доход" tile in Profile, so players can see the
+    increase coming rather than just noticing it after the fact."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT created_at FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+    if row is None:
+        return {"amount": DAILY_BONUS_GEMS, "days_until_next": 30}
+    days_elapsed = (datetime.now(timezone.utc) - _parse_utc(row["created_at"])).days
+    return {
+        "amount": _daily_bonus_amount_for(days_elapsed),
+        "days_until_next": 30 - (days_elapsed % 30),
+    }
+
+
 def claim_daily_bonus(user_id: int) -> int:
-    """Credits DAILY_BONUS_GEMS once per calendar day (UTC) the user opens the app —
+    """Credits the current daily-bonus amount (see _daily_bonus_amount_for — grows +25
+    every 30 days since signup) once per calendar day (UTC) the user opens the app —
     returns the amount credited (0 if they already claimed today, or the signup day,
     since new users already get SIGNUP_BONUS_GEMS and last_daily_bonus is pre-set
     to that day in get_or_create_user)."""
     today = datetime.now(timezone.utc).date().isoformat()
     with get_conn() as conn:
-        row = conn.execute("SELECT last_daily_bonus FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        row = conn.execute(
+            "SELECT last_daily_bonus, created_at FROM users WHERE telegram_id = ?", (user_id,)
+        ).fetchone()
         if row is None or row["last_daily_bonus"] == today:
             return 0
+        days_elapsed = (datetime.now(timezone.utc) - _parse_utc(row["created_at"])).days
+        amount = _daily_bonus_amount_for(days_elapsed)
         conn.execute(
             "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ?, last_daily_bonus = ? WHERE telegram_id = ?",
-            (DAILY_BONUS_GEMS, DAILY_BONUS_GEMS, today, user_id),
+            (amount, amount, today, user_id),
         )
-        return DAILY_BONUS_GEMS
+        return amount
 
 
 # ---------------------------------------------------------------------------
@@ -435,13 +483,13 @@ def _draw_card_weighted(weights: dict[str, float]) -> sqlite3.Row | None:
 
 CASE_DEFS = {
     "hamster": {"name": "Хомяк", "price": 50, "image": "case/case_hamster.jpg",
-                "weights": {"bronze": 55, "silver": 30, "gold": 12, "platinum": 2.5, "diamond": 0.5}},
+                "weights": {"bronze": 40, "silver": 30, "gold": 18, "platinum": 9, "diamond": 3}},
     "duck": {"name": "Уточка", "price": 100, "image": "case/case_utya.jpg",
-             "weights": {"bronze": 35, "silver": 35, "gold": 22, "platinum": 6, "diamond": 2}},
+             "weights": {"bronze": 25, "silver": 30, "gold": 25, "platinum": 14, "diamond": 6}},
     "capybara": {"name": "Капибара", "price": 200, "image": "case/case_capybara.jpg",
-                 "weights": {"bronze": 15, "silver": 30, "gold": 33, "platinum": 17, "diamond": 5}},
+                 "weights": {"bronze": 10, "silver": 25, "gold": 33, "platinum": 22, "diamond": 10}},
     "pepe": {"name": "Пепе", "price": 500, "image": "case/case_pep.jpg",
-             "weights": {"silver": 10, "gold": 35, "platinum": 40, "diamond": 15}},
+             "weights": {"silver": 5, "gold": 25, "platinum": 45, "diamond": 25}},
 }
 
 
@@ -549,6 +597,125 @@ def create_card_giveaway(admin_id: int, rarity: str, total_cards: int,
     }
 
 
+# Burn: sacrifice several owned cards of one rarity for a GUARANTEED shot at exactly the
+# next tier up (unlike craft, which is a random spread across same-tier-or-higher). Free —
+# no gem cost, since craft already covers the "pay gems, random result" niche. 99% success
+# (BURN_SUCCESS_RATE); the other 1% of the time everything burned is lost for nothing, so
+# it's a real risk.
+# Counts scale with how much scarcer the target tier actually is in RARITY_WEIGHTS (the
+# base farm odds, untouched): bronze->silver/silver->gold/gold->platinum are all a ~1.7-2.2x
+# scarcity step so they cost close to the same; platinum->diamond is a genuinely bigger
+# scarcity jump (~7x in raw farm odds) so it costs the most — but capped well below a literal
+# 1:1 mapping to that ratio (which would need ~15-18 platinum cards) since platinum itself is
+# already hard to farm and that would make the top tier unreachable via burn.
+BURN_REQUIREMENTS = {
+    "bronze":   {"target": "silver",   "count": 4},
+    "silver":   {"target": "gold",     "count": 5},
+    "gold":     {"target": "platinum", "count": 5},
+    "platinum": {"target": "diamond",  "count": 6},
+    # No "diamond" entry — Diamond is the top tier, nothing to burn UP into (Diamond can
+    # still be re-rolled via craft_card(), which is a different mechanic).
+}
+BURN_SUCCESS_RATE = 0.99
+
+
+class BurnNotEnoughCards(Exception):
+    """Raised by burn_cards() when the user doesn't own enough non-busy cards of the
+    requested rarity."""
+
+
+class BurnNotAllowed(Exception):
+    """Raised by burn_cards() for a rarity with no burn recipe (diamond — already the top
+    tier, nothing to burn up into)."""
+
+
+def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
+    """Burns exactly the BURN_REQUIREMENTS[rarity]['count'] cards the player themselves
+    picked (user_card_ids) — free, no gem cost. Every id must belong to user_id, match the
+    given rarity, and not be busy (staked/listed/in a swap or PvP round); anything else
+    (wrong count, someone else's card, a duplicate id, a busy card) raises
+    BurnNotEnoughCards rather than silently dropping/substituting cards, since the player
+    chose these specific ones. BURN_SUCCESS_RATE (99%) of the time the burned cards are
+    replaced with one freshly-drawn card of the next-tier-up rarity; the other 1% of the
+    time NOTHING comes back — a genuine loss, not just flavor text.
+
+    Like craft_card(), this NEVER actually DELETEs a user_cards row — market_offers,
+    swap_offers, swap_offer_cards, and pvp_entries all keep permanent FK-referencing
+    history rows, so a hard DELETE on any card that was EVER listed/swapped/staked/PvP'd
+    (even long ago, even if not currently busy) blows up with "FOREIGN KEY constraint
+    failed". Instead: on success, one burned row is reused in place for the new card
+    (exactly like craft_card()) and the rest are marked voided=1; on failure, all of them
+    are marked voided=1. voided rows are excluded from get_inventory(), get_total_farmed(),
+    and get_leaderboard() — so "Всего" genuinely goes down — but physically stay put so
+    every historical reference stays valid. Raises BurnNotAllowed for an unrecognized/
+    top-tier rarity."""
+    recipe = BURN_REQUIREMENTS.get(rarity)
+    if recipe is None:
+        raise BurnNotAllowed()
+    target_rarity, count = recipe["target"], recipe["count"]
+    if len(user_card_ids) != count or len(set(user_card_ids)) != count:
+        raise BurnNotEnoughCards()
+
+    with get_conn() as conn:
+        placeholders = ",".join("?" for _ in user_card_ids)
+        rows = conn.execute(
+            f"SELECT uc.id FROM user_cards uc JOIN cards c ON c.id = uc.card_id "
+            f"WHERE uc.id IN ({placeholders}) AND uc.user_id = ? AND c.rarity = ? "
+            f"AND uc.listed_price IS NULL AND uc.swap_listed = 0 "
+            f"AND uc.staked_at IS NULL AND uc.pvp_round_id IS NULL AND uc.voided = 0",
+            (*user_card_ids, user_id, rarity),
+        ).fetchall()
+        if len(rows) != count:
+            raise BurnNotEnoughCards()
+        burn_ids = [r["id"] for r in rows]
+
+        success = random.random() < BURN_SUCCESS_RATE
+        new_card = _draw_card_weighted({target_rarity: 100}) if success else None
+
+        new_user_card_id = None
+        if new_card is not None:
+            # Reuse the first burned row in place for the new card (same trick as
+            # craft_card()) — keeps its id/history valid instead of touching FK-sensitive
+            # rows unnecessarily.
+            recipient_id = burn_ids[0]
+            conn.execute(
+                "UPDATE user_cards SET card_id = ?, obtained_at = ?, listed_price = NULL, "
+                "swap_listed = 0, staked_at = NULL, pvp_round_id = NULL, voided = 0 WHERE id = ?",
+                (new_card["id"], _now(), recipient_id),
+            )
+            new_user_card_id = recipient_id
+            remaining_ids = burn_ids[1:]
+        else:
+            remaining_ids = burn_ids
+
+        if remaining_ids:
+            placeholders = ",".join("?" for _ in remaining_ids)
+            conn.execute(
+                f"UPDATE user_cards SET voided = 1, listed_price = NULL, swap_listed = 0, "
+                f"staked_at = NULL, pvp_round_id = NULL WHERE id IN ({placeholders})",
+                remaining_ids,
+            )
+
+        total_farmed = conn.execute("SELECT COUNT(*) AS n FROM user_cards WHERE voided = 0").fetchone()["n"]
+
+    result = {
+        "success": success,
+        "burned_count": count,
+        "rarity": rarity,
+        "target_rarity": target_rarity,
+        "total_farmed": total_farmed,
+    }
+    if new_card is not None:
+        result["new_card"] = {
+            "user_card_id": new_user_card_id,
+            "card_id": new_card["id"],
+            "filename": new_card["filename"],
+            "name": new_card["name"],
+            "rarity": new_card["rarity"],
+        }
+    return result
+
+
 def grant_card(user_id: int, card_id: int) -> int:
     with get_conn() as conn:
         cur = conn.execute(
@@ -630,22 +797,26 @@ CRAFT_WEIGHTS = {
     # Crafting never produces a tier BELOW the one burned — only same-tier-or-higher is
     # possible (burn Gold, get Gold/Platinum/Diamond only, never Bronze/Silver). Each row
     # only lists the tiers it can actually produce and must sum to 100.
-    "bronze":   {"bronze": 50, "silver": 35, "gold": 12, "platinum": 2.5, "diamond": 0.5},
+    # Every tier's craft chance here beats the equivalent free-farm chance (RARITY_WEIGHTS:
+    # silver 29/gold 13/platinum 7/diamond 1) — paying gems + a card should never leave you
+    # WORSE off than just farming for free, which the old row (2.5/0.5 platinum/diamond) did.
+    "bronze":   {"bronze": 40, "silver": 35, "gold": 15, "platinum": 8, "diamond": 2},
     "silver":   {"silver": 55, "gold": 35, "platinum": 8, "diamond": 2},
     "gold":     {"gold": 55, "platinum": 35, "diamond": 10},
     "platinum": {"platinum": 65, "diamond": 35},
-    # No "diamond" entry — Diamond is the top tier already, it can't be crafted away
-    # (see the check in craft_card() below, which raises CraftNotAllowed for it).
+    # Diamond is the top tier — nowhere higher to go, so crafting one just re-rolls
+    # another random Diamond (people reroll for a different Diamond card they want more).
+    "diamond": {"diamond": 100},
 }
+
+# Diamond craft is risky: instead of a guaranteed reroll, there's a
+# CRAFT_DIAMOND_SUCCESS_RATE chance of getting a new Diamond card and a (1 - rate) chance
+# the card is destroyed outright. Gems are still spent either way.
+CRAFT_DIAMOND_SUCCESS_RATE = 0.95
 
 
 class CraftNotOwned(Exception):
     """Raised by craft_card() when user_card_id doesn't exist or doesn't belong to this user."""
-
-
-class CraftNotAllowed(Exception):
-    """Raised by craft_card() when trying to craft a Diamond-tier card — it's already the
-    top tier, so it can't be burned for a chance at something else."""
 
 
 def draw_card_for_craft(input_rarity: str) -> sqlite3.Row | None:
@@ -671,7 +842,10 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
     """Burns one owned card (must belong to user_id) for CRAFT_COST_GEMS gems and one new
     random card, drawn with odds skewed by the burned card's rarity. The new card is inserted
     with the exact same obtained_at as the burned one, so it inherits its collection number
-    (drop_number) instead of jumping to the end of the list. Raises InsufficientGems if the
+    (drop_number) instead of jumping to the end of the list. Diamond input is special: instead
+    of a guaranteed reroll, there's only a CRAFT_DIAMOND_SUCCESS_RATE chance of getting a new
+    Diamond card back — the rest of the time the card is destroyed outright (gems are still
+    spent either way, same as burn_cards()'s risk mechanic). Raises InsufficientGems if the
     gem balance is too low, CraftNotOwned if user_card_id isn't this user's."""
     with get_conn() as conn:
         owned = conn.execute(
@@ -684,45 +858,62 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
             raise CraftNotOwned()
         if owned["listed_price"] is not None or owned["swap_listed"] or owned["staked_at"] is not None or owned["pvp_round_id"] is not None:
             raise CraftNotOwned()
-        if (owned["rarity"] or "bronze") == "diamond":
-            raise CraftNotAllowed()
         gems_row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
         if gems_row is None or gems_row["gems"] < CRAFT_COST_GEMS:
             raise InsufficientGems()
 
-    new_card = draw_card_for_craft(owned["rarity"] or "bronze")
-    if new_card is None:
+    rarity = owned["rarity"] or "bronze"
+    success = random.random() < CRAFT_DIAMOND_SUCCESS_RATE if rarity == "diamond" else True
+
+    new_card = draw_card_for_craft(rarity) if success else None
+    if success and new_card is None:
         raise ValueError("catalog is empty")
 
     with get_conn() as conn:
         conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (CRAFT_COST_GEMS, user_id))
-        # Reuse the same user_cards row (swap its card_id in place) instead of deleting it
-        # and inserting a fresh one. market_offers, swap_offers, swap_offer_cards, and
-        # pvp_entries all carry a FOREIGN KEY on user_cards.id for history purposes, so a
-        # card that had ever been offered, swapped, or staked in the past (even in a long-
-        # finished deal) made the old DELETE blow up with "FOREIGN KEY constraint failed" —
-        # updating in place keeps the same id (every old reference stays valid) while still
-        # fully replacing which card it is.
-        conn.execute(
-            "UPDATE user_cards SET card_id = ?, listed_price = NULL, swap_listed = 0, staked_at = NULL, pvp_round_id = NULL WHERE id = ?",
-            (new_card["id"], user_card_id),
-        )
-        new_user_card_id = user_card_id
-        # Global drop number — same rule as farm(): position among ALL cards ever
-        # farmed/crafted by ANY user, not just this user's own collection.
-        drop_number = conn.execute(
-            "SELECT COUNT(*) FROM user_cards WHERE obtained_at <= ?",
-            (owned["obtained_at"],),
-        ).fetchone()[0]
+        if success:
+            # Reuse the same user_cards row (swap its card_id in place) instead of deleting it
+            # and inserting a fresh one. market_offers, swap_offers, swap_offer_cards, and
+            # pvp_entries all carry a FOREIGN KEY on user_cards.id for history purposes, so a
+            # card that had ever been offered, swapped, or staked in the past (even in a long-
+            # finished deal) made the old DELETE blow up with "FOREIGN KEY constraint failed" —
+            # updating in place keeps the same id (every old reference stays valid) while still
+            # fully replacing which card it is.
+            conn.execute(
+                "UPDATE user_cards SET card_id = ?, listed_price = NULL, swap_listed = 0, staked_at = NULL, pvp_round_id = NULL WHERE id = ?",
+                (new_card["id"], user_card_id),
+            )
+            new_user_card_id = user_card_id
+            # Global drop number — same rule as farm(): position among ALL cards ever
+            # farmed/crafted by ANY user, not just this user's own collection.
+            drop_number = conn.execute(
+                "SELECT COUNT(*) FROM user_cards WHERE obtained_at <= ?",
+                (owned["obtained_at"],),
+            ).fetchone()[0]
+        else:
+            # Diamond craft failure — card destroyed outright. Same "voided" soft-destroy
+            # trick as burn_cards(): never DELETE (would hit the same FK constraint), just
+            # flag it out of totals/inventory/leaderboard while keeping the row (and every
+            # historical FK reference to it) intact.
+            conn.execute(
+                "UPDATE user_cards SET voided = 1, listed_price = NULL, swap_listed = 0, staked_at = NULL, pvp_round_id = NULL WHERE id = ?",
+                (user_card_id,),
+            )
+            new_user_card_id = None
+            drop_number = None
+        total_farmed = conn.execute("SELECT COUNT(*) AS n FROM user_cards WHERE voided = 0").fetchone()["n"]
 
-    return {
-        "user_card_id": new_user_card_id,
-        "card_id": new_card["id"],
-        "filename": new_card["filename"],
-        "name": new_card["name"],
-        "rarity": new_card["rarity"],
-        "drop_number": drop_number,
-    }
+    result = {"success": success, "total_farmed": total_farmed}
+    if success:
+        result.update({
+            "user_card_id": new_user_card_id,
+            "card_id": new_card["id"],
+            "filename": new_card["filename"],
+            "name": new_card["name"],
+            "rarity": new_card["rarity"],
+            "drop_number": drop_number,
+        })
+    return result
 
 
 def get_inventory(user_id: int) -> list[dict]:
@@ -738,7 +929,7 @@ def get_inventory(user_id: int) -> list[dict]:
                    (SELECT COUNT(*) FROM user_cards uc2 WHERE uc2.obtained_at <= uc.obtained_at) AS drop_number
             FROM user_cards uc
             JOIN cards c ON c.id = uc.card_id
-            WHERE uc.user_id = ?
+            WHERE uc.user_id = ? AND uc.voided = 0
             ORDER BY uc.obtained_at DESC
             """,
             (user_id,),
@@ -1538,10 +1729,11 @@ def get_and_clear_referral_notice(user_id: int) -> str | None:
 
 
 def get_total_farmed() -> int:
-    """Global count of every farm drop ever, across all users — also doubles as the
-    highest drop number handed out so far, since user_cards.id is a plain AUTOINCREMENT."""
+    """Global count of every farm drop ever, across all users, MINUS anything since
+    burned away (voided=1) — this is the "Всего" figure shown in the app, and it can go
+    DOWN now that burn_cards() exists."""
     with get_conn() as conn:
-        row = conn.execute("SELECT COUNT(*) AS n FROM user_cards").fetchone()
+        row = conn.execute("SELECT COUNT(*) AS n FROM user_cards WHERE voided = 0").fetchone()
         return row["n"]
 
 
@@ -1557,7 +1749,7 @@ def get_leaderboard() -> list[dict]:
             SELECT u.telegram_id, u.username, u.first_name, u.photo_url,
                    COUNT(uc.id) AS total_cards, u.gems_earned
             FROM users u
-            LEFT JOIN user_cards uc ON uc.user_id = u.telegram_id
+            LEFT JOIN user_cards uc ON uc.user_id = u.telegram_id AND uc.voided = 0
             WHERE LOWER(u.username) IS NOT '@rzabeyda' AND LOWER(u.username) IS NOT 'rzabeyda'
             GROUP BY u.telegram_id
             ORDER BY total_cards DESC, u.telegram_id ASC
