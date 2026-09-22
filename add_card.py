@@ -30,6 +30,7 @@ SPECIAL_WORDS = {
 # characters that slipped in on the way from the desktop) get an explicit name instead.
 NAME_OVERRIDES = {
     "CrocsClassic_clog.jpg": "Crocs Classic Clog",
+    "underground_helm.jpg": "UG Helm",
 }
 
 
