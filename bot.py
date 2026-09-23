@@ -50,6 +50,9 @@ BOT_USERNAME = os.environ.get("BOT_USERNAME", "Peeppobot")  # no leading @
 ADMIN_ID = os.environ.get("ADMIN_ID")  # your own telegram_id — set in .env to get "new user" pings
 PUBLIC_CHAT = os.environ.get("PUBLIC_CHAT_USERNAME", "@peeppo_chat")  # public chat: PvP stakes + admin /gem drops
 CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "@peeppo_channel")  # channel: admin /giveaway posts
+# One-time referral-race leaderboard announcement, posted to PUBLIC_CHAT. 15:00 Moscow
+# time on Sep 30 2026 — see ref_race_scheduler() below.
+REF_RACE_ANNOUNCE_AT = datetime(2026, 9, 30, 15, 0, tzinfo=ZoneInfo("Europe/Moscow"))
 STATIC_CARDS_DIR = Path(__file__).parent / "static" / "cards"
 
 logging.basicConfig(level=logging.INFO)
@@ -172,7 +175,10 @@ async def handle_admin_panel(message: Message):
         "👑 <b>Админ-панель Peeppo</b>\n\n"
         f"Юзеров: <b>{stats['users']}</b>\n"
         f"Карт в обороте: <b>{stats['total_farmed']}</b>\n"
-        f"Гемов в обороте: <b>{stats['gems_total']}</b> 💎\n\n"
+        f"Гемов в обороте: <b>{stats['gems_total']}</b> 💎\n"
+        f"Куплено кейсов: <b>{stats['cases_bought']}</b>\n"
+        f"Скрафчено карт: <b>{stats['cards_crafted']}</b>\n"
+        f"Эволюционировано карт: <b>{stats['cards_evolved']}</b>\n\n"
         "<b>Команды:</b>\n"
         "/addgem id_или_@username кол-во — начислить гемы\n"
         "/cardgiveaway [редкость] [кол-во] [мин] [макс] — мгновенный розыгрыш ТВОИХ карт среди всех юзеров бота",
@@ -260,16 +266,18 @@ GEM_DROP_INTERVAL_SECONDS = 7200
 GEM_DROP_MIN_GAP_SECONDS = 3600
 
 
-async def _post_gem_drop(amount: int = GEM_DROP_AMOUNT) -> bool:
+async def _post_gem_drop(amount: int = GEM_DROP_AMOUNT, label: str = "💎 Дроп") -> bool:
     """Creates a gem drop and posts the "Забрать" button into PUBLIC_CHAT. Shared by
-    the manual /gem command and the automatic hourly scheduler."""
+    the manual /gem command, the automatic hourly scheduler, and the daily 100-gem
+    airdrop — label lets that last one read "Аирдроп" instead of "Дроп" so it reads as
+    a distinct, bigger event rather than just another regular drop."""
     drop_id = db.create_gem_drop(amount)
     kb = InlineKeyboardBuilder()
     kb.button(text="Забрать", callback_data=f"gem_claim:{drop_id}")
     try:
         await bot.send_message(
             PUBLIC_CHAT,
-            f"💎 Дроп {amount} гемов! Кто первый нажмёт «Забрать» — тому и достанется.",
+            f"{label} {amount} гемов! Кто первый нажмёт «Забрать» — тому и достанется.",
             reply_markup=kb.as_markup(),
         )
         return True
@@ -311,6 +319,34 @@ async def gem_drop_scheduler():
         except Exception:
             logger.exception("gem drop scheduler iteration failed")
         await asyncio.sleep(GEM_DROP_INTERVAL_SECONDS + random.randint(-180, 180))
+
+
+DAILY_AIRDROP_AMOUNT = 100
+DAILY_AIRDROP_MIN_GAP_SECONDS = 24 * 60 * 60
+
+
+async def daily_airdrop_scheduler():
+    """Background loop living for the lifetime of the bot process: independently of
+    the regular ~2h/25-gem drops above, posts one extra big 100-gem first-come-first-
+    served drop into PUBLIC_CHAT roughly once every 24 hours. Reuses the exact same
+    gem_drops table/claim mechanic as _post_gem_drop() — this is just a bigger amount
+    on its own daily cadence, tracked separately via get_last_gem_drop_time_by_amount()
+    so it doesn't get confused by the smaller drops firing in between."""
+    logger.info("daily airdrop scheduler started (~once every 24h, %d gems)", DAILY_AIRDROP_AMOUNT)
+    while True:
+        try:
+            last = db.get_last_gem_drop_time_by_amount(DAILY_AIRDROP_AMOUNT)
+            due = True
+            if last:
+                last_dt = datetime.fromisoformat(last)
+                due = (datetime.now(timezone.utc) - last_dt).total_seconds() >= DAILY_AIRDROP_MIN_GAP_SECONDS
+            if due:
+                ok = await _post_gem_drop(DAILY_AIRDROP_AMOUNT, label="🪂 Аирдроп")
+                if ok:
+                    logger.info("daily airdrop posted")
+        except Exception:
+            logger.exception("daily airdrop scheduler iteration failed")
+        await asyncio.sleep(3600)
 
 
 @dp.callback_query(F.data.startswith("gem_claim:"))
@@ -550,6 +586,22 @@ async def create_gems_invoice(user_id: int, gems: int, stars: int) -> str:
     )
 
 
+async def create_rank_invoice(user_id: int, rank: str, stars: int) -> str:
+    """Called from api.py when the user taps a "Купить" button on a rank row.
+    Payload encodes the buyer + rank name so the successful_payment handler below
+    knows what to apply once Telegram confirms the Stars payment. This is a
+    one-time cosmetic purchase, not gems, so payload uses "rank:" not "gems:"."""
+    payload = f"rank:{user_id}:{rank}"
+    return await bot.create_invoice_link(
+        title=f"Ранг {rank.upper()} — Peeppo",
+        description=f"Статус {rank.upper()} в профиле — навсегда, не влияет на игру",
+        payload=payload,
+        provider_token="",  # empty provider_token is required for Telegram Stars
+        currency="XTR",
+        prices=[LabeledPrice(label=f"Ранг {rank.upper()}", amount=stars)],
+    )
+
+
 @dp.pre_checkout_query()
 async def handle_pre_checkout(pre_checkout_q: PreCheckoutQuery):
     await bot.answer_pre_checkout_query(pre_checkout_q.id, ok=True)
@@ -558,12 +610,15 @@ async def handle_pre_checkout(pre_checkout_q: PreCheckoutQuery):
 @dp.message(F.successful_payment)
 async def handle_successful_payment(message: Message):
     payload = message.successful_payment.invoice_payload
-    if not payload.startswith("gems:"):
-        return
-    _, uid_str, gems_str = payload.split(":")
-    gems = int(gems_str)
-    new_balance = db.add_gems(int(uid_str), gems)
-    await message.answer(f"Зачислено {gems} 💎! Баланс: {new_balance} 💎")
+    if payload.startswith("gems:"):
+        _, uid_str, gems_str = payload.split(":")
+        gems = int(gems_str)
+        new_balance = db.add_gems(int(uid_str), gems)
+        await message.answer(f"Зачислено {gems} 💎! Баланс: {new_balance} 💎")
+    elif payload.startswith("rank:"):
+        _, uid_str, rank = payload.split(":")
+        new_rank = db.set_purchased_rank(int(uid_str), rank)
+        await message.answer(f"Ранг {new_rank.upper()} куплен! 🏆")
 
 
 # ---------------------------------------------------------------------------
@@ -634,10 +689,27 @@ async def handle_offer_decline(call: CallbackQuery):
 # same pattern as the gems market above.
 # ---------------------------------------------------------------------------
 
+# Display order for the grouped-by-rarity swap offer message — low to high, matching
+# how the seller reads it: "what's on the table" from least to most valuable.
+SWAP_RARITY_ORDER = ["bronze", "silver", "gold", "platinum", "diamond"]
+
+
 async def notify_new_swap_offer(seller_id: int, offer_id: int, buyer_name: str, listing_name: str | None,
-                                 photo_path: str, offered_names: list[str]):
+                                 photo_path: str, offered_cards: list[dict]):
+    """offered_cards: [{"name": ..., "rarity": ...}, ...] — grouped by rarity in the DM so
+    the seller can tell at a glance whether they're being offered bronze junk or a diamond,
+    instead of a flat list of names with no rarity shown at all."""
     name = listing_name or "картинка"
-    offered = ", ".join(f"«{n}»" for n in offered_names)
+    grouped: dict[str, list[str]] = {}
+    for card in offered_cards:
+        grouped.setdefault(card.get("rarity") or "bronze", []).append(card["name"])
+    lines = []
+    for rarity in SWAP_RARITY_ORDER:
+        names = grouped.get(rarity)
+        if names:
+            quoted = " ".join(f"«{n}»" for n in names)
+            lines.append(f"{rarity.upper()} {quoted}")
+    offered_block = "\n".join(lines)
     kb = InlineKeyboardBuilder()
     kb.button(text="✅ Принять", callback_data=f"swap_accept:{offer_id}")
     kb.button(text="❌ Отклонить", callback_data=f"swap_decline:{offer_id}")
@@ -646,7 +718,7 @@ async def notify_new_swap_offer(seller_id: int, offer_id: int, buyer_name: str, 
         await bot.send_photo(
             chat_id=seller_id,
             photo=FSInputFile(photo_path),
-            caption=f"{buyer_name} предлагает обменять {offered} на твою «{name}»",
+            caption=f"{buyer_name} предлагает обменять на твою «{name}»:\n\n{offered_block}",
             reply_markup=kb.as_markup(),
         )
     except Exception:
@@ -713,6 +785,105 @@ async def send_share_message(user_id: int, photo_path: str, card_name: str | Non
 
 
 # ---------------------------------------------------------------------------
+# Crypto withdrawal — "Продать Diamond карты за GRAM" (repurposes the old
+# "Продать Гемы за Звёзды" button in the gems-choice overlay). See database.py's
+# request_crypto_withdrawal()/admin_pay_withdrawal()/admin_cancel_withdrawal() for
+# the mechanics — the selected cards are held (voided) the instant a request is
+# submitted, so they can't be double-spent while it's pending. Only ADMIN_ID can
+# act on the request; the admin sends the GRAM manually outside this system and
+# then taps "Оплатить", or taps "Отменить" to give the cards back.
+# ---------------------------------------------------------------------------
+
+def _withdrawal_text(withdrawal_id: int, card_count: int, gram_amount: int, wallet_address: str,
+                      status_line: str = "") -> str:
+    text = (
+        f"💰 <b>Заявка на вывод GRAM</b> #{withdrawal_id}\n\n"
+        f"Карт Diamond: <b>{card_count}</b>\n"
+        f"К выплате: <b>{gram_amount} GRAM</b>\n"
+        f"Кошелёк: <code>{wallet_address}</code>"
+    )
+    if status_line:
+        text += f"\n\n{status_line}"
+    return text
+
+
+async def notify_admin_withdrawal_request(withdrawal_id: int, user_id: int, display_name: str,
+                                           card_count: int, gram_amount: int, wallet_address: str):
+    if not ADMIN_ID:
+        logger.warning("ADMIN_ID not set — cannot notify admin of withdrawal request %s", withdrawal_id)
+        return
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✅ Оплатить", callback_data=f"crypto_pay:{withdrawal_id}")
+    kb.button(text="❌ Отменить", callback_data=f"crypto_cancel:{withdrawal_id}")
+    kb.adjust(2)
+    text = (
+        f"Игрок: {display_name} (id {user_id})\n\n" +
+        _withdrawal_text(withdrawal_id, card_count, gram_amount, wallet_address) +
+        "\n\nОтправь GRAM вручную на этот адрес, затем нажми «Оплатить»."
+    )
+    try:
+        await bot.send_message(int(ADMIN_ID), text, parse_mode="HTML", reply_markup=kb.as_markup())
+    except Exception:
+        logger.warning("could not notify admin of withdrawal request %s", withdrawal_id)
+
+
+@dp.callback_query(F.data.startswith("crypto_pay:"))
+async def handle_crypto_pay(call: CallbackQuery):
+    if not _is_admin(call.from_user.id):
+        await call.answer("Недоступно", show_alert=True)
+        return
+    withdrawal_id = int(call.data.split(":")[1])
+    result = db.admin_pay_withdrawal(withdrawal_id)
+    if result is None:
+        await call.answer("Заявка уже обработана", show_alert=True)
+        return
+    try:
+        await call.message.edit_text(
+            _withdrawal_text(withdrawal_id, result["card_count"], result["gram_amount"],
+                              result["wallet_address"], "✅ <b>Оплачено</b>"),
+            parse_mode="HTML",
+        )
+    except Exception:
+        logger.warning("could not edit withdrawal message %s after pay", withdrawal_id)
+    await call.answer("Отмечено как оплачено")
+    try:
+        await bot.send_message(
+            result["user_id"],
+            f"💰 Твоя заявка на вывод {result['gram_amount']} GRAM оплачена! Спасибо, что играешь в Peeppo 🎉",
+        )
+    except Exception:
+        logger.warning("could not notify user %s of paid withdrawal", result["user_id"])
+
+
+@dp.callback_query(F.data.startswith("crypto_cancel:"))
+async def handle_crypto_cancel(call: CallbackQuery):
+    if not _is_admin(call.from_user.id):
+        await call.answer("Недоступно", show_alert=True)
+        return
+    withdrawal_id = int(call.data.split(":")[1])
+    result = db.admin_cancel_withdrawal(withdrawal_id)
+    if result is None:
+        await call.answer("Заявка уже обработана", show_alert=True)
+        return
+    try:
+        await call.message.edit_text(
+            _withdrawal_text(withdrawal_id, result["card_count"], result["gram_amount"],
+                              result["wallet_address"], "❌ <b>Отменено</b>"),
+            parse_mode="HTML",
+        )
+    except Exception:
+        logger.warning("could not edit withdrawal message %s after cancel", withdrawal_id)
+    await call.answer("Отменено")
+    try:
+        await bot.send_message(
+            result["user_id"],
+            f"❌ Твоя заявка на вывод {result['gram_amount']} GRAM отменена, карты вернулись в профиль.",
+        )
+    except Exception:
+        logger.warning("could not notify user %s of cancelled withdrawal", result["user_id"])
+
+
+# ---------------------------------------------------------------------------
 # Inline sharing — tapping "Поделиться" in the webapp calls tg.switchInlineQuery(),
 # which opens Telegram's native "send to..." chat picker. Whoever the player picks
 # gets this card sent straight into that chat — no copy/forward step needed.
@@ -752,12 +923,82 @@ async def handle_inline_share(inline_query: InlineQuery):
         logger.warning("could not answer inline share query for card %s", user_card_id)
 
 
+# ---------------------------------------------------------------------------
+# Referral race — /ref shows a top-5 leaderboard, counting only referrals who've
+# farmed at least one card AND joined PUBLIC_CHAT (see database.py's
+# get_unverified_ref_candidates()/mark_chat_verified()/get_ref_leaderboard()). A
+# one-time scheduled message re-posts the same leaderboard at REF_RACE_ANNOUNCE_AT.
+# ---------------------------------------------------------------------------
+
+async def sync_referral_chat_verification():
+    """Spends one getChatMember call per not-yet-verified, already-farmed referral to
+    check if they've joined PUBLIC_CHAT, and flags the ones who have. Cheap to call
+    often — already-verified rows are never rechecked."""
+    for user_id in db.get_unverified_ref_candidates():
+        try:
+            member = await bot.get_chat_member(PUBLIC_CHAT, user_id)
+            if member.status in ("member", "administrator", "creator"):
+                db.mark_chat_verified(user_id)
+        except Exception:
+            # not in the chat (yet), or we can't see them — just retried next time
+            pass
+
+
+def format_ref_leaderboard(rows: list[dict]) -> str:
+    if not rows:
+        return (
+            f"🏆 Топ-5 по рефералам\n\n"
+            f"Пока пусто — рефералы засчитываются, когда друг зашёл в бота по твоей "
+            f"ссылке, вступил в {PUBLIC_CHAT} и сделал первый фарм карты."
+        )
+    medals = ["🥇", "🥈", "🥉", "4.", "5."]
+    lines = ["🏆 Топ-5 по рефералам:", ""]
+    for i, row in enumerate(rows):
+        name = f"@{row['username']}" if row["username"] else (row["first_name"] or f"id{row['telegram_id']}")
+        lines.append(f"{medals[i]} {name} — {row['n']}")
+    return "\n".join(lines)
+
+
+@dp.message(Command("ref"))
+async def handle_ref_command(message: Message):
+    """Works the same in PUBLIC_CHAT or in a private DM with the bot — no chat-type
+    filter, and Telegram always delivers slash commands to bots regardless of the
+    bot's privacy-mode setting."""
+    await sync_referral_chat_verification()
+    rows = db.get_ref_leaderboard(5, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)
+    await message.answer(format_ref_leaderboard(rows))
+
+
+async def ref_race_scheduler():
+    """Background loop living for the lifetime of the bot process: once real time
+    passes REF_RACE_ANNOUNCE_AT, posts the leaderboard to PUBLIC_CHAT exactly once
+    (guarded by db.has_ref_race_been_announced(), same idempotency pattern as
+    check_hundred_club/hundred_club) and keeps looping harmlessly forever after."""
+    logger.info("referral race scheduler started")
+    while True:
+        try:
+            if not db.has_ref_race_been_announced() and datetime.now(ZoneInfo("Europe/Moscow")) >= REF_RACE_ANNOUNCE_AT:
+                await sync_referral_chat_verification()
+                rows = db.get_ref_leaderboard(5, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)
+                text = "🏁 Реферальная гонка завершена!\n\n" + format_ref_leaderboard(rows)
+                try:
+                    await bot.send_message(PUBLIC_CHAT, text)
+                except Exception:
+                    logger.warning("could not post ref race results to %s", PUBLIC_CHAT)
+                db.mark_ref_race_announced()
+        except Exception:
+            logger.exception("ref race scheduler iteration failed")
+        await asyncio.sleep(300)
+
+
 async def main():
     db.init_db()
     logger.info("Peeppo bot starting (polling)...")
     await check_hundred_club()  # in case we already had 100+ users before this deploy
     asyncio.create_task(gem_drop_scheduler())
+    asyncio.create_task(daily_airdrop_scheduler())
     asyncio.create_task(giveaway_scheduler())
+    asyncio.create_task(ref_race_scheduler())
     await dp.start_polling(bot)
 
 

@@ -31,8 +31,9 @@ BOT_TOKEN = os.environ["BOT_TOKEN"]
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "Peeppobot")
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
-# 1 Telegram Star buys 1 gem. Change this in one place if the exchange rate ever needs to move.
-GEMS_PER_STAR = 1
+# 1 Telegram Star buys GEMS_PER_STAR gems (100 ⭐ = 1000 гемов). Change this in one
+# place if the exchange rate ever needs to move.
+GEMS_PER_STAR = 10
 
 app = FastAPI(title="Peeppo API")
 
@@ -128,6 +129,10 @@ class GemsInvoiceBody(InitDataBody):
     gems: int
 
 
+class RankInvoiceBody(InitDataBody):
+    rank: str
+
+
 class ListBody(InitDataBody):
     user_card_id: int
     price_gems: int
@@ -176,6 +181,11 @@ class PvpJoinBody(InitDataBody):
     user_card_ids: list[int]
 
 
+class CryptoWithdrawBody(InitDataBody):
+    user_card_ids: list[int]
+    wallet_address: str
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -204,6 +214,9 @@ def auth(body: InitDataBody):
         "wheel_available": db.wheel_available(user["telegram_id"]),
         # Days the bot has been running — shown as the "День: N" counter on Farm.
         "bot_day": db.get_bot_uptime_days(),
+        # Player rank (time-played tier, not card rarity) — shown next to the name in
+        # Profile with matching avatar/card border colors.
+        "player_rank": db.get_player_rank(user["telegram_id"]),
     }
 
 
@@ -211,6 +224,14 @@ def auth(body: InitDataBody):
 def stats():
     """Public, no auth needed — just the running total of drops across everyone."""
     return {"total_farmed": db.get_total_farmed()}
+
+
+@app.get("/api/stats/breakdown")
+def stats_breakdown():
+    """Public, no auth needed — how many cards of each rarity exist across ALL players
+    combined. Shown when tapping the "Карты" figure on the Farm screen (as opposed to the
+    Profile screen's own personal breakdown, which is computed client-side from inventory)."""
+    return db.get_global_rarity_breakdown()
 
 
 @app.get("/api/cards")
@@ -317,15 +338,37 @@ async def transfer_to_username(body: TransferToUsernameBody):
 async def gems_invoice(body: GemsInvoiceBody):
     """Returns a Telegram Stars invoice link for the requested amount of gems.
     The frontend opens it in-app with tg.openInvoice(); a successful payment is
-    credited by bot.py's successful_payment handler (gems are never granted from here)."""
+    credited by bot.py's successful_payment handler (gems are never granted from here).
+    Gems must be a multiple of GEMS_PER_STAR (10) since Stars can't be fractional —
+    100 ⭐ buys exactly 1000 gems, not some rounded-off amount."""
     user = _authenticate(body.initData)
-    if body.gems <= 0:
-        raise HTTPException(400, "gems must be positive")
+    if body.gems <= 0 or body.gems % GEMS_PER_STAR != 0:
+        raise HTTPException(400, f"gems must be a positive multiple of {GEMS_PER_STAR}")
 
     import bot as bot_module
 
-    stars = max(1, body.gems // GEMS_PER_STAR)
+    stars = body.gems // GEMS_PER_STAR
     link = await bot_module.create_gems_invoice(user["telegram_id"], body.gems, stars)
+    return {"invoice_link": link, "stars": stars}
+
+
+@app.post("/api/rank/invoice")
+async def rank_invoice(body: RankInvoiceBody):
+    """Returns a Telegram Stars invoice link to buy a player rank (RANK_STARS_PRICE).
+    Same pattern as /api/gems/invoice: the frontend opens the link with tg.openInvoice(),
+    and bot.py's successful_payment handler applies the rank once Telegram confirms
+    payment — nothing is granted from here."""
+    user = _authenticate(body.initData)
+    if body.rank not in db.RANK_STARS_PRICE:
+        raise HTTPException(400, "this rank isn't for sale")
+    current_tier = db.get_player_rank_tier(user["telegram_id"])
+    if db.RANK_TIERS.index(body.rank) <= current_tier:
+        raise HTTPException(400, "you already have this rank or higher")
+
+    import bot as bot_module
+
+    stars = db.RANK_STARS_PRICE[body.rank]
+    link = await bot_module.create_rank_invoice(user["telegram_id"], body.rank, stars)
     return {"invoice_link": link, "stars": stars}
 
 
@@ -348,9 +391,10 @@ def market_listings(body: InitDataBody):
 @app.post("/api/market/list")
 def market_list(body: ListBody):
     user = _authenticate(body.initData)
-    if body.price_gems < db.MIN_LISTING_PRICE_GEMS:
-        raise HTTPException(400, f"minimum price is {db.MIN_LISTING_PRICE_GEMS} gems")
-    ok = db.list_card(body.user_card_id, user["telegram_id"], body.price_gems)
+    try:
+        ok = db.list_card(body.user_card_id, user["telegram_id"], body.price_gems)
+    except db.ListingPriceTooLow as e:
+        raise HTTPException(400, f"minimum price is {e.min_price} gems")
     if not ok:
         raise HTTPException(404, "card not found in your inventory")
     return {"ok": True}
@@ -382,9 +426,10 @@ async def market_buy(body: BuyBody):
 @app.post("/api/market/offer")
 async def market_offer(body: OfferBody):
     user = _authenticate(body.initData)
-    if body.price_gems < db.MIN_LISTING_PRICE_GEMS:
-        raise HTTPException(400, f"minimum price is {db.MIN_LISTING_PRICE_GEMS} gems")
-    result = db.make_offer(body.user_card_id, user["telegram_id"], body.price_gems)
+    try:
+        result = db.make_offer(body.user_card_id, user["telegram_id"], body.price_gems)
+    except db.ListingPriceTooLow as e:
+        raise HTTPException(400, f"minimum price is {e.min_price} gems")
     if result is None:
         raise HTTPException(400, "listing unavailable")
 
@@ -476,6 +521,8 @@ def stake_list(body: StakeBody):
         ok = db.stake_card(body.user_card_id, user["telegram_id"])
     except db.InsufficientGems:
         raise HTTPException(400, "not enough gems")
+    except db.StakeLimitReached:
+        raise HTTPException(400, f"stake limit reached (max {db.MAX_STAKED_CARDS} cards at once)")
     if not ok:
         raise HTTPException(400, "card not found in your inventory, or already staked/listed for sale or swap")
     return {"ok": True, "gems": db.get_gems(user["telegram_id"])}
@@ -505,7 +552,7 @@ async def swap_offer(body: SwapOfferBody):
     photo_path = os.path.join(STATIC_DIR, "cards", result["listing_filename"])
     await bot_module.notify_new_swap_offer(
         result["seller_id"], result["offer_id"], buyer_name,
-        result["listing_name"], photo_path, result["offered_names"],
+        result["listing_name"], photo_path, result["offered_cards"],
     )
     return {"ok": True}
 
@@ -563,3 +610,37 @@ def wheel_spin(body: InitDataBody):
     if not result["ok"]:
         raise HTTPException(409, "already spun today")
     return {"amount": result["amount"]}
+
+
+# ---------------------------------------------------------------------------
+# Crypto withdrawal — "Продать Diamond карты за GRAM" (repurposes the old
+# "Продать Гемы за Звёзды" button in the gems-choice overlay). See database.py's
+# request_crypto_withdrawal()/get_pending_withdrawal() for the full mechanics.
+# ---------------------------------------------------------------------------
+
+@app.post("/api/crypto/status")
+def crypto_status(body: InitDataBody):
+    """The caller's own currently-pending request, if any, so the frontend can show
+    "заявка на рассмотрении" instead of the picker."""
+    user = _authenticate(body.initData)
+    return {"pending": db.get_pending_withdrawal(user["telegram_id"])}
+
+
+@app.post("/api/crypto/withdraw")
+async def crypto_withdraw(body: CryptoWithdrawBody):
+    user = _authenticate(body.initData)
+    if not body.user_card_ids:
+        raise HTTPException(400, "select at least 10 Diamond cards")
+    try:
+        result = db.request_crypto_withdrawal(user["telegram_id"], body.user_card_ids, body.wallet_address)
+    except db.CryptoWithdrawalError as e:
+        raise HTTPException(400, e.message)
+
+    import bot as bot_module
+
+    display_name = f"@{user['username']}" if user.get("username") else (user.get("first_name") or "Игрок")
+    await bot_module.notify_admin_withdrawal_request(
+        result["withdrawal_id"], user["telegram_id"], display_name,
+        result["card_count"], result["gram_amount"], result["wallet_address"],
+    )
+    return {"ok": True, "withdrawal_id": result["withdrawal_id"], "gram_amount": result["gram_amount"]}

@@ -64,7 +64,7 @@
     padding:0 10px;
     border-radius:999px;
     background:rgba(250,204,21,.1);
-    border:1px solid rgba(250,204,21,.35);
+    border:1px solid #ff2fb0;
     display:flex; align-items:center; gap:5px;
     color:var(--accent2);
   }
@@ -77,7 +77,7 @@
     padding:0 12px 0 8px;
     border-radius:999px;
     background:rgba(255,255,255,.06);
-    border:1px solid var(--card-border);
+    border:1px solid #3b82f6;
     display:flex; align-items:center; gap:5px;
     color:#fff;
   }
@@ -90,6 +90,10 @@
     overflow-y:auto;
     padding:8px 16px calc(150px + env(safe-area-inset-bottom));
   }
+  /* Farm tab's content already fits in one screen — no scrolling needed there, and an
+     accidental touch-scroll was hiding the top row (Модели/День/Карты/Топы) behind the
+     header. Toggled by switchScreen(), doesn't move or resize a single element. */
+  main.no-scroll{overflow-y:hidden;}
   .screen{display:none; animation:fade .2s ease;}
   .screen.active{display:block;}
   @keyframes fade{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);}}
@@ -165,7 +169,30 @@
     border-radius:999px;
     white-space:nowrap;
   }
+  .day-counter-pill.clickable{cursor:pointer;}
+  .day-counter-pill.clickable:active{transform:scale(.95);}
   .day-counter-pill b{color:#fff; font-weight:800;}
+  #day-info-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.9);
+    display:none;
+    align-items:center; justify-content:center;
+    z-index:78;
+    padding:24px;
+  }
+  #day-info-overlay.active{display:flex;}
+  #day-info-card{
+    position:relative;
+    width:100%; max-width:300px;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-radius:20px;
+    padding:26px 20px 20px;
+    text-align:center;
+  }
+  #day-info-icon{font-size:34px; margin-bottom:10px;}
+  #day-info-title{font-size:18px; font-weight:800; margin-bottom:10px; color:#fff;}
+  #day-info-text{font-size:13px; color:#ccc; line-height:1.55;}
   .case-btn{
     position:absolute; right:0; bottom:0;
     background:linear-gradient(135deg,#22c55e,#facc15);
@@ -251,17 +278,30 @@
   }
   .profile-info-btn:active{transform:scale(.9);}
   #profile-info-overlay{
-    position:absolute; inset:0; background:rgba(0,0,0,.9); display:none;
+    position:absolute; inset:0; background:rgba(0,0,0,.92); display:none;
     align-items:center; justify-content:center; z-index:80; padding:24px;
   }
   #profile-info-overlay.active{display:flex;}
   #profile-info-card{
-    position:relative; width:100%; max-width:300px; background:var(--card-bg);
-    border:1px solid var(--card-border); border-radius:20px; padding:26px 20px 20px; text-align:center;
+    position:relative; width:100%; max-width:320px; max-height:86vh; overflow-y:auto;
+    background:var(--card-bg); border:1px solid var(--card-border); border-radius:20px;
+    padding:22px 18px 18px; box-sizing:border-box; text-align:left;
   }
-  #profile-info-title{font-size:16px; font-weight:800; color:#fff; margin-bottom:12px;}
-  #profile-info-text{font-size:13px; color:#ccc; line-height:1.7; text-align:left;}
-  #profile-info-text img{width:14px; height:14px; vertical-align:-2px; margin:0 1px;}
+  #profile-info-title{font-size:16px; font-weight:800; color:#fff; margin-bottom:4px;}
+  #profile-info-sub{font-size:12px; color:#888; line-height:1.5; margin-bottom:14px;}
+  #profile-info-rows{display:flex; flex-direction:column; gap:8px;}
+  .info-feature-row{
+    display:flex; align-items:flex-start; gap:10px;
+    background:rgba(255,255,255,.03); border-radius:12px; padding:10px 11px;
+  }
+  .info-feature-icon{
+    width:30px; height:30px; border-radius:9px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; font-size:15px;
+  }
+  .info-feature-body{flex:1; min-width:0;}
+  .info-feature-title{font-size:12.5px; font-weight:800; margin-bottom:2px;}
+  .info-feature-desc{font-size:11.5px; color:#999; line-height:1.45;}
+  .info-feature-desc img{width:12px; height:12px; vertical-align:-2px; margin:0 1px;}
   .profile-header-text{min-width:0;}
   .avatar-ring{
     width:52px; height:52px;
@@ -280,7 +320,45 @@
     overflow:hidden;
   }
   .avatar img{width:100%; height:100%; object-fit:cover;}
-  .profile-name{position:relative; font-size:16px; font-weight:800; margin-bottom:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .profile-name-row{display:flex; align-items:center; gap:6px; min-width:0; margin-bottom:2px;}
+  .profile-name{position:relative; font-size:16px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex-shrink:1;}
+  .profile-rank-badge{
+    position:relative; flex-shrink:0;
+    font-size:9px; font-weight:800; letter-spacing:.4px; text-transform:uppercase;
+    padding:2px 7px; border-radius:999px;
+    border:1px solid currentColor;
+  }
+  .profile-rank-badge, #profile-avatar-ring{cursor:pointer;}
+  /* ---------- Player rank info modal (same look as PvP rules) ---------- */
+  #rank-info-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.92);
+    display:none; align-items:center; justify-content:center;
+    z-index:92; padding:24px;
+  }
+  #rank-info-overlay.active{display:flex;}
+  #rank-info-card{
+    position:relative;
+    width:100%; max-width:320px; max-height:86vh; overflow-y:auto;
+    background:var(--card-bg); border:1px solid var(--card-border); border-radius:20px;
+    padding:22px 18px 18px; box-sizing:border-box;
+  }
+  #rank-info-title{font-size:16px; font-weight:800; margin-bottom:12px;}
+  #rank-info-text{font-size:13px; color:#ccc; line-height:1.5; margin-bottom:14px;}
+  #rank-info-rows{display:flex; flex-direction:column; gap:6px; margin-bottom:14px;}
+  .rank-info-row{
+    display:flex; align-items:center; justify-content:space-between;
+    background:rgba(255,255,255,.03); border-radius:8px; padding:7px 10px;
+    border:1px solid transparent;
+  }
+  .rank-info-row.current{border-color:var(--accent2); background:rgba(255,255,255,.06);}
+  .rank-info-left{display:flex; align-items:center; gap:8px;}
+  .rank-info-row .rarity-tag{position:static; font-size:11px; padding:4px 9px;}
+  .rank-info-row .m{font-size:12.5px; font-weight:700; color:#ccc;}
+  .rank-info-row .current-tag{font-size:10px; font-weight:800; color:var(--accent2); text-transform:uppercase; letter-spacing:.3px;}
+  #rank-info-footnote{font-size:11.5px; color:#888; line-height:1.5;}
+  .rank-buy-btn{background:#22c55e; color:#fff; border:none; border-radius:999px; padding:6px 12px; font-size:11px; font-weight:800; cursor:pointer; white-space:nowrap;}
+  .rank-buy-btn:active{transform:scale(.93);}
   .profile-username{position:relative; font-size:12px; font-weight:700; color:var(--accent2);}
   .profile-stats{position:relative; display:flex; gap:8px;}
   .stat-tile{
@@ -461,8 +539,8 @@
   .market-item-actions button{
     border:none; border-radius:10px; padding:7px 12px; font-size:11px; font-weight:700; cursor:pointer; white-space:nowrap;
   }
-  .btn-buy{background:var(--accent2); color:#000;}
-  .btn-offer{background:rgba(255,255,255,.08); color:#fff; border:1px solid var(--card-border) !important;}
+  .btn-buy{background:#22c55e; color:#fff;}
+  .btn-offer{background:#facc15; color:#1a1a1a;}
   .btn-unlist{background:rgba(239,68,68,.15); color:var(--danger); border:1px solid rgba(239,68,68,.3) !important;}
   .btn-propose{background:rgba(139,92,246,.18); color:var(--accent); border:1px solid rgba(139,92,246,.35) !important;}
   .market-mine-tag{font-size:10px; color:#666; text-transform:uppercase; letter-spacing:.4px;}
@@ -514,8 +592,8 @@
   #market-item-actions{display:flex; flex-direction:column; gap:10px;}
   #market-item-actions button{padding:12px; border-radius:12px; border:none; font-weight:700; font-size:13px; cursor:pointer; width:100%;}
 
-  /* ---------- Swap / burn picker overlays (share the same look) ---------- */
-  #swap-picker-overlay, #burn-picker-overlay{
+  /* ---------- Swap / burn / GRAM picker overlays (share the same look) ---------- */
+  #swap-picker-overlay, #burn-picker-overlay, #gram-picker-overlay{
     position:absolute; inset:0;
     background:rgba(0,0,0,.9);
     display:none;
@@ -523,8 +601,8 @@
     z-index:70;
     padding:24px;
   }
-  #swap-picker-overlay.active, #burn-picker-overlay.active{display:flex;}
-  #swap-picker-card, #burn-picker-card{
+  #swap-picker-overlay.active, #burn-picker-overlay.active, #gram-picker-overlay.active{display:flex;}
+  #swap-picker-card, #burn-picker-card, #gram-picker-card{
     width:100%; max-width:340px; max-height:80vh;
     background:var(--card-bg);
     border:1px solid var(--card-border);
@@ -532,12 +610,14 @@
     padding:18px;
     display:flex; flex-direction:column;
   }
-  #swap-picker-title, #burn-picker-title{font-weight:700; margin-bottom:14px; text-align:center;}
-  #swap-picker-grid, #burn-picker-grid{
+  #swap-picker-title, #burn-picker-title, #gram-picker-title{font-weight:700; margin-bottom:14px; text-align:center;}
+  #swap-picker-grid, #burn-picker-grid, #gram-picker-grid{
     overflow-y:auto;
     max-height:44vh;
     margin-bottom:14px;
   }
+  #gram-picker-sub{font-size:12px; color:#999; text-align:center; margin:-8px 0 14px;}
+  #gram-picker-sub.ready{color:#4ade80;}
   .picker-item .check{
     position:absolute; top:6px; right:6px;
     width:20px; height:20px; border-radius:50%;
@@ -1069,8 +1149,8 @@
   }
   #input-actions{display:flex; gap:10px;}
   #input-actions button{flex:1; padding:12px; border-radius:12px; border:none; font-weight:700; font-size:13px; cursor:pointer;}
-  #input-cancel{background:#1f1f1f; color:#999;}
-  #input-confirm{background:var(--accent); color:#fff;}
+  #input-cancel{background:#ef4444; color:#fff;}
+  #input-confirm{background:#22c55e; color:#fff;}
 
   /* ---------- Bottom nav ---------- */
   nav{
@@ -1124,8 +1204,8 @@
   .modal-actions button{
     flex:1; padding:12px; border-radius:12px; border:none; font-weight:700; font-size:13px; cursor:pointer;
   }
-  .btn-share{background:var(--accent); color:#fff;}
-  .btn-give{background:#3b82f6; color:#fff;}
+  .btn-share{background:#3b82f6; color:#fff;}
+  .btn-give{background:var(--accent); color:#fff;}
   .btn-sell{
     background:#1f1f1f; color:#666; width:100%;
     display:flex; align-items:center; justify-content:center; gap:4px;
@@ -1163,7 +1243,7 @@
     100%{box-shadow:0 0 0 0 rgba(74,222,128,0);}
   }
   .btn-craft:active{transform:scale(.97);}
-  .btn-back{background:#161616; color:#999; width:100%;}
+  .btn-back{background:#ef4444; color:#fff; width:100%;}
   .btn-close{
     position:absolute; top:-14px; right:-6px;
     width:32px; height:32px; display:flex; align-items:center; justify-content:center;
@@ -1272,9 +1352,9 @@
     font-weight:700; font-size:14px; cursor:pointer; margin-bottom:10px;
   }
   #gems-choice-card button:active{transform:scale(.97);}
-  #gems-choice-buy{background:var(--accent); color:#fff;}
-  #gems-choice-sell{background:#1f1f1f; color:#fff;}
-  #gems-choice-cancel{background:none; color:#999; margin-bottom:0;}
+  #gems-choice-buy{background:#facc15; color:#1a1a1a;}
+  #gems-choice-sell{background:#3b82f6; color:#fff;}
+  #gems-choice-cancel{background:#ef4444; color:#fff; margin-bottom:0;}
 
   #referral-overlay{
     position:absolute; inset:0;
@@ -1287,38 +1367,66 @@
   #referral-overlay.active{display:flex;}
   #income-overlay{
     position:absolute; inset:0;
-    background:rgba(0,0,0,.9);
-    display:none;
-    align-items:center; justify-content:center;
-    z-index:77;
-    padding:24px;
+    background:rgba(0,0,0,.92);
+    display:none; align-items:center; justify-content:center;
+    z-index:92; padding:24px;
   }
   #income-overlay.active{display:flex;}
   #income-card{
     position:relative;
-    width:100%; max-width:300px;
-    background:var(--card-bg);
-    border:1px solid var(--card-border);
-    border-radius:20px;
-    padding:26px 20px 20px;
-    text-align:center;
+    width:100%; max-width:320px; max-height:86vh; overflow-y:auto;
+    background:var(--card-bg); border:1px solid var(--card-border); border-radius:20px;
+    padding:22px 18px 18px; box-sizing:border-box; text-align:left;
   }
-  #income-title{font-size:16px; font-weight:800; color:#fff; margin-bottom:10px;}
-  #income-text{font-size:13px; color:#ccc; line-height:1.5; margin-bottom:18px;}
+  #income-title{font-size:16px; font-weight:800; margin-bottom:12px; text-align:left;}
+  #income-text{font-size:13px; color:#ccc; line-height:1.5; margin-bottom:14px;}
   #income-text img{width:14px; height:14px; vertical-align:-2px; margin:0 1px;}
+  #income-rows{display:flex; flex-direction:column; gap:6px; margin-bottom:14px;}
+  .income-info-row{
+    display:flex; align-items:center; justify-content:space-between;
+    background:rgba(255,255,255,.03); border-radius:8px; padding:7px 10px;
+    border:1px solid transparent;
+  }
+  .income-info-row.current{border-color:var(--accent2); background:rgba(255,255,255,.06);}
+  .income-info-left{display:flex; align-items:center; gap:8px;}
+  .income-info-row .m{font-size:12.5px; font-weight:700; color:#ccc;}
+  .income-info-row .amt{font-size:12.5px; font-weight:800; color:#facc15; display:flex; align-items:center; gap:3px;}
+  .income-info-row .amt img{width:13px; height:13px;}
+  .income-info-row .current-tag{font-size:10px; font-weight:800; color:var(--accent2); text-transform:uppercase; letter-spacing:.3px;}
+  #income-footnote{font-size:11.5px; color:#888; line-height:1.5;}
+  #income-footnote-next{color:#ccc; font-weight:700;}
+  #stake-confirm-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.92);
+    display:none; align-items:center; justify-content:center;
+    z-index:93; padding:24px;
+  }
+  #stake-confirm-overlay.active{display:flex;}
+  #stake-confirm-card{
+    position:relative;
+    width:100%; max-width:320px; max-height:86vh; overflow-y:auto;
+    background:var(--card-bg); border:1px solid var(--card-border); border-radius:20px;
+    padding:22px 18px 18px; box-sizing:border-box; text-align:left;
+  }
+  #stake-confirm-title{font-size:16px; font-weight:800; margin-bottom:12px; text-align:left;}
+  #stake-confirm-rows{display:flex; flex-direction:column; gap:8px; margin-bottom:16px;}
+  #stake-confirm-fee-row{display:flex; align-items:center; justify-content:space-between; background:rgba(139,92,246,.12); border:1px solid rgba(139,92,246,.4); border-radius:12px; padding:12px 14px; margin-bottom:16px;}
+  #stake-confirm-fee-row .lbl{font-size:12.5px; color:#ccc; font-weight:700;}
+  #stake-confirm-fee-row .val{font-size:15px; font-weight:800; color:var(--accent2); display:flex; align-items:center; gap:4px;}
+  #stake-confirm-fee-row .val img{width:15px; height:15px;}
+  #stake-confirm-actions{display:flex; gap:10px;}
+  #stake-confirm-actions button{flex:1; padding:12px; border-radius:12px; border:none; font-weight:700; font-size:13px; cursor:pointer;}
+  #stake-confirm-cancel{background:#ef4444; color:#fff;}
+  #stake-confirm-confirm{background:#22c55e; color:#fff;}
   #referral-card{
     position:relative;
-    width:100%; max-width:300px;
-    background:var(--card-bg);
-    border:1px solid var(--card-border);
-    border-radius:20px;
-    padding:26px 20px 20px;
-    text-align:center;
+    width:100%; max-width:320px; max-height:86vh; overflow-y:auto;
+    background:var(--card-bg); border:1px solid var(--card-border); border-radius:20px;
+    padding:22px 18px 18px; box-sizing:border-box; text-align:left;
   }
-  #referral-title{font-size:18px; font-weight:800; margin-bottom:10px;}
-  #referral-text{font-size:13px; color:#ccc; line-height:1.55; margin-bottom:20px;}
-  #referral-text img{width:14px; height:14px; vertical-align:-2px; margin:0 1px;}
-  #referral-share-btn{width:100%; padding:13px; border-radius:12px; border:none; background:var(--accent); color:#fff; font-weight:700; font-size:14px; cursor:pointer;}
+  #referral-title{font-size:16px; font-weight:800; margin-bottom:14px; text-align:left;}
+  #referral-rows{display:flex; flex-direction:column; gap:12px; margin-bottom:18px;}
+  #referral-share-btn{width:100%; padding:13px; border-radius:12px; border:none; background:#3b82f6; color:#fff; font-weight:700; font-size:14px; cursor:pointer;}
   .stat-tile.clickable{cursor:pointer;}
 
   #daily-bonus-overlay{
@@ -1362,7 +1470,8 @@
     padding:22px 20px 20px;
     text-align:center;
   }
-  #chance-title{font-size:16px; font-weight:800; margin-bottom:16px;}
+  #chance-title{font-size:16px; font-weight:800; margin-bottom:4px;}
+  #chance-sub{font-size:11.5px; color:#888; margin-bottom:14px;}
   .chance-row{display:flex; align-items:center; justify-content:space-between; padding:10px 4px; border-bottom:1px solid var(--card-border);}
   .chance-row:last-child{border-bottom:none;}
   .chance-row .rarity-tag{position:static; font-size:10px; padding:4px 8px;}
@@ -1397,7 +1506,7 @@
     <section id="farm-screen" class="screen">
       <div class="farm-top-row-left">
         <button class="models-btn" id="models-btn">Модели</button>
-        <div class="day-counter-pill" id="day-counter-pill">День: <b id="bot-day-count">1</b></div>
+        <div class="day-counter-pill clickable" id="day-counter-pill">День: <b id="bot-day-count">1</b></div>
       </div>
       <div class="farm-top-row-right">
         <div class="farm-total-pill" id="farm-total-pill">Карты: <b id="total-farmed">0</b></div>
@@ -1446,13 +1555,16 @@
 
     <!-- PROFILE -->
     <section id="profile-screen" class="screen">
-      <div class="profile-card">
+      <div class="profile-card" id="profile-card">
         <div class="profile-card-glow"></div>
         <div class="profile-header-row">
           <button class="profile-info-btn" id="profile-info-btn">?</button>
-          <div class="avatar-ring"><div class="avatar" id="profile-avatar">?</div></div>
+          <div class="avatar-ring" id="profile-avatar-ring"><div class="avatar" id="profile-avatar">?</div></div>
           <div class="profile-header-text">
-            <div class="profile-name" id="profile-name">...</div>
+            <div class="profile-name-row">
+              <div class="profile-name" id="profile-name">...</div>
+              <span class="profile-rank-badge" id="profile-rank-badge"></span>
+            </div>
             <div class="profile-username" id="profile-username"></div>
           </div>
         </div>
@@ -1474,7 +1586,7 @@
       <div class="section-label-row">
         <div class="section-label">Коллекция</div>
         <div class="profile-sort-buttons">
-          <button id="burn-open-btn" class="burn-open-btn">🔥 Сжечь</button>
+          <button id="burn-open-btn" class="burn-open-btn">Эволюция</button>
           <button id="profile-rarity-sort-btn" class="active-sort">Ранг ↓</button>
         </div>
       </div>
@@ -1500,8 +1612,30 @@
   <div id="referral-overlay">
     <div id="referral-card">
       <button class="btn-close-inline" id="referral-close">✕</button>
-      <div id="referral-title">Пригласи друга</div>
-      <div id="referral-text">Получи 25 <img src="/static/icons/diamond.png" alt=""> за каждого друга, который зайдёт по твоей ссылке (бонус на первых 10 друзей)</div>
+      <div id="referral-title">🤝 Пригласи друга</div>
+      <div id="referral-rows">
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(250,204,21,.18); color:#facc15;">🎁</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#facc15;">Награда</div>
+            <div class="info-feature-desc">25 <img src="/static/icons/diamond.png" alt=""> за каждого друга, который зайдёт по твоей ссылке и сделает первый фарм</div>
+          </div>
+        </div>
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(59,130,246,.18); color:#3b82f6;">🔟</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#3b82f6;">Лимит</div>
+            <div class="info-feature-desc">Гемы платятся за первых 10 друзей — дальше приглашения считаются, но без бонуса</div>
+          </div>
+        </div>
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(236,72,153,.18); color:#ec4899;">📊</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#ec4899;">Твой прогресс</div>
+            <div class="info-feature-desc" id="referral-progress-text">Приглашено: 0</div>
+          </div>
+        </div>
+      </div>
       <button id="referral-share-btn">Поделиться</button>
     </div>
   </div>
@@ -1509,23 +1643,153 @@
   <div id="profile-info-overlay">
     <div id="profile-info-card">
       <button class="btn-close-inline" id="profile-info-close">✕</button>
-      <div id="profile-info-title">Как заработать гемы</div>
-      <div id="profile-info-text">
-        Заходи каждый день в игру и получай 25 <img src="/static/icons/diamond.png" alt=""><br>
-        Крути колесо фортуны раз в сутки — есть шанс выиграть гемы 🎡<br>
-        Приглашай друзей и получай по 25 <img src="/static/icons/diamond.png" alt=""> за каждого<br>
-        Стейкай свои карточки и зарабатывай гемы<br>
-        Крафти карточки, чтобы получить взамен более редкую<br>
-        Продавай или обменивай карточки на рынке
+      <div id="profile-info-title">🎮 Как играть</div>
+      <div id="profile-info-sub">Собирай карточки, качай их и зарабатывай гемы — вот все способы:</div>
+      <div id="profile-info-rows">
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(34,197,94,.18); color:#22c55e;">🌱</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#22c55e;">Фарм</div>
+            <div class="info-feature-desc">За 25 <img src="/static/icons/diamond.png" alt=""> получай случайную карточку — заходи на вкладку Фарм и жми кнопку</div>
+          </div>
+        </div>
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(59,130,246,.18); color:#3b82f6;">🎁</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#3b82f6;">Кейсы</div>
+            <div class="info-feature-desc">Покупай кейсы за гемы — шансы на редкие карты выше, чем на обычном фарме</div>
+          </div>
+        </div>
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(167,139,250,.18); color:#a78bfa;">⚒️</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#a78bfa;">Крафт</div>
+            <div class="info-feature-desc">Трать гемы + карту, чтобы получить взамен случайную — шанс на более редкую</div>
+          </div>
+        </div>
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(236,72,153,.18); color:#ec4899;">🧬</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#ec4899;">Эволюция</div>
+            <div class="info-feature-desc">Собери несколько карт одной редкости и эволюционируй их в карту рангом выше — бесплатно</div>
+          </div>
+        </div>
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(250,204,21,.18); color:#facc15;">💰</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#facc15;">Рынок</div>
+            <div class="info-feature-desc">Продавай свои карты за гемы или покупай чужие на рынке</div>
+          </div>
+        </div>
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(34,211,238,.18); color:#22d3ee;">🔄</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#22d3ee;">Обмен</div>
+            <div class="info-feature-desc">Меняйся карточками с другими игроками без гемов</div>
+          </div>
+        </div>
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(52,211,153,.18); color:#34d399;">🏦</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#34d399;">Стейкинг</div>
+            <div class="info-feature-desc">Ставь карточки в стейк и получай гемы каждый день — чем реже карта, тем больше доход</div>
+          </div>
+        </div>
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(239,68,68,.18); color:#ef4444;">⚔️</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#ef4444;">PvP</div>
+            <div class="info-feature-desc">Ставь карты в общий банк против других игроков — победитель забирает всё</div>
+          </div>
+        </div>
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(251,146,60,.18); color:#fb923c;">🎉</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#fb923c;">Ежедневный бонус</div>
+            <div class="info-feature-desc">Заходи в игру каждый день — доход растёт на +25 <img src="/static/icons/diamond.png" alt=""> каждый месяц</div>
+          </div>
+        </div>
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(244,114,182,.18); color:#f472b6;">👥</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#f472b6;">Рефералы</div>
+            <div class="info-feature-desc">Приглашай друзей — получай 25 <img src="/static/icons/diamond.png" alt=""> за каждого</div>
+          </div>
+        </div>
       </div>
+    </div>
+  </div>
+
+  <div id="rank-info-overlay">
+    <div id="rank-info-card">
+      <button class="btn-close-inline" id="rank-info-close">✕</button>
+      <div id="rank-info-title">🏆 Ранги игроков</div>
+      <div id="rank-info-text">
+        Ранг растёт сам собой — чем дольше ты играешь в Peeppo, тем он выше. Считаются полные месяцы с даты регистрации:
+      </div>
+      <div id="rank-info-rows">
+        <div class="rank-info-row" data-rank="bronze"><div class="rank-info-left"><span class="rarity-tag bronze">bronze</span><span class="m">1-й месяц</span></div></div>
+        <div class="rank-info-row" data-rank="silver"><div class="rank-info-left"><span class="rarity-tag silver">silver</span><span class="m">2-й месяц</span></div><button class="rank-buy-btn" data-rank="silver" data-price="200">Купить • 200⭐</button></div>
+        <div class="rank-info-row" data-rank="gold"><div class="rank-info-left"><span class="rarity-tag gold">gold</span><span class="m">3-й месяц</span></div><button class="rank-buy-btn" data-rank="gold" data-price="300">Купить • 300⭐</button></div>
+        <div class="rank-info-row" data-rank="platinum"><div class="rank-info-left"><span class="rarity-tag platinum">platinum</span><span class="m">4-й месяц</span></div><button class="rank-buy-btn" data-rank="platinum" data-price="400">Купить • 400⭐</button></div>
+        <div class="rank-info-row" data-rank="diamond"><div class="rank-info-left"><span class="rarity-tag diamond">diamond</span><span class="m">5+ месяцев</span></div><button class="rank-buy-btn" data-rank="diamond" data-price="500">Купить • 500⭐</button></div>
+      </div>
+      <div id="rank-info-footnote">Ранг не влияет на игру — это просто отметка о том, как долго ты с нами. Твой текущий ранг подсвечен.</div>
     </div>
   </div>
 
   <div id="income-overlay">
     <div id="income-card">
       <button class="btn-close-inline" id="income-close">✕</button>
-      <div id="income-title">Ваш доход</div>
-      <div id="income-text"><span id="income-text-amount">25</span> <img src="/static/icons/diamond.png" alt=""> в день — заходи и забирай каждый день!<br><span id="income-text-next" style="color:#888; font-size:12px;"></span></div>
+      <div id="income-title">💰 Ежедневный доход</div>
+      <div id="income-text">
+        Заходи в игру каждый день и забирай гемы бесплатно — сумма растёт сама собой, чем дольше ты с нами:
+      </div>
+      <div id="income-rows">
+        <div class="income-info-row" data-tier="0"><div class="income-info-left"><span class="m">1-й месяц</span></div><span class="amt">25 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="income-info-row" data-tier="1"><div class="income-info-left"><span class="m">2-й месяц</span></div><span class="amt">50 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="income-info-row" data-tier="2"><div class="income-info-left"><span class="m">3-й месяц</span></div><span class="amt">75 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="income-info-row" data-tier="3"><div class="income-info-left"><span class="m">4-й месяц</span></div><span class="amt">100 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="income-info-row" data-tier="4"><div class="income-info-left"><span class="m">5+ месяцев</span></div><span class="amt">125+ <img src="/static/icons/diamond.png" alt=""></span></div>
+      </div>
+      <div id="income-footnote">+25 гемов в день каждые 30 дней игры, без потолка. <span id="income-footnote-next"></span></div>
+    </div>
+  </div>
+
+  <div id="stake-confirm-overlay">
+    <div id="stake-confirm-card">
+      <div id="stake-confirm-title">🔒 Стейкинг карты</div>
+      <div id="stake-confirm-rows">
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(250,204,21,.18); color:#facc15;">💎</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#facc15;">Ставки по редкости</div>
+            <div class="info-feature-desc">Bronze 5 · Silver 10 · Gold 25 · Platinum 50 · Diamond 100 гемов/сутки</div>
+          </div>
+        </div>
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(59,130,246,.18); color:#3b82f6;">⏳</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#3b82f6;">Максимум 20 дней</div>
+            <div class="info-feature-desc">Дальше карта сама снимется со стейкинга — застейкай заново, чтобы продолжить получать гемы</div>
+          </div>
+        </div>
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(236,72,153,.18); color:#ec4899;">🧊</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#ec4899;">Лимит карт</div>
+            <div class="info-feature-desc">Не больше 5 карт в стейкинге одновременно</div>
+          </div>
+        </div>
+      </div>
+      <div id="stake-confirm-fee-row">
+        <span class="lbl">Стоимость входа</span>
+        <span class="val" id="stake-confirm-fee">0 <img src="/static/icons/diamond.png" alt=""></span>
+      </div>
+      <div id="stake-confirm-actions">
+        <button id="stake-confirm-cancel">Отмена</button>
+        <button id="stake-confirm-confirm">Застейкать</button>
+      </div>
     </div>
   </div>
 
@@ -1537,10 +1801,20 @@
     </div>
   </div>
 
+  <div id="day-info-overlay">
+    <div id="day-info-card">
+      <button class="btn-close-inline" id="day-info-close">✕</button>
+      <div id="day-info-icon">🚀</div>
+      <div id="day-info-title">Peeppo запущен 1 день назад</div>
+      <div id="day-info-text">Каждый день в игре — новые карты и фичи. Заходи почаще, чтобы ничего не упустить!</div>
+    </div>
+  </div>
+
   <div id="chance-overlay">
     <div id="chance-card">
       <button class="btn-close-inline" id="chance-close">✕</button>
-      <div id="chance-title">Сфармлено</div>
+      <div id="chance-title">Твоя коллекция</div>
+      <div id="chance-sub">Разбивка по редкости — только твои карты</div>
       <div class="chance-row"><span class="rarity-tag diamond">diamond</span><span class="chance-pct" id="farmed-diamond">0</span></div>
       <div class="chance-row"><span class="rarity-tag platinum">platinum</span><span class="chance-pct" id="farmed-platinum">0</span></div>
       <div class="chance-row"><span class="rarity-tag gold">gold</span><span class="chance-pct" id="farmed-gold">0</span></div>
@@ -1606,8 +1880,8 @@
     <div id="gems-choice-card">
       <div id="gems-choice-title"><img src="/static/icons/diamond.png" alt="">Гемы</div>
       <button id="gems-choice-buy">Купить Гемы за Звёзды</button>
-      <button id="gems-choice-sell">Продать Гемы за Звёзды</button>
-      <button id="gems-choice-cancel">Отмена</button>
+      <button id="gems-choice-sell">Продать DIAMOND за GRAM</button>
+      <button id="gems-choice-cancel">Закрыть</button>
     </div>
   </div>
 
@@ -1634,11 +1908,23 @@
 
   <div id="burn-picker-overlay">
     <div id="burn-picker-card">
-      <div id="burn-picker-title">Выбери карты для сжигания</div>
+      <div id="burn-picker-title">Выбери карты для эволюции</div>
       <div class="grid" id="burn-picker-grid"></div>
       <div id="input-actions">
         <button id="burn-picker-cancel">Отмена</button>
-        <button id="burn-picker-confirm">Сжечь</button>
+        <button id="burn-picker-confirm">Эволюция</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="gram-picker-overlay">
+    <div id="gram-picker-card">
+      <div id="gram-picker-title">Выбери Diamond карты для вывода</div>
+      <div id="gram-picker-sub">Выбрано: 0 — нужно кратно 10</div>
+      <div class="grid" id="gram-picker-grid"></div>
+      <div id="input-actions">
+        <button id="gram-picker-cancel">Отмена</button>
+        <button id="gram-picker-confirm">Далее</button>
       </div>
     </div>
   </div>
@@ -1740,10 +2026,10 @@
     <div id="burn-scroll">
       <div id="burn-card">
         <div id="burn-header-row">
-          <div id="burn-title">Сжигание карт</div>
+          <div id="burn-title">Эволюция карт</div>
           <button class="panel-close" id="burn-close">✕</button>
         </div>
-        <div id="burn-sub">Сжигаешь N карт одной редкости — 97% шанс получить 1 карту ступенью выше, 3% что всё сгорит без результата.</div>
+        <div id="burn-sub">Эволюционируешь N карт одной редкости — шанс получить 1 карту ступенью выше зависит от редкости (чем выше цель, тем больше риск), иначе всё сгорит без результата.</div>
         <div id="burn-grid"></div>
       </div>
     </div>
@@ -1795,7 +2081,12 @@ document.addEventListener("click", (e)=>{
 
 const API_BASE = "/api";
 const FARM_COST_GEMS = 25;
-const MIN_LISTING_PRICE_GEMS = 20; // mirrors database.py's MIN_LISTING_PRICE_GEMS
+// Mirrors database.py's MIN_LISTING_PRICE_BY_RARITY — client-side copy for the price
+// prompt + pre-check (server still enforces it for real via ListingPriceTooLow).
+const MIN_LISTING_PRICE_BY_RARITY = { bronze: 25, silver: 50, gold: 100, platinum: 100, diamond: 100 };
+function minListingPrice(rarity){
+  return MIN_LISTING_PRICE_BY_RARITY[rarity] ?? MIN_LISTING_PRICE_BY_RARITY.bronze;
+}
 let initData = tg?.initData || "";
 let inventory = [];
 let daysUntilNextIncome = null;
@@ -1840,6 +2131,26 @@ function confirmAction(text){
     }
   });
 }
+
+// Custom in-app confirm modal for staking — tg.showConfirm() is capped at 256 chars by
+// Telegram, and the staking rules text (rates for all 5 rarities + limits) blew past that,
+// which made Telegram silently reject the popup call and the WebApp appear to hang for a
+// few seconds before bouncing back. A real HTML modal has no such limit.
+let stakeConfirmResolve = null;
+function showStakeConfirm(fee){
+  return new Promise(resolve=>{
+    stakeConfirmResolve = resolve;
+    document.getElementById("stake-confirm-fee").innerHTML = `${fee} <img src="/static/icons/diamond.png" alt="">`;
+    document.getElementById("stake-confirm-overlay").classList.add("active");
+  });
+}
+function closeStakeConfirm(ok){
+  document.getElementById("stake-confirm-overlay").classList.remove("active");
+  if(stakeConfirmResolve) stakeConfirmResolve(ok);
+  stakeConfirmResolve = null;
+}
+document.getElementById("stake-confirm-cancel").addEventListener("click", ()=>closeStakeConfirm(false));
+document.getElementById("stake-confirm-confirm").addEventListener("click", ()=>closeStakeConfirm(true));
 
 // ---------- Generic input modal (buy gems / list price / offer / gift username) ----------
 let inputResolve = null;
@@ -1904,6 +2215,7 @@ function switchScreen(screenId){
   document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
   document.querySelector(`.nav-btn[data-screen="${screenId}"]`)?.classList.add("active");
   document.getElementById(screenId).classList.add("active");
+  document.querySelector("main").classList.toggle("no-scroll", screenId === "farm-screen");
   if(screenId !== "pvp-screen") stopPvpPolling();
   if(screenId === "farm-screen") loadStats(); // re-sync "Всего" — it drifts stale otherwise, since it only updates from THIS player's own farm/craft/case/burn actions
   if(screenId === "profile-screen") loadProfile();
@@ -1955,6 +2267,7 @@ async function refreshGems(){
   try{
     const auth = await api("/auth");
     document.getElementById("gems-amount").textContent = auth.gems;
+    applyPlayerRank(auth.player_rank);
     myTelegramId = auth.telegram_id;
     document.getElementById("bot-day-count").textContent = auth.bot_day || 1;
     if(auth.is_new){
@@ -1994,6 +2307,8 @@ document.getElementById("daily-bonus-ok").addEventListener("click", ()=>{
 });
 
 function showCardsBreakdown(){
+  document.getElementById("chance-title").textContent = "Твоя коллекция";
+  document.getElementById("chance-sub").textContent = "Разбивка по редкости — только твои карты";
   document.getElementById("farmed-diamond").textContent = inventory.filter(c=>c.rarity==="diamond").length;
   document.getElementById("farmed-platinum").textContent = inventory.filter(c=>c.rarity==="platinum").length;
   document.getElementById("farmed-gold").textContent = inventory.filter(c=>c.rarity==="gold").length;
@@ -2001,7 +2316,21 @@ function showCardsBreakdown(){
   document.getElementById("farmed-bronze").textContent = inventory.filter(c=>c.rarity==="bronze").length;
   document.getElementById("chance-overlay").classList.add("active");
 }
-document.getElementById("farm-total-pill").addEventListener("click", showCardsBreakdown);
+async function showGlobalCardsBreakdown(){
+  document.getElementById("chance-title").textContent = "Карты всех игроков";
+  document.getElementById("chance-sub").textContent = "Разбивка по редкости — все игроки суммарно";
+  try{
+    const res = await fetch(API_BASE + "/stats/breakdown");
+    const data = await res.json();
+    document.getElementById("farmed-diamond").textContent = data.diamond ?? 0;
+    document.getElementById("farmed-platinum").textContent = data.platinum ?? 0;
+    document.getElementById("farmed-gold").textContent = data.gold ?? 0;
+    document.getElementById("farmed-silver").textContent = data.silver ?? 0;
+    document.getElementById("farmed-bronze").textContent = data.bronze ?? 0;
+  }catch(e){ /* non-critical, just leave whatever was there */ }
+  document.getElementById("chance-overlay").classList.add("active");
+}
+document.getElementById("farm-total-pill").addEventListener("click", showGlobalCardsBreakdown);
 document.getElementById("stat-cards-tile").addEventListener("click", showCardsBreakdown);
 document.getElementById("chance-close").addEventListener("click", ()=>{
   document.getElementById("chance-overlay").classList.remove("active");
@@ -2023,14 +2352,113 @@ document.getElementById("gems-choice-overlay").addEventListener("click", (e)=>{
     document.getElementById("gems-choice-overlay").classList.remove("active");
   }
 });
-document.getElementById("gems-choice-sell").addEventListener("click", ()=>{
+document.getElementById("gems-choice-sell").addEventListener("click", async ()=>{
   document.getElementById("gems-choice-overlay").classList.remove("active");
-  showAlert("Функция пока недоступна");
+  try{
+    const status = await api("/crypto/status");
+    if(status.pending){
+      showAlert(`У тебя уже есть заявка на вывод ${status.pending.gram_amount} GRAM — она на рассмотрении. Дождись решения, прежде чем создавать новую.`);
+      return;
+    }
+  }catch(e){
+    toast("Не удалось проверить заявки: " + e.message);
+    return;
+  }
+  openGramPicker();
+});
+
+// ---------- GRAM withdrawal picker (10 Diamond cards = 1 GRAM, multiples of 10 only) ----------
+const GRAM_CARDS_PER_UNIT = 10;
+let gramPickerSelected = new Set();
+
+function gramPickerUpdateSub(){
+  const n = gramPickerSelected.size;
+  const sub = document.getElementById("gram-picker-sub");
+  const ready = n > 0 && n % GRAM_CARDS_PER_UNIT === 0;
+  sub.textContent = ready
+    ? `Выбрано: ${n} → получишь ${n / GRAM_CARDS_PER_UNIT} GRAM`
+    : `Выбрано: ${n} — нужно кратно ${GRAM_CARDS_PER_UNIT} (10, 20, 30…)`;
+  sub.classList.toggle("ready", ready);
+}
+
+function openGramPicker(){
+  gramPickerSelected = new Set();
+  gramPickerUpdateSub();
+  renderGramPickerGrid();
+  document.getElementById("gram-picker-overlay").classList.add("active");
+}
+
+function renderGramPickerGrid(){
+  const grid = document.getElementById("gram-picker-grid");
+  const eligible = inventory.filter(c => c.rarity === "diamond" && !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at);
+  if(eligible.length === 0){
+    grid.innerHTML = `<div class="empty-state">Нет свободных Diamond карт</div>`;
+    return;
+  }
+  grid.innerHTML = eligible.map(c => `
+    <div class="grid-item picker-item rarity-border-${c.rarity} ${gramPickerSelected.has(c.user_card_id) ? 'selected' : ''}" data-uc="${c.user_card_id}">
+      <img src="/static/cards/${c.filename}" alt="${c.name || ''}">
+      <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
+      <div class="check">✓</div>
+    </div>
+  `).join("");
+  grid.querySelectorAll(".picker-item").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      const ucId = parseInt(el.dataset.uc);
+      if(gramPickerSelected.has(ucId)){
+        gramPickerSelected.delete(ucId);
+        el.classList.remove("selected");
+      }else{
+        gramPickerSelected.add(ucId);
+        el.classList.add("selected");
+      }
+      gramPickerUpdateSub();
+    });
+  });
+}
+
+document.getElementById("gram-picker-cancel").addEventListener("click", ()=>{
+  document.getElementById("gram-picker-overlay").classList.remove("active");
+});
+
+document.getElementById("gram-picker-confirm").addEventListener("click", async ()=>{
+  const n = gramPickerSelected.size;
+  if(n === 0 || n % GRAM_CARDS_PER_UNIT !== 0){
+    toast(`Выбери карты кратно ${GRAM_CARDS_PER_UNIT} (10, 20, 30…)`);
+    return;
+  }
+  const ids = [...gramPickerSelected];
+  const gramAmount = n / GRAM_CARDS_PER_UNIT;
+  document.getElementById("gram-picker-overlay").classList.remove("active");
+
+  const wallet = await promptText("Введи адрес кошелька GRAM", "Адрес кошелька");
+  if(!wallet){ return; }
+
+  const confirmed = await confirmAction(
+    `Обменять ${n} Diamond карт(ы) на ${gramAmount} GRAM?\n\nКошелёк: ${wallet}\n\nКарты будут удержаны до подтверждения выплаты. Продолжить?`
+  );
+  if(!confirmed) return;
+
+  try{
+    const res = await api("/crypto/withdraw", { user_card_ids: ids, wallet_address: wallet });
+    try{
+      const data = await api("/profile");
+      inventory = data.inventory;
+      sortInventoryAndRender();
+    }catch(e){ /* non-critical — next profile visit will pick it up anyway */ }
+    showAlert(`Заявка на ${res.gram_amount} GRAM отправлена! Ожидай подтверждения.`);
+  }catch(e){
+    toast("Не удалось отправить заявку: " + e.message);
+  }
 });
 document.getElementById("gems-choice-buy").addEventListener("click", async ()=>{
   document.getElementById("gems-choice-overlay").classList.remove("active");
-  const gems = await promptNumber("Сколько гемов купить? (1 гем = 1 ⭐)");
+  let gems = await promptNumber("Сколько гемов купить? (1000 гемов = 100 звёзд)");
   if(!gems) return;
+  if(gems % 10 !== 0){
+    gems = Math.ceil(gems / 10) * 10;
+    toast(`Округлено до ${gems} гемов (кратно 10)`);
+  }
   try{
     const res = await api("/gems/invoice", { gems });
     if(tg?.openInvoice){
@@ -2088,7 +2516,7 @@ function renderMarket(){
   const sorted = [...marketListings].sort((a, b) => {
     switch(sortMode){
       case "price_desc": return b.listed_price - a.listed_price;
-      case "new": return b.user_card_id - a.user_card_id;
+      case "new": return (b.listed_at || "").localeCompare(a.listed_at || "");
       case "rarity_bronze": return (RARITY_ORDER[b.rarity] ?? 4) - (RARITY_ORDER[a.rarity] ?? 4);
       case "rarity_diamond": return (RARITY_ORDER[a.rarity] ?? 4) - (RARITY_ORDER[b.rarity] ?? 4);
       case "price_asc":
@@ -2144,6 +2572,31 @@ function pluralCards(n){
   if(last >= 2 && last <= 4) return `${n} карты`;
   return `${n} карт`;
 }
+
+function pluralDays(n){
+  const abs = Math.abs(n) % 100;
+  const last = abs % 10;
+  if(abs > 10 && abs < 20) return `${n} дней`;
+  if(last === 1) return `${n} день`;
+  if(last >= 2 && last <= 4) return `${n} дня`;
+  return `${n} дней`;
+}
+
+document.getElementById("day-counter-pill").addEventListener("click", ()=>{
+  const daysNum = parseInt(document.getElementById("bot-day-count").textContent, 10) || 1;
+  document.getElementById("day-info-title").textContent = daysNum <= 1
+    ? "Peeppo запущен сегодня!"
+    : `Peeppo запущен ${pluralDays(daysNum)} назад`;
+  document.getElementById("day-info-overlay").classList.add("active");
+});
+document.getElementById("day-info-close").addEventListener("click", ()=>{
+  document.getElementById("day-info-overlay").classList.remove("active");
+});
+document.getElementById("day-info-overlay").addEventListener("click", (e)=>{
+  if(e.target.id === "day-info-overlay"){
+    document.getElementById("day-info-overlay").classList.remove("active");
+  }
+});
 
 function fmtHistoryDate(iso){
   if(!iso) return "";
@@ -2343,10 +2796,11 @@ function openMarketItem(ucId, mode){
         }catch(e){ toast("Не получилось купить: " + e.message); }
       });
       document.getElementById("mi-offer").addEventListener("click", async ()=>{
-        const price = await promptNumber(`Сколько гемов предложить (минимум ${MIN_LISTING_PRICE_GEMS})`);
+        const minPrice = minListingPrice(item.rarity);
+        const price = await promptNumber(`Сколько гемов предложить (минимум ${minPrice})`);
         if(!price) return;
-        if(price < MIN_LISTING_PRICE_GEMS){
-          toast(`Минимальная цена предложения ${MIN_LISTING_PRICE_GEMS} гемов`);
+        if(price < minPrice){
+          toast(`Минимальная цена предложения ${minPrice} гемов`);
           return;
         }
         try{
@@ -2355,7 +2809,7 @@ function openMarketItem(ucId, mode){
           closeMarketItem();
         }catch(e){
           if(String(e.message).includes("minimum price")){
-            toast(`Минимальная цена предложения ${MIN_LISTING_PRICE_GEMS} гемов`);
+            toast(`Минимальная цена предложения ${minPrice} гемов`);
           }else{
             toast("Не получилось: " + e.message);
           }
@@ -3109,6 +3563,7 @@ async function loadProfile(){
     document.getElementById("gems-amount").textContent = auth.gems || 0;
     document.getElementById("stat-income").textContent = auth.daily_bonus_amount || 25;
     daysUntilNextIncome = auth.daily_bonus_days_until_next ?? null;
+    applyPlayerRank(auth.player_rank);
 
     const data = await api("/profile");
     inventory = data.inventory;
@@ -3192,6 +3647,87 @@ function openModalAt(index){
   updateCraftButton(item);
 }
 
+// Player rank (time-played tier, NOT card rarity) — colors the avatar ring + profile
+// card border and shows a small badge next to the name. Mirrors database.py's
+// PLAYER_RANK_COLORS.
+const PLAYER_RANK_COLORS = { bronze: "#cd7f32", silver: "#9ca3af", gold: "#facc15", platinum: "#a78bfa", diamond: "#ff2fb0" };
+let currentPlayerRank = "bronze";
+function applyPlayerRank(rank){
+  currentPlayerRank = rank || "bronze";
+  const color = PLAYER_RANK_COLORS[currentPlayerRank] || PLAYER_RANK_COLORS.bronze;
+  const badge = document.getElementById("profile-rank-badge");
+  badge.textContent = currentPlayerRank.toUpperCase();
+  badge.style.color = color;
+  badge.style.background = color + "22";
+  document.getElementById("profile-avatar-ring").style.background = color;
+  document.getElementById("profile-card").style.borderColor = color;
+  document.getElementById("profile-card").style.boxShadow = `0 0 20px -6px ${color}66`;
+  ["stat-cards-tile", "stat-income-tile", "stat-refs-tile", "profile-info-btn"].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.style.borderColor = color;
+  });
+}
+
+// Mirrors database.py's RANK_TIERS order — used to compare rows against the
+// player's current rank so a "Купить" button only shows for ranks above it.
+const RANK_TIERS = ["bronze", "silver", "gold", "platinum", "diamond"];
+function openRankInfo(){
+  const currentTierIdx = RANK_TIERS.indexOf(currentPlayerRank);
+  document.querySelectorAll("#rank-info-rows .rank-info-row").forEach(row=>{
+    const isCurrent = row.dataset.rank === currentPlayerRank;
+    row.classList.toggle("current", isCurrent);
+    let tag = row.querySelector(".current-tag");
+    if(isCurrent && !tag){
+      tag = document.createElement("span");
+      tag.className = "current-tag";
+      tag.textContent = "ты тут";
+      row.appendChild(tag);
+    }else if(!isCurrent && tag){
+      tag.remove();
+    }
+    const buyBtn = row.querySelector(".rank-buy-btn");
+    if(buyBtn){
+      const rowTierIdx = RANK_TIERS.indexOf(row.dataset.rank);
+      buyBtn.style.display = rowTierIdx <= currentTierIdx ? "none" : "";
+    }
+  });
+  document.getElementById("rank-info-overlay").classList.add("active");
+}
+document.getElementById("rank-info-rows").addEventListener("click", async (e)=>{
+  const btn = e.target.closest(".rank-buy-btn");
+  if(!btn) return;
+  const rank = btn.dataset.rank;
+  try{
+    const res = await api("/rank/invoice", { rank });
+    if(tg?.openInvoice){
+      tg.openInvoice(res.invoice_link, (status)=>{
+        if(status === "paid"){
+          toast("Оплачено! Обновляем ранг...");
+          document.getElementById("rank-info-overlay").classList.remove("active");
+          setTimeout(refreshGems, 1500);
+        }else if(status === "failed"){
+          toast("Платёж не прошёл");
+        }
+      });
+    }else{
+      window.open(res.invoice_link, "_blank");
+      toast("Открой ссылку оплаты и вернись сюда");
+    }
+  }catch(err){
+    toast("Не удалось создать счёт: " + err.message);
+  }
+});
+document.getElementById("profile-avatar-ring").addEventListener("click", openRankInfo);
+document.getElementById("profile-rank-badge").addEventListener("click", openRankInfo);
+document.getElementById("rank-info-close").addEventListener("click", ()=>{
+  document.getElementById("rank-info-overlay").classList.remove("active");
+});
+document.getElementById("rank-info-overlay").addEventListener("click", (e)=>{
+  if(e.target.id === "rank-info-overlay"){
+    document.getElementById("rank-info-overlay").classList.remove("active");
+  }
+});
+
 function updateCraftButton(item){
   const btn = document.getElementById("modal-craft");
   const busy = !!(item.staked_at || item.listed_price || item.swap_listed || item.pvp_round_id);
@@ -3258,7 +3794,7 @@ function updateStakeButton(item){
     return;
   }
   if(item.staked_at){
-    btn.textContent = `Забрать со стейкинга (${formatStakedDuration(item.staked_at)})`;
+    btn.textContent = "Снять";
     btn.classList.add("staked");
   }else{
     btn.textContent = "Стейк";
@@ -3379,26 +3915,29 @@ document.getElementById("modal-sell").addEventListener("click", async ()=>{
       await api("/market/unlist", { user_card_id: selectedUserCardId });
       selectedItem.listed_price = null;
       updateSellButton(selectedItem);
+      renderProfileGrid();
       toast("Снято с продажи");
     }catch(e){
       toast("Не получилось: " + e.message);
     }
   }else{
-    const price = await promptNumber(`Цена в гемах (минимум ${MIN_LISTING_PRICE_GEMS})`);
+    const minPrice = minListingPrice(selectedItem.rarity);
+    const price = await promptNumber(`Цена в гемах (минимум ${minPrice})`);
     if(!price) return;
-    if(price < MIN_LISTING_PRICE_GEMS){
-      toast(`Минимальная цена продажи ${MIN_LISTING_PRICE_GEMS} гемов`);
+    if(price < minPrice){
+      toast(`Минимальная цена продажи ${minPrice} гемов`);
       return;
     }
     try{
       await api("/market/list", { user_card_id: selectedUserCardId, price_gems: price });
       selectedItem.listed_price = price;
       updateSellButton(selectedItem);
+      renderProfileGrid();
       toast("Выставлено на рынок!");
       document.getElementById("modal-overlay").classList.remove("active");
     }catch(e){
       if(String(e.message).includes("minimum price")){
-        toast(`Минимальная цена продажи ${MIN_LISTING_PRICE_GEMS} гемов`);
+        toast(`Минимальная цена продажи ${minPrice} гемов`);
       }else{
         toast("Не получилось выставить: " + e.message);
       }
@@ -3421,6 +3960,7 @@ document.getElementById("modal-swap").addEventListener("click", async ()=>{
       await api("/swap/unlist", { user_card_id: selectedUserCardId });
       selectedItem.swap_listed = 0;
       updateSwapButton(selectedItem);
+      renderProfileGrid();
       toast("Снято с обмена");
     }catch(e){
       toast("Не получилось: " + e.message);
@@ -3430,6 +3970,7 @@ document.getElementById("modal-swap").addEventListener("click", async ()=>{
       await api("/swap/list", { user_card_id: selectedUserCardId });
       selectedItem.swap_listed = 1;
       updateSwapButton(selectedItem);
+      renderProfileGrid();
       toast("Выставлено на обмен!");
       document.getElementById("modal-overlay").classList.remove("active");
     }catch(e){
@@ -3438,8 +3979,11 @@ document.getElementById("modal-swap").addEventListener("click", async ()=>{
   }
 });
 
-// Mirrors database.py's STAKE_DAILY_RATES — client-side copy for the fee pre-check + toast text.
+// Mirrors database.py's STAKE_DAILY_RATES/MAX_STAKE_DAYS/MAX_STAKED_CARDS — client-side
+// copy for the fee pre-check + confirm/toast text.
 const STAKE_DAILY_RATES = { bronze: 5, silver: 10, gold: 25, platinum: 50, diamond: 100 };
+const STAKE_MAX_DAYS = 20;
+const STAKE_MAX_CARDS = 5;
 document.getElementById("modal-stake").addEventListener("click", async ()=>{
   if(!selectedItem) return;
   if(selectedItem.pvp_round_id && !selectedItem.staked_at){
@@ -3447,6 +3991,9 @@ document.getElementById("modal-stake").addEventListener("click", async ()=>{
     return;
   }
   if(selectedItem.staked_at){
+    const unstakeFee = STAKE_DAILY_RATES[selectedItem.rarity] ?? 5;
+    const unstakeConfirmed = await confirmAction(`Точно убрать карту из стейкинга? Уплаченные ${unstakeFee} гемов за вход не возвращаются.`);
+    if(!unstakeConfirmed) return;
     try{
       const res = await api("/stake/unstake", { user_card_id: selectedUserCardId });
       selectedItem.staked_at = null;
@@ -3454,6 +4001,7 @@ document.getElementById("modal-stake").addEventListener("click", async ()=>{
       updateSellButton(selectedItem);
       updateSwapButton(selectedItem);
       if(res && typeof res.gems === "number") document.getElementById("gems-amount").textContent = res.gems;
+      renderProfileGrid();
       toast("Снято со стейкинга");
     }catch(e){
       toast("Не получилось: " + e.message);
@@ -3469,12 +4017,7 @@ document.getElementById("modal-stake").addEventListener("click", async ()=>{
       toastHTML(`Не хватает гемов — нужно ${fee} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
       return;
     }
-    const rateLines = Object.entries(STAKE_DAILY_RATES)
-      .map(([rarity, rate]) => `${rarity[0].toUpperCase()}${rarity.slice(1)}: ${rate} гемов/сутки`)
-      .join("\n");
-    const stakeConfirmed = await confirmAction(
-      `Стейкинг этой карты стоит ${fee} гемов.\nДоход: ${fee} гемов в сутки.\n\nСтавки по редкости:\n${rateLines}\n\nПродолжить?`
-    );
+    const stakeConfirmed = await showStakeConfirm(fee);
     if(!stakeConfirmed) return;
     try{
       const res = await api("/stake/list", { user_card_id: selectedUserCardId });
@@ -3483,10 +4026,13 @@ document.getElementById("modal-stake").addEventListener("click", async ()=>{
       updateSellButton(selectedItem);
       updateSwapButton(selectedItem);
       if(res && typeof res.gems === "number") document.getElementById("gems-amount").textContent = res.gems;
+      renderProfileGrid();
       toast(`В стейкинге! +${fee} гемов в сутки за карту`);
     }catch(e){
       if(String(e.message).includes("not enough gems")){
         toastHTML(`Не хватает гемов — нужно ${fee} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
+      }else if(String(e.message).includes("stake limit reached")){
+        toast(`Уже застейкано максимум карт (${STAKE_MAX_CARDS}) — сними что-то со стейкинга, чтобы застейкать эту`);
       }else{
         toast("Не получилось: " + e.message);
       }
@@ -3494,16 +4040,17 @@ document.getElementById("modal-stake").addEventListener("click", async ()=>{
   }
 });
 
-const CRAFT_COST_GEMS = 25;
+// Mirrors database.py's CRAFT_COST_GEMS — craft price scales with the rarity being burned.
+const CRAFT_COST_BY_RARITY = { bronze: 25, silver: 25, gold: 50, platinum: 100, diamond: 200 };
 // Mirrors database.py's CRAFT_WEIGHTS — client-side copy for the chance-hint display only.
 // Mirrors database.py's CRAFT_WEIGHTS — crafting never produces a tier BELOW the one
 // burned, so each row only lists tiers same-or-higher (burn Gold, only Gold/Platinum/
 // Diamond are possible).
 const CRAFT_CHANCES = {
-  bronze:   { bronze: 40, silver: 35, gold: 15, platinum: 8, diamond: 2 },
-  silver:   { silver: 55, gold: 35, platinum: 8, diamond: 2 },
-  gold:     { gold: 55, platinum: 35, diamond: 10 },
-  platinum: { platinum: 65, diamond: 35 },
+  bronze:   { bronze: 44, silver: 32, gold: 15, platinum: 8, diamond: 1 },
+  silver:   { silver: 72, gold: 17, platinum: 9, diamond: 2 },
+  gold:     { gold: 85, platinum: 10, diamond: 5 },
+  platinum: { platinum: 95, diamond: 5 },
   diamond:  { diamond: 100 },
 };
 function craftHintHTML(rarity){
@@ -3521,9 +4068,10 @@ document.getElementById("modal-craft").addEventListener("click", async ()=>{
     toast("Сначала снимите карту с продажи/обмена/стейкинга");
     return;
   }
+  const craftCost = CRAFT_COST_BY_RARITY[selectedItem.rarity] || CRAFT_COST_BY_RARITY.bronze;
   const currentGems = parseInt(document.getElementById("gems-amount").textContent, 10) || 0;
-  if(currentGems < CRAFT_COST_GEMS){
-    toastHTML(`Не хватает гемов — нужно ${CRAFT_COST_GEMS} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
+  if(currentGems < craftCost){
+    toastHTML(`Не хватает гемов — нужно ${craftCost} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
     return;
   }
   const craftRarityLabel = (r) => r ? r[0].toUpperCase() + r.slice(1) : "Bronze";
@@ -3535,7 +4083,7 @@ document.getElementById("modal-craft").addEventListener("click", async ()=>{
         .map(r => `${craftRarityLabel(r)}: ${craftChances[r] % 1 === 0 ? craftChances[r] : craftChances[r].toFixed(1)}%`)
         .join("\n");
   const craftConfirmed = await confirmAction(
-    `Крафт стоит ${CRAFT_COST_GEMS} гемов, карта (${craftRarityLabel(selectedItem.rarity)}) будет уничтожена.\n\nШансы получить:\n${craftChanceLines}\n\nПродолжить?`
+    `Крафт стоит ${craftCost} гемов, карта (${craftRarityLabel(selectedItem.rarity)}) будет уничтожена.\n\nШансы получить:\n${craftChanceLines}\n\nПродолжить?`
   );
   if(!craftConfirmed) return;
 
@@ -3582,7 +4130,7 @@ document.getElementById("modal-craft").addEventListener("click", async ()=>{
     clearInterval(farmCycleTimer);
     clearInterval(farmProgressTimer);
     if(String(e.message).includes("not enough gems")){
-      toastHTML(`Не хватает гемов — нужно ${CRAFT_COST_GEMS} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
+      toastHTML(`Не хватает гемов — нужно ${craftCost} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
     }else{
       toast("Ошибка крафта: " + e.message);
     }
@@ -3704,10 +4252,10 @@ async function openCase(caseKey){
 // next tier up. Free, but a real 3% chance of total loss (unlike craft, which always
 // gives SOMETHING back). ----------
 const BURN_RECIPES = [
-  {rarity:"bronze", target:"silver", count:4},
-  {rarity:"silver", target:"gold", count:5},
-  {rarity:"gold", target:"platinum", count:5},
-  {rarity:"platinum", target:"diamond", count:6},
+  {rarity:"bronze", target:"silver", count:4, fail:1},
+  {rarity:"silver", target:"gold", count:5, fail:2},
+  {rarity:"gold", target:"platinum", count:5, fail:4},
+  {rarity:"platinum", target:"diamond", count:6, fail:8},
 ];
 const RARITY_LABEL = {bronze:"Bronze", silver:"Silver", gold:"Gold", platinum:"Platinum", diamond:"Diamond"};
 const RARITY_COLOR = {bronze:"#cd7f32", silver:"#9ca3af", gold:"#facc15", platinum:"#a78bfa", diamond:"#ff2fb0"};
@@ -3726,9 +4274,9 @@ function renderBurnGrid(){
         <div class="burn-item-icon" style="background:${RARITY_COLOR[r.rarity]};"></div>
         <div class="burn-item-info">
           <div class="burn-item-title">${r.count} ${RARITY_LABEL[r.rarity]} → 1 ${RARITY_LABEL[r.target]}</div>
-          <div class="burn-item-count ${ready ? 'ready' : ''}">У тебя: ${have}/${r.count}</div>
+          <div class="burn-item-count ${ready ? 'ready' : ''}">У тебя: ${have}/${r.count} · шанс ${100 - r.fail}%</div>
         </div>
-        <button type="button" class="burn-btn" data-rarity="${r.rarity}" ${ready ? '' : 'disabled'}>Сжечь</button>
+        <button type="button" class="burn-btn" data-rarity="${r.rarity}" ${ready ? '' : 'disabled'}>Эволюция</button>
       </div>
     `;
   }).join("");
@@ -3804,8 +4352,10 @@ document.getElementById("burn-picker-confirm").addEventListener("click", async (
     toast(`Нужно выбрать ровно ${burnPickerCount}`);
     return;
   }
+  const burnRecipe = BURN_RECIPES.find(r => r.target === burnPickerTarget);
+  const burnFail = burnRecipe ? burnRecipe.fail : 1;
   const confirmed = await confirmAction(
-    `Сжечь эти ${burnPickerCount} карт(ы)?\n\n99% — получишь 1 карту редкости ${RARITY_LABEL[burnPickerTarget]}\n1% — всё сгорит без результата\n\nБесплатно, но карты уничтожаются безвозвратно. Продолжить?`
+    `Эволюционировать эти ${burnPickerCount} карт(ы)?\n\n${100 - burnFail}% — получишь 1 карту редкости ${RARITY_LABEL[burnPickerTarget]}\n${burnFail}% — всё сгорит без результата\n\nБесплатно, но карты уничтожаются безвозвратно. Продолжить?`
   );
   if(!confirmed) return;
   const rarity = burnPickerRarity;
@@ -3839,7 +4389,8 @@ async function runBurn(rarity, userCardIds){
   const mySeq = ++farmRequestSeq; // invalidates any in-flight farm/craft/case so it can't clobber this result
   try{
     const cards = await ensureAllCards();
-    const hint = `<span class="${recipe.target}">99% — 1 ${RARITY_LABEL[recipe.target].toUpperCase()}</span><br><span class="bronze">1% — всё сгорает без результата</span>`;
+    const hintFail = recipe.fail || 1;
+    const hint = `<span class="${recipe.target}">${100 - hintFail}% — 1 ${RARITY_LABEL[recipe.target].toUpperCase()}</span><br><span class="bronze">${hintFail}% — всё сгорает без результата</span>`;
     await startFarmAnimation(cards, hint);
     if(mySeq !== farmRequestSeq) return;
     const result = await api("/burn", { rarity, user_card_ids: userCardIds });
@@ -3861,8 +4412,8 @@ async function runBurn(rarity, userCardIds){
       rarityEl.className = card.rarity || "";
       tg?.HapticFeedback?.notificationOccurred("success");
     }else{
-      stage.innerHTML = `<div class="placeholder">🔥</div>`;
-      nameEl.textContent = "Всё сгорело без результата";
+      stage.innerHTML = `<div class="placeholder">❌</div>`;
+      nameEl.textContent = "Эволюция не удалась";
       rarityEl.textContent = "";
       rarityEl.className = "";
       tg?.HapticFeedback?.notificationOccurred("error");
@@ -3875,7 +4426,7 @@ async function runBurn(rarity, userCardIds){
     if(String(e.message).includes("not enough")){
       toast("Недостаточно подходящих карт этой редкости (проверь стейк/продажу/обмен)");
     }else{
-      toast("Ошибка сжигания: " + e.message);
+      toast("Ошибка эволюции: " + e.message);
     }
   }finally{
     burnBusy = false;
@@ -3896,11 +4447,23 @@ document.getElementById("profile-info-overlay").addEventListener("click", (e)=>{
 });
 
 document.getElementById("stat-income-tile").addEventListener("click", ()=>{
-  document.getElementById("income-text-amount").textContent = document.getElementById("stat-income").textContent;
-  const daysEl = document.getElementById("income-text-next");
-  daysEl.innerHTML = (daysUntilNextIncome != null)
-    ? `Следующее повышение (+25 <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">) через ${daysUntilNextIncome} дн.`
-    : "";
+  const amount = parseInt(document.getElementById("stat-income").textContent, 10) || 25;
+  const tierIndex = Math.min(4, Math.max(0, Math.round((amount - 25) / 25)));
+  document.querySelectorAll("#income-rows .income-info-row").forEach(row=>{
+    const isCurrent = parseInt(row.dataset.tier, 10) === tierIndex;
+    row.classList.toggle("current", isCurrent);
+    let tag = row.querySelector(".current-tag");
+    if(isCurrent && !tag){
+      tag = document.createElement("span");
+      tag.className = "current-tag";
+      tag.textContent = "ты тут";
+      row.querySelector(".income-info-left").appendChild(tag);
+    }else if(!isCurrent && tag){
+      tag.remove();
+    }
+  });
+  document.getElementById("income-footnote-next").textContent =
+    (daysUntilNextIncome != null) ? `Следующее повышение через ${daysUntilNextIncome} дн.` : "";
   document.getElementById("income-overlay").classList.add("active");
 });
 document.getElementById("income-close").addEventListener("click", ()=>{
@@ -3913,6 +4476,11 @@ document.getElementById("income-overlay").addEventListener("click", (e)=>{
 });
 
 document.getElementById("stat-refs-tile").addEventListener("click", ()=>{
+  const count = parseInt(document.getElementById("stat-refs").textContent, 10) || 0;
+  const remaining = Math.max(0, 10 - count);
+  document.getElementById("referral-progress-text").textContent = remaining > 0
+    ? `Приглашено: ${count} — осталось ${remaining} наградных мест`
+    : `Приглашено: ${count} — наградные места закончились, но приглашения всё равно засчитываются`;
   document.getElementById("referral-overlay").classList.add("active");
 });
 document.getElementById("referral-close").addEventListener("click", ()=>{
@@ -3930,7 +4498,7 @@ document.getElementById("referral-share-btn").addEventListener("click", ()=>{
     return;
   }
   const refLink = `https://t.me/Peeppobot?start=ref${myId}`;
-  openShareSheet(refLink, "Залетай в Peeppo — фарми картинки, собирай коллекцию! 🎮");
+  openShareSheet(refLink, "Залетай в Peeppo — фарми, торгуй, обменивайся и крафти карточки! 🎮");
   document.getElementById("referral-overlay").classList.remove("active");
 });
 
@@ -3951,7 +4519,7 @@ document.getElementById("invite-btn").addEventListener("click", ()=>{
     return;
   }
   const refLink = `https://t.me/Peeppobot?start=ref${myId}`;
-  openShareSheet(refLink, "Залетай в Peeppo — фарми картинки, собирай коллекцию! 🎮");
+  openShareSheet(refLink, "Залетай в Peeppo — фарми, торгуй, обменивайся и крафти карточки! 🎮");
 });
 
 // initial load

@@ -17,9 +17,14 @@ import sqlite3
 import random
 from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "peeppo.db"
+
+# The user is in Tallinn, Estonia — anything framed as a calendar "day" (bot uptime
+# counter, etc.) rolls over at LOCAL midnight here, not 24h after some UTC timestamp.
+TALLINN_TZ = ZoneInfo("Europe/Tallinn")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -137,6 +142,45 @@ CREATE TABLE IF NOT EXISTS hundred_club (
     drawn_at      TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS ref_race_announced (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    announced_at  TEXT NOT NULL
+);
+
+-- Simple lifetime action counters for the /admin panel (cases bought, cards crafted,
+-- cards evolved/burned) — bumped by open_case()/craft_card()/burn_cards() themselves,
+-- see _bump_counter()/get_action_counters().
+CREATE TABLE IF NOT EXISTS action_counters (
+    action        TEXT PRIMARY KEY,
+    count         INTEGER NOT NULL DEFAULT 0
+);
+
+-- "Продать Diamond карты за GRAM" — player requests to cash out a multiple of
+-- GRAM_CARDS_PER_UNIT owned Diamond cards for GRAM crypto at a fixed rate. See
+-- request_crypto_withdrawal()/admin_pay_withdrawal()/admin_cancel_withdrawal().
+CREATE TABLE IF NOT EXISTS crypto_withdrawals (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL REFERENCES users(telegram_id),
+    card_count      INTEGER NOT NULL,
+    gram_amount     INTEGER NOT NULL,
+    wallet_address  TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending',  -- 'pending' | 'paid' | 'cancelled'
+    created_at      TEXT NOT NULL,
+    resolved_at     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_crypto_withdrawals_user ON crypto_withdrawals(user_id);
+
+-- Which exact user_cards rows were held for a withdrawal request, so a cancel can
+-- restore precisely those cards (same reasoning as swap_offer_cards).
+CREATE TABLE IF NOT EXISTS crypto_withdrawal_cards (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    withdrawal_id  INTEGER NOT NULL REFERENCES crypto_withdrawals(id),
+    user_card_id   INTEGER NOT NULL REFERENCES user_cards(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_crypto_withdrawal_cards_wd ON crypto_withdrawal_cards(withdrawal_id);
+
 -- Auto-compensation: whenever a card is retired (is_active 1 -> 0), every
 -- current owner gets +25 gems per copy they hold, automatically — no matter
 -- how the deactivation happens (script, admin query, anything).
@@ -152,6 +196,32 @@ END;
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _bump_counter(conn: sqlite3.Connection, action: str, by: int = 1) -> None:
+    """Increments a named lifetime counter in action_counters (see get_action_counters()).
+    Must be called with an already-open conn/transaction — mirrors the "one write per
+    get_conn() block" pattern used everywhere else in this file."""
+    conn.execute(
+        "INSERT INTO action_counters (action, count) VALUES (?, ?) "
+        "ON CONFLICT(action) DO UPDATE SET count = count + excluded.count",
+        (action, by),
+    )
+
+
+def get_action_counters() -> dict[str, int]:
+    """Lifetime counts for the /admin panel: how many cases have been bought (opened),
+    how many cards have been crafted (successful craft_card() calls that produced a new
+    card), and how many cards have evolved (successful burn_cards() calls). Missing keys
+    default to 0 (nothing of that kind has happened yet)."""
+    with get_conn() as conn:
+        rows = conn.execute("SELECT action, count FROM action_counters").fetchall()
+    counts = {r["action"]: r["count"] for r in rows}
+    return {
+        "cases_bought": counts.get("case_open", 0),
+        "cards_crafted": counts.get("craft", 0),
+        "cards_evolved": counts.get("evolve", 0),
+    }
 
 
 @contextmanager
@@ -217,6 +287,19 @@ def init_db():
         # the PvP reveal, since there's nowhere client-side to remember it either).
         if "referral_reward_notice" not in u_cols:
             conn.execute("ALTER TABLE users ADD COLUMN referral_reward_notice TEXT")
+        # migration for purchasable player rank (see purchase_rank()/set_purchased_rank())
+        # — a floor under the normal time-based rank, bought with Telegram Stars. 0 means
+        # "nothing bought", so the time-based rank alone still applies.
+        if "purchased_rank_tier" not in u_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN purchased_rank_tier INTEGER NOT NULL DEFAULT 0")
+        # migration for the referral-race leaderboard (/ref command + the one-time
+        # scheduled announcement) — a referral only counts towards the race once the
+        # referred player has both farmed at least one card AND joined PUBLIC_CHAT.
+        # This flag is a cache so we don't re-check Telegram chat membership (a Bot
+        # API call) for someone we've already confirmed; it never resets, so leaving
+        # the chat later doesn't un-count them.
+        if "chat_member_verified" not in u_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN chat_member_verified INTEGER NOT NULL DEFAULT 0")
         # migration for the trade-history feature — market/swap trades previously
         # weren't logged at all once completed (only current ownership was kept), so
         # there was nothing to show in a "История" list. seller_id/completed_at (or
@@ -240,6 +323,11 @@ def init_db():
         # (voided=1) rather than an actual DELETE.
         if "voided" not in uc_cols:
             conn.execute("ALTER TABLE user_cards ADD COLUMN voided INTEGER NOT NULL DEFAULT 0")
+        # migration for list_card()'s "new" market sort fix — tracks WHEN a card was listed
+        # for sale, separate from user_cards.id (which is fixed at obtain-time and never
+        # reflected when an old card gets newly listed).
+        if "listed_at" not in uc_cols:
+            conn.execute("ALTER TABLE user_cards ADD COLUMN listed_at TEXT")
 
 
 DAILY_BONUS_GEMS = 25
@@ -320,14 +408,92 @@ def _daily_bonus_amount_for(days_elapsed: int) -> int:
 def get_bot_uptime_days() -> int:
     """Days the bot has been running, counting from the very first user's created_at
     (there's no separate "bot launch date" stored anywhere, so the earliest signup is
-    used as a stand-in) — day 1 is launch day itself, so this is (elapsed days) + 1.
-    Shown as the "День: N" counter on the Farm screen. Returns 1 if there are no users yet."""
+    used as a stand-in) — day 1 is launch day itself. Counted by CALENDAR date in
+    Europe/Tallinn (TALLINN_TZ), not by a raw 24h timedelta from the exact signup
+    timestamp — so the "День: N" counter on the Farm screen ticks up right at local
+    midnight in Tallinn, not at some arbitrary time of day tied to when the first user
+    happened to sign up. Returns 1 if there are no users yet."""
     with get_conn() as conn:
         row = conn.execute("SELECT MIN(created_at) AS first FROM users").fetchone()
     if row is None or row["first"] is None:
         return 1
-    days_elapsed = (datetime.now(timezone.utc) - _parse_utc(row["first"])).days
+    first_local_date = _parse_utc(row["first"]).astimezone(TALLINN_TZ).date()
+    today_local_date = datetime.now(timezone.utc).astimezone(TALLINN_TZ).date()
+    days_elapsed = (today_local_date - first_local_date).days
     return days_elapsed + 1
+
+
+# Player rank (NOT card rarity) — purely a function of how long someone has been
+# registered, shown next to their name in Profile with the avatar ring + profile card
+# border colored to match. Bronze for the first month, one tier up per month after,
+# Diamond from month 5 onward.
+PLAYER_RANK_COLORS = {"bronze": "#cd7f32", "silver": "#9ca3af", "gold": "#facc15", "platinum": "#a78bfa", "diamond": "#ff2fb0"}
+
+# Ordered low -> high, index doubles as the numeric "tier" used everywhere below.
+RANK_TIERS = ["bronze", "silver", "gold", "platinum", "diamond"]
+
+# Skip the rank straight to a tier with Telegram Stars — sets a floor under the normal
+# time-based rank (purchased_rank_tier on users), so it never downgrades and the
+# time-based rank can still carry a player past it later for free. No bronze entry —
+# it's the free starting tier, nothing to buy.
+RANK_STARS_PRICE = {"silver": 200, "gold": 300, "platinum": 400, "diamond": 500}
+
+
+def _time_based_rank_tier(created_at: str) -> int:
+    """0-4: bronze for months 0-1 since signup, then silver/gold/platinum for months
+    2/3/4, diamond from month 5 onward (30-day months, same convention as
+    _daily_bonus_amount_for)."""
+    months_played = (datetime.now(timezone.utc) - _parse_utc(created_at)).days // 30
+    if months_played <= 1:
+        return 0
+    elif months_played == 2:
+        return 1
+    elif months_played == 3:
+        return 2
+    elif months_played == 4:
+        return 3
+    else:
+        return 4
+
+
+def get_player_rank_tier(user_id: int) -> int:
+    """Effective 0-4 tier: the higher of the time-based rank and whatever's been bought
+    (purchased_rank_tier). Falls back to 0 (bronze) if the user isn't found."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT created_at, purchased_rank_tier FROM users WHERE telegram_id = ?", (user_id,)
+        ).fetchone()
+    if row is None:
+        return 0
+    return max(_time_based_rank_tier(row["created_at"]), row["purchased_rank_tier"] or 0)
+
+
+def get_player_rank(user_id: int) -> str:
+    """The effective rank name (see get_player_rank_tier) — bronze/silver/gold/platinum/
+    diamond. Falls back to bronze if the user isn't found."""
+    return RANK_TIERS[get_player_rank_tier(user_id)]
+
+
+class RankNotForSale(Exception):
+    """Raised for a rank name that isn't in RANK_STARS_PRICE (bronze, or garbage)."""
+
+
+def set_purchased_rank(user_id: int, rank: str) -> str:
+    """Called from bot.py's successful_payment handler once Telegram confirms the Stars
+    payment — sets purchased_rank_tier to the HIGHER of its current value and this rank's
+    tier (never downgrades, and is a safe no-op if the player's time-based rank already
+    passed this tier in the meantime — the Stars were still spent, but nothing regresses).
+    Returns the resulting effective rank name. Raises RankNotForSale for an unrecognized
+    rank (bronze can't be bought — it's already the free starting tier)."""
+    if rank not in RANK_STARS_PRICE:
+        raise RankNotForSale()
+    tier = RANK_TIERS.index(rank)
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET purchased_rank_tier = MAX(purchased_rank_tier, ?) WHERE telegram_id = ?",
+            (tier, user_id),
+        )
+    return get_player_rank(user_id)
 
 
 def get_daily_bonus_info(user_id: int) -> dict:
@@ -518,6 +684,7 @@ def open_case(user_id: int, case_key: str) -> dict:
         )
         user_card_id = cur.lastrowid
         drop_number = conn.execute("SELECT COUNT(*) FROM user_cards").fetchone()[0]
+        _bump_counter(conn, "case_open")
     return {
         "user_card_id": user_card_id,
         "card_id": card["id"],
@@ -599,9 +766,10 @@ def create_card_giveaway(admin_id: int, rarity: str, total_cards: int,
 
 # Burn: sacrifice several owned cards of one rarity for a GUARANTEED shot at exactly the
 # next tier up (unlike craft, which is a random spread across same-tier-or-higher). Free —
-# no gem cost, since craft already covers the "pay gems, random result" niche. 99% success
-# (BURN_SUCCESS_RATE); the other 1% of the time everything burned is lost for nothing, so
-# it's a real risk.
+# no gem cost, since craft already covers the "pay gems, random result" niche. Success chance
+# (BURN_SUCCESS_RATE) depends on the target tier — evolving into something rarer is riskier:
+# 99% into silver, 98% into gold, 96% into platinum, 92% into diamond. The rest of the time
+# everything burned is lost for nothing, so it's a real risk.
 # Counts scale with how much scarcer the target tier actually is in RARITY_WEIGHTS (the
 # base farm odds, untouched): bronze->silver/silver->gold/gold->platinum are all a ~1.7-2.2x
 # scarcity step so they cost close to the same; platinum->diamond is a genuinely bigger
@@ -616,7 +784,15 @@ BURN_REQUIREMENTS = {
     # No "diamond" entry — Diamond is the top tier, nothing to burn UP into (Diamond can
     # still be re-rolled via craft_card(), which is a different mechanic).
 }
-BURN_SUCCESS_RATE = 0.99
+
+# Failure chance scales with how rare/valuable the TARGET tier is — evolving into something
+# higher up is riskier. Keyed by target_rarity (not source rarity).
+BURN_SUCCESS_RATE = {
+    "silver":   0.99,  # 1% fail
+    "gold":     0.98,  # 2% fail
+    "platinum": 0.96,  # 4% fail
+    "diamond":  0.92,  # 8% fail
+}
 
 
 class BurnNotEnoughCards(Exception):
@@ -635,9 +811,10 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
     given rarity, and not be busy (staked/listed/in a swap or PvP round); anything else
     (wrong count, someone else's card, a duplicate id, a busy card) raises
     BurnNotEnoughCards rather than silently dropping/substituting cards, since the player
-    chose these specific ones. BURN_SUCCESS_RATE (99%) of the time the burned cards are
-    replaced with one freshly-drawn card of the next-tier-up rarity; the other 1% of the
-    time NOTHING comes back — a genuine loss, not just flavor text.
+    chose these specific ones. BURN_SUCCESS_RATE[target_rarity] of the time the burned cards
+    are replaced with one freshly-drawn card of the next-tier-up rarity (99%/98%/96%/92% for
+    silver/gold/platinum/diamond); the rest of the time NOTHING comes back — a genuine loss,
+    not just flavor text.
 
     Like craft_card(), this NEVER actually DELETEs a user_cards row — market_offers,
     swap_offers, swap_offer_cards, and pvp_entries all keep permanent FK-referencing
@@ -669,7 +846,7 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
             raise BurnNotEnoughCards()
         burn_ids = [r["id"] for r in rows]
 
-        success = random.random() < BURN_SUCCESS_RATE
+        success = random.random() < BURN_SUCCESS_RATE[target_rarity]
         new_card = _draw_card_weighted({target_rarity: 100}) if success else None
 
         new_user_card_id = None
@@ -685,6 +862,7 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
             )
             new_user_card_id = recipient_id
             remaining_ids = burn_ids[1:]
+            _bump_counter(conn, "evolve")
         else:
             remaining_ids = burn_ids
 
@@ -786,9 +964,42 @@ def farm(user_id: int) -> dict | None:
     return result
 
 
-CRAFT_COST_GEMS = 25
+# Craft cost scales with the rarity of the card being burned — crafting a Diamond (a
+# near-lateral reroll, since it's already the top tier) costs far more than crafting a
+# cheap Bronze. Keeps craft from being a flat-rate gem sink regardless of what's at stake.
+CRAFT_COST_GEMS = {
+    "bronze": 25,
+    "silver": 25,
+    "gold": 50,
+    "platinum": 100,
+    "diamond": 200,
+}
 TRANSFER_FEE_GEMS = 3  # charged to the sender for a direct @username gift
-MIN_LISTING_PRICE_GEMS = 20  # floor for both a market listing price and a buyer's offer
+# Minimum gems a card can be listed/offered for on the market, scaled by rarity — a
+# pricier/rarer tier gets a higher floor. Applies to both a seller's listing price and a
+# buyer's offer (list_card()/make_offer()).
+MIN_LISTING_PRICE_BY_RARITY = {"bronze": 25, "silver": 50, "gold": 100, "platinum": 100, "diamond": 100}
+
+
+def get_min_listing_price(rarity: str | None) -> int:
+    """The market price floor for this rarity — falls back to the bronze floor for an
+    unrecognized/missing rarity."""
+    return MIN_LISTING_PRICE_BY_RARITY.get(rarity or "bronze", MIN_LISTING_PRICE_BY_RARITY["bronze"])
+
+
+def get_craft_cost(rarity: str | None) -> int:
+    """CRAFT_COST_GEMS for this rarity — falls back to the bronze cost for an
+    unrecognized/missing rarity."""
+    return CRAFT_COST_GEMS.get(rarity or "bronze", CRAFT_COST_GEMS["bronze"])
+
+
+class ListingPriceTooLow(Exception):
+    """Raised by list_card()/make_offer() when price_gems is below get_min_listing_price()
+    for that specific card's rarity — carries the required minimum so the caller (api.py)
+    can report the exact number back to the player."""
+    def __init__(self, min_price: int):
+        self.min_price = min_price
+        super().__init__(f"minimum price is {min_price} gems")
 
 # Craft: burn one owned card + CRAFT_COST_GEMS gems for one new random card. Odds depend on
 # the tier of the card being burned — burning a higher tier gives much better odds at another
@@ -797,13 +1008,29 @@ CRAFT_WEIGHTS = {
     # Crafting never produces a tier BELOW the one burned — only same-tier-or-higher is
     # possible (burn Gold, get Gold/Platinum/Diamond only, never Bronze/Silver). Each row
     # only lists the tiers it can actually produce and must sum to 100.
-    # Every tier's craft chance here beats the equivalent free-farm chance (RARITY_WEIGHTS:
-    # silver 29/gold 13/platinum 7/diamond 1) — paying gems + a card should never leave you
-    # WORSE off than just farming for free, which the old row (2.5/0.5 platinum/diamond) did.
-    "bronze":   {"bronze": 40, "silver": 35, "gold": 15, "platinum": 8, "diamond": 2},
-    "silver":   {"silver": 55, "gold": 35, "platinum": 8, "diamond": 2},
-    "gold":     {"gold": 55, "platinum": 35, "diamond": 10},
-    "platinum": {"platinum": 65, "diamond": 35},
+    #
+    # Every non-self column here is still >= the equivalent free-farm chance (RARITY_WEIGHTS:
+    # silver 29/gold 13/platinum 7/diamond 1), so paying gems + a card never leaves you WORSE
+    # off than just farming for free.
+    #
+    # But that alone isn't enough to balance CRAFT_COST_GEMS against what you get back: valuing
+    # every card at its farm-equivalent gem cost (what it'd take to farm one from scratch —
+    # bronze ~50, silver ~86, gold ~192, platinum ~357, diamond ~2500), the OLD rows here paid
+    # back 175-245% of what you put in (gems + the burned card) — craft was a strictly better
+    # deal than farming or buying cases at every tier, which made it the only rational way to
+    # play. These rows instead land each tier at a modest 90-180% return: still always a good
+    # trade (never worse than farm), but not a free-money loop.
+    #
+    # Just beating farm's OWN per-tier percentages isn't enough either: the tiers ABOVE the one
+    # being crafted must have STRICTLY higher combined odds here than in RARITY_WEIGHTS, not
+    # just equal — equal odds plus an extra burned card is a worse deal than just farming again,
+    # which the very first cut of this rebalance missed for bronze and silver (0 premium).
+    # Diamond input is the one deliberate exception — it's meant to be a real sink/risk (see
+    # CRAFT_DIAMOND_SUCCESS_RATE), so it gets no "beat the odds" treatment at all.
+    "bronze":   {"bronze": 44, "silver": 32, "gold": 15, "platinum": 8, "diamond": 1},
+    "silver":   {"silver": 72, "gold": 17, "platinum": 9, "diamond": 2},
+    "gold":     {"gold": 85, "platinum": 10, "diamond": 5},
+    "platinum": {"platinum": 95, "diamond": 5},
     # Diamond is the top tier — nowhere higher to go, so crafting one just re-rolls
     # another random Diamond (people reroll for a different Diamond card they want more).
     "diamond": {"diamond": 100},
@@ -839,7 +1066,7 @@ def draw_card_for_craft(input_rarity: str) -> sqlite3.Row | None:
 
 
 def craft_card(user_id: int, user_card_id: int) -> dict:
-    """Burns one owned card (must belong to user_id) for CRAFT_COST_GEMS gems and one new
+    """Burns one owned card (must belong to user_id) for that card's CRAFT_COST_GEMS[rarity] gems and one new
     random card, drawn with odds skewed by the burned card's rarity. The new card is inserted
     with the exact same obtained_at as the burned one, so it inherits its collection number
     (drop_number) instead of jumping to the end of the list. Diamond input is special: instead
@@ -858,8 +1085,9 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
             raise CraftNotOwned()
         if owned["listed_price"] is not None or owned["swap_listed"] or owned["staked_at"] is not None or owned["pvp_round_id"] is not None:
             raise CraftNotOwned()
+        cost = get_craft_cost(owned["rarity"])
         gems_row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
-        if gems_row is None or gems_row["gems"] < CRAFT_COST_GEMS:
+        if gems_row is None or gems_row["gems"] < cost:
             raise InsufficientGems()
 
     rarity = owned["rarity"] or "bronze"
@@ -870,7 +1098,7 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
         raise ValueError("catalog is empty")
 
     with get_conn() as conn:
-        conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (CRAFT_COST_GEMS, user_id))
+        conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (cost, user_id))
         if success:
             # Reuse the same user_cards row (swap its card_id in place) instead of deleting it
             # and inserting a fresh one. market_offers, swap_offers, swap_offer_cards, and
@@ -890,6 +1118,7 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
                 "SELECT COUNT(*) FROM user_cards WHERE obtained_at <= ?",
                 (owned["obtained_at"],),
             ).fetchone()[0]
+            _bump_counter(conn, "craft")
         else:
             # Diamond craft failure — card destroyed outright. Same "voided" soft-destroy
             # trick as burn_cards(): never DELETE (would hit the same FK constraint), just
@@ -903,7 +1132,7 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
             drop_number = None
         total_farmed = conn.execute("SELECT COUNT(*) AS n FROM user_cards WHERE voided = 0").fetchone()["n"]
 
-    result = {"success": success, "total_farmed": total_farmed}
+    result = {"success": success, "total_farmed": total_farmed, "cost": cost}
     if success:
         result.update({
             "user_card_id": new_user_card_id,
@@ -1010,6 +1239,18 @@ def get_last_gem_drop_time() -> str | None:
     with get_conn() as conn:
         row = conn.execute(
             "SELECT created_at FROM gem_drops ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return row["created_at"] if row else None
+
+
+def get_last_gem_drop_time_by_amount(amount: int) -> str | None:
+    """Same as get_last_gem_drop_time() but scoped to one drop size — lets the daily
+    100-gem airdrop track its own cadence independently of the regular 25-gem drops
+    that interleave with it in the same table."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT created_at FROM gem_drops WHERE amount = ? ORDER BY id DESC LIMIT 1",
+            (amount,),
         ).fetchone()
         return row["created_at"] if row else None
 
@@ -1193,18 +1434,26 @@ def list_card(user_card_id: int, seller_id: int, price_gems: int) -> bool:
     """Owner puts one specific owned copy up for sale (or re-prices an existing listing).
     Blocked while that same copy is already listed for swap — a card can only be in one
     kind of lot at a time (list_for_swap enforces the same rule in the other direction).
-    Also blocked while the copy is staked — it has to be pulled out of staking first."""
-    if price_gems < MIN_LISTING_PRICE_GEMS:
-        return False
+    Also blocked while the copy is staked — it has to be pulled out of staking first.
+    Raises ListingPriceTooLow if price_gems is below this card's rarity floor (see
+    get_min_listing_price())."""
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT user_id, swap_listed, staked_at, pvp_round_id FROM user_cards WHERE id = ?", (user_card_id,)
+            "SELECT uc.user_id, uc.swap_listed, uc.staked_at, uc.pvp_round_id, c.rarity "
+            "FROM user_cards uc JOIN cards c ON c.id = uc.card_id WHERE uc.id = ?",
+            (user_card_id,),
         ).fetchone()
         if row is None or row["user_id"] != seller_id:
             return False
         if row["swap_listed"] or row["staked_at"] is not None or row["pvp_round_id"] is not None:
             return False
-        conn.execute("UPDATE user_cards SET listed_price = ? WHERE id = ?", (price_gems, user_card_id))
+        min_price = get_min_listing_price(row["rarity"])
+        if price_gems < min_price:
+            raise ListingPriceTooLow(min_price)
+        conn.execute(
+            "UPDATE user_cards SET listed_price = ?, listed_at = ? WHERE id = ?",
+            (price_gems, _now(), user_card_id),
+        )
         return True
 
 
@@ -1213,7 +1462,7 @@ def unlist_card(user_card_id: int, seller_id: int) -> bool:
         row = conn.execute("SELECT user_id FROM user_cards WHERE id = ?", (user_card_id,)).fetchone()
         if row is None or row["user_id"] != seller_id:
             return False
-        conn.execute("UPDATE user_cards SET listed_price = NULL WHERE id = ?", (user_card_id,))
+        conn.execute("UPDATE user_cards SET listed_price = NULL, listed_at = NULL WHERE id = ?", (user_card_id,))
         conn.execute(
             "UPDATE market_offers SET status = 'cancelled' WHERE user_card_id = ? AND status = 'pending'",
             (user_card_id,),
@@ -1222,17 +1471,18 @@ def unlist_card(user_card_id: int, seller_id: int) -> bool:
 
 
 def get_market_listings() -> list[dict]:
-    """All cards currently for sale, newest first."""
+    """All cards currently for sale, newest-LISTED first (listed_at — see list_card();
+    NOT the same as the card's own obtain time, which is what uc.id would sort by)."""
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT uc.id AS user_card_id, uc.listed_price, uc.user_id AS seller_id,
+            SELECT uc.id AS user_card_id, uc.listed_price, uc.listed_at, uc.user_id AS seller_id,
                    c.id AS card_id, c.filename, c.name, c.rarity, u.username, u.first_name
             FROM user_cards uc
             JOIN cards c ON c.id = uc.card_id
             JOIN users u ON u.telegram_id = uc.user_id
             WHERE uc.listed_price IS NOT NULL
-            ORDER BY uc.id DESC
+            ORDER BY uc.listed_at DESC
             """
         ).fetchall()
         return [dict(r) for r in rows]
@@ -1259,7 +1509,7 @@ def buy_listing(user_card_id: int, buyer_id: int) -> dict | None:
         conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (price, buyer_id))
         conn.execute("UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?", (price, price, row["seller_id"]))
         conn.execute(
-            "UPDATE user_cards SET user_id = ?, listed_price = NULL WHERE id = ?",
+            "UPDATE user_cards SET user_id = ?, listed_price = NULL, listed_at = NULL WHERE id = ?",
             (buyer_id, user_card_id),
         )
         conn.execute(
@@ -1280,13 +1530,13 @@ def buy_listing(user_card_id: int, buyer_id: int) -> dict | None:
 def make_offer(user_card_id: int, buyer_id: int, price_gems: int) -> dict | None:
     """Buyer proposes their own price on a listed card. Seller must accept it (via bot DM)
     before anything changes hands. Returns offer + card/seller info for the notification,
-    or None if the listing doesn't exist / isn't for sale / buyer == seller."""
-    if price_gems < MIN_LISTING_PRICE_GEMS:
-        return None
+    or None if the listing doesn't exist / isn't for sale / buyer == seller. Raises
+    ListingPriceTooLow if price_gems is below this card's rarity floor (see
+    get_min_listing_price())."""
     with get_conn() as conn:
         row = conn.execute(
             """
-            SELECT uc.user_id AS seller_id, uc.listed_price, c.filename, c.name
+            SELECT uc.user_id AS seller_id, uc.listed_price, c.filename, c.name, c.rarity
             FROM user_cards uc JOIN cards c ON c.id = uc.card_id
             WHERE uc.id = ?
             """,
@@ -1294,6 +1544,9 @@ def make_offer(user_card_id: int, buyer_id: int, price_gems: int) -> dict | None
         ).fetchone()
         if row is None or row["listed_price"] is None or row["seller_id"] == buyer_id:
             return None
+        min_price = get_min_listing_price(row["rarity"])
+        if price_gems < min_price:
+            raise ListingPriceTooLow(min_price)
         cur = conn.execute(
             "INSERT INTO market_offers (user_card_id, buyer_id, price_gems, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
             (user_card_id, buyer_id, price_gems, _now()),
@@ -1437,13 +1690,26 @@ def get_swap_listings() -> list[dict]:
 STAKE_DAILY_RATES = {"bronze": 5, "silver": 10, "gold": 25, "platinum": 50, "diamond": 100}
 STAKE_PERIOD_SECONDS = 24 * 60 * 60
 
+# The fee always equals ONE day's rate, so a staked card breaks even on day 1 and every day
+# after that is pure profit — with no cap that's an unlimited money glitch (stake once, get
+# paid forever). MAX_STAKE_DAYS turns it into a fixed-length term deposit: once a card has
+# paid out this many days, settle_staking() auto-unstakes it — the player has to manually
+# stake_card() (and pay the fee again) to keep earning. MAX_STAKED_CARDS caps how many cards
+# can be staked AT ONCE, so the payout can't be scaled up without limit either.
+MAX_STAKE_DAYS = 20
+MAX_STAKED_CARDS = 5
+
 
 def settle_staking(user_id: int) -> int:
     """Credits STAKE_DAILY_RATES[rarity] gems for every full 24h period elapsed since
     each of the user's staked cards was staked (or last paid out), advancing that card's
     clock forward by exactly that many whole days so partial progress toward the next
     payout is never lost or double-paid. Called from _authenticate() on every API request
-    so staking pays out passively with no background job. Returns gems credited this call."""
+    so staking pays out passively with no background job. Payouts are capped at
+    MAX_STAKE_DAYS — once a card reaches that many paid days, it's auto-unstaked (credited
+    for exactly MAX_STAKE_DAYS, not a day more) and goes back to being a normal owned card;
+    the player has to stake_card() it again, paying the fee again, to keep earning. Returns
+    gems credited this call."""
     now = datetime.now(timezone.utc)
     total_credited = 0
     with get_conn() as conn:
@@ -1458,13 +1724,20 @@ def settle_staking(user_id: int) -> int:
             elapsed = (now - staked_at).total_seconds()
             full_days = int(elapsed // STAKE_PERIOD_SECONDS)
             if full_days >= 1:
-                new_staked_at = staked_at + timedelta(seconds=full_days * STAKE_PERIOD_SECONDS)
-                conn.execute(
-                    "UPDATE user_cards SET staked_at = ? WHERE id = ?",
-                    (new_staked_at.isoformat(), row["id"]),
-                )
                 daily_rate = STAKE_DAILY_RATES.get(row["rarity"] or "bronze", 5)
-                total_credited += full_days * daily_rate
+                if full_days >= MAX_STAKE_DAYS:
+                    # Term's up — pay out exactly the cap, then release the card. Any extra
+                    # elapsed time beyond the cap earns nothing further (same idea as a bank
+                    # term deposit that just sits there, no longer accruing, until renewed).
+                    total_credited += MAX_STAKE_DAYS * daily_rate
+                    conn.execute("UPDATE user_cards SET staked_at = NULL WHERE id = ?", (row["id"],))
+                else:
+                    new_staked_at = staked_at + timedelta(seconds=full_days * STAKE_PERIOD_SECONDS)
+                    conn.execute(
+                        "UPDATE user_cards SET staked_at = ? WHERE id = ?",
+                        (new_staked_at.isoformat(), row["id"]),
+                    )
+                    total_credited += full_days * daily_rate
         if total_credited:
             conn.execute(
                 "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
@@ -1473,11 +1746,16 @@ def settle_staking(user_id: int) -> int:
     return total_credited
 
 
+class StakeLimitReached(Exception):
+    """Raised by stake_card() when the player already has MAX_STAKED_CARDS cards staked at
+    once."""
+
+
 def stake_card(user_card_id: int, owner_id: int) -> bool:
     """Puts one owned copy into staking, after charging an upfront fee equal to that
     card's own daily staking rate (STAKE_DAILY_RATES). Blocked if it's already staked, or
     currently listed for sale/swap (unlist first). Raises InsufficientGems if the fee
-    can't be covered."""
+    can't be covered, StakeLimitReached if the player already has MAX_STAKED_CARDS staked."""
     with get_conn() as conn:
         row = conn.execute(
             "SELECT uc.user_id, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, c.rarity "
@@ -1488,6 +1766,12 @@ def stake_card(user_card_id: int, owner_id: int) -> bool:
             return False
         if row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None or row["pvp_round_id"] is not None:
             return False
+        staked_count = conn.execute(
+            "SELECT COUNT(*) AS n FROM user_cards WHERE user_id = ? AND staked_at IS NOT NULL",
+            (owner_id,),
+        ).fetchone()["n"]
+        if staked_count >= MAX_STAKED_CARDS:
+            raise StakeLimitReached()
         fee = STAKE_DAILY_RATES.get(row["rarity"] or "bronze", 5)
         gems_row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (owner_id,)).fetchone()
         if gems_row is None or gems_row["gems"] < fee:
@@ -1529,11 +1813,11 @@ def propose_swap(user_card_id: int, buyer_id: int, offered_user_card_ids: list[i
         if listing is None or not listing["swap_listed"] or listing["seller_id"] == buyer_id:
             return None
 
-        offered_names = []
+        offered_cards = []
         for oid in offered_user_card_ids:
             row = conn.execute(
                 """
-                SELECT uc.user_id, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, c.name
+                SELECT uc.user_id, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, c.name, c.rarity
                 FROM user_cards uc JOIN cards c ON c.id = uc.card_id
                 WHERE uc.id = ?
                 """,
@@ -1544,7 +1828,7 @@ def propose_swap(user_card_id: int, buyer_id: int, offered_user_card_ids: list[i
             if (row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None
                     or row["pvp_round_id"] is not None):
                 return None  # offered card is busy — on sale, already in another swap, or staked in PvP
-            offered_names.append(row["name"] or "картинка")
+            offered_cards.append({"name": row["name"] or "картинка", "rarity": row["rarity"] or "bronze"})
 
         cur = conn.execute(
             "INSERT INTO swap_offers (user_card_id, buyer_id, status, created_at) VALUES (?, ?, 'pending', ?)",
@@ -1561,7 +1845,7 @@ def propose_swap(user_card_id: int, buyer_id: int, offered_user_card_ids: list[i
             "seller_id": listing["seller_id"],
             "listing_name": listing["name"],
             "listing_filename": listing["filename"],
-            "offered_names": offered_names,
+            "offered_cards": offered_cards,
         }
 
 
@@ -1702,6 +1986,68 @@ def get_referral_count(user_id: int) -> int:
         return row["n"]
 
 
+# ---------------------------------------------------------------------------
+# Referral race (/ref leaderboard + one-time scheduled announcement) — a stricter,
+# harder-to-game count than get_referral_count() above: a referral only counts here
+# once the referred player has (a) farmed at least one card (proves a real person,
+# same anti-bot signal as the gems reward) and (b) joined PUBLIC_CHAT. (b) can only
+# be checked by calling Telegram's getChatMember, so bot.py does that check and
+# calls mark_chat_verified() once confirmed — get_unverified_ref_candidates() tells
+# it who's still worth checking (already-farmed, not yet confirmed in chat).
+# ---------------------------------------------------------------------------
+
+def get_unverified_ref_candidates(limit: int = 300) -> list[int]:
+    """Referred players who've farmed at least once but aren't chat-verified yet —
+    i.e. worth spending a getChatMember call on. Capped per call so a large backlog
+    (e.g. right after this feature is deployed) can't make one /ref invocation or
+    scheduler tick block for too long; whatever's left over is picked up next time."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT telegram_id FROM users "
+            "WHERE ref_by IS NOT NULL AND chat_member_verified = 0 "
+            "AND EXISTS (SELECT 1 FROM user_cards WHERE user_cards.user_id = users.telegram_id) "
+            "LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [row["telegram_id"] for row in rows]
+
+
+def mark_chat_verified(user_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET chat_member_verified = 1 WHERE telegram_id = ?", (user_id,))
+
+
+def get_ref_leaderboard(limit: int = 5, exclude_id: int | None = None) -> list[dict]:
+    """Top referrers by qualified (farmed + chat-verified) referral count, highest first.
+    exclude_id (bot.py passes ADMIN_ID) leaves one telegram_id out of the ranking
+    entirely — used to keep the dev's own test/admin account out of the public race."""
+    with get_conn() as conn:
+        query = (
+            "SELECT u.telegram_id AS telegram_id, u.username AS username, u.first_name AS first_name, "
+            "COUNT(r.telegram_id) AS n "
+            "FROM users u JOIN users r ON r.ref_by = u.telegram_id "
+            "WHERE r.chat_member_verified = 1"
+        )
+        params: list = []
+        if exclude_id is not None:
+            query += " AND u.telegram_id != ?"
+            params.append(exclude_id)
+        query += " GROUP BY u.telegram_id ORDER BY n DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
+
+def has_ref_race_been_announced() -> bool:
+    with get_conn() as conn:
+        return conn.execute("SELECT 1 FROM ref_race_announced LIMIT 1").fetchone() is not None
+
+
+def mark_ref_race_announced() -> None:
+    with get_conn() as conn:
+        conn.execute("INSERT INTO ref_race_announced (announced_at) VALUES (?)", (_now(),))
+
+
 def set_referral_notice(referrer_id: int, who_name: str) -> None:
     """Called from /api/farm the moment a referral reward is credited — stores the
     referred player's display name so the referrer's own client can pop an in-app
@@ -1735,6 +2081,20 @@ def get_total_farmed() -> int:
     with get_conn() as conn:
         row = conn.execute("SELECT COUNT(*) AS n FROM user_cards WHERE voided = 0").fetchone()
         return row["n"]
+
+
+def get_global_rarity_breakdown() -> dict:
+    """How many cards of each rarity are currently on hand across ALL players combined
+    (voided/burned-away rows excluded, same as get_total_farmed()) — the global counterpart
+    to a single player's own inventory breakdown, shown when tapping the "Карты" figure on
+    the Farm screen."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT c.rarity, COUNT(*) AS n FROM user_cards uc "
+            "JOIN cards c ON c.id = uc.card_id WHERE uc.voided = 0 GROUP BY c.rarity"
+        ).fetchall()
+    counts = {r["rarity"]: r["n"] for r in rows}
+    return {rarity: counts.get(rarity, 0) for rarity in ("bronze", "silver", "gold", "platinum", "diamond")}
 
 
 def get_leaderboard() -> list[dict]:
@@ -2187,13 +2547,149 @@ def get_admin_stats() -> dict:
         users = conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
         cards = conn.execute("SELECT COUNT(*) AS n FROM cards WHERE is_active = 1").fetchone()["n"]
         gems_total = conn.execute("SELECT COALESCE(SUM(gems), 0) AS n FROM users").fetchone()["n"]
-        total_farmed = conn.execute("SELECT COUNT(*) AS n FROM user_cards").fetchone()["n"]
-        return {"users": users, "cards": cards, "gems_total": gems_total, "total_farmed": total_farmed}
+    # Reuse get_total_farmed() instead of a separate raw COUNT(*) here — that raw query
+    # used to forget the "WHERE voided = 0" filter that burn_cards()/craft_card() rely on,
+    # so /admin showed a higher, stale card count than the in-app "Карты" figure once any
+    # burning/evolution had happened. Sharing the one function keeps them from drifting again.
+    total_farmed = get_total_farmed()
+    stats = {"users": users, "cards": cards, "gems_total": gems_total, "total_farmed": total_farmed}
+    stats.update(get_action_counters())
+    return stats
 
 
 def get_card_by_id(card_id: int) -> sqlite3.Row | None:
     with get_conn() as conn:
         return conn.execute("SELECT * FROM cards WHERE id = ?", (card_id,)).fetchone()
+
+
+# ---------------------------------------------------------------------------
+# Crypto withdrawal — "Продать Diamond карты за GRAM" (repurposes the old
+# "Продать Гемы за Звёзды" button in the gems-choice overlay). Player picks a
+# multiple of GRAM_CARDS_PER_UNIT of their own eligible Diamond cards and a wallet
+# address; the admin (ADMIN_ID in bot.py) gets a DM with "Оплатить"/"Отменить"
+# buttons, sends the crypto manually outside this system, then taps one of them.
+#
+# The selected cards are voided (held) the moment a request is created — same
+# soft-destroy trick as burn_cards()/craft_card() failures — so they can't be
+# listed/swapped/staked/double-spent while the request is pending. "Оплатить"
+# leaves them voided for good (they left the game in exchange for the crypto
+# already sent); "Отменить" un-voids exactly those cards, restoring them.
+# ---------------------------------------------------------------------------
+
+GRAM_CARDS_PER_UNIT = 10  # 10 Diamond cards = 1 GRAM — the fixed exchange rate
+
+
+class CryptoWithdrawalError(Exception):
+    """Raised by request_crypto_withdrawal() for any invalid request: wrong/non-multiple
+    card count, a missing wallet address, cards that aren't this user's own eligible
+    (owned, Diamond, non-busy, non-voided) cards, or an already-pending request."""
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)
+
+
+def get_pending_withdrawal(user_id: int) -> dict | None:
+    """The caller's own currently-pending request, if any — used both to block a second
+    simultaneous request and so the frontend can show "заявка на рассмотрении" instead of
+    the picker."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM crypto_withdrawals WHERE user_id = ? AND status = 'pending' "
+            "ORDER BY id DESC LIMIT 1",
+            (user_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def request_crypto_withdrawal(user_id: int, user_card_ids: list[int], wallet_address: str) -> dict:
+    wallet_address = (wallet_address or "").strip()
+    if not wallet_address:
+        raise CryptoWithdrawalError("wallet address is required")
+
+    count = len(user_card_ids)
+    if count == 0 or count % GRAM_CARDS_PER_UNIT != 0 or len(set(user_card_ids)) != count:
+        raise CryptoWithdrawalError(f"card count must be a positive multiple of {GRAM_CARDS_PER_UNIT}")
+
+    if get_pending_withdrawal(user_id) is not None:
+        raise CryptoWithdrawalError("you already have a pending withdrawal request")
+
+    with get_conn() as conn:
+        placeholders = ",".join("?" for _ in user_card_ids)
+        rows = conn.execute(
+            f"SELECT uc.id FROM user_cards uc JOIN cards c ON c.id = uc.card_id "
+            f"WHERE uc.id IN ({placeholders}) AND uc.user_id = ? AND c.rarity = 'diamond' "
+            f"AND uc.listed_price IS NULL AND uc.swap_listed = 0 "
+            f"AND uc.staked_at IS NULL AND uc.pvp_round_id IS NULL AND uc.voided = 0",
+            (*user_card_ids, user_id),
+        ).fetchall()
+        if len(rows) != count:
+            raise CryptoWithdrawalError("some selected cards aren't your own eligible Diamond cards")
+
+        gram_amount = count // GRAM_CARDS_PER_UNIT
+        now = _now()
+        cur = conn.execute(
+            "INSERT INTO crypto_withdrawals (user_id, card_count, gram_amount, wallet_address, status, created_at) "
+            "VALUES (?, ?, ?, ?, 'pending', ?)",
+            (user_id, count, gram_amount, wallet_address, now),
+        )
+        withdrawal_id = cur.lastrowid
+        conn.executemany(
+            "INSERT INTO crypto_withdrawal_cards (withdrawal_id, user_card_id) VALUES (?, ?)",
+            [(withdrawal_id, uc_id) for uc_id in user_card_ids],
+        )
+        conn.execute(
+            f"UPDATE user_cards SET voided = 1, listed_price = NULL, swap_listed = 0, "
+            f"staked_at = NULL, pvp_round_id = NULL WHERE id IN ({placeholders})",
+            user_card_ids,
+        )
+
+    return {
+        "withdrawal_id": withdrawal_id,
+        "card_count": count,
+        "gram_amount": gram_amount,
+        "wallet_address": wallet_address,
+    }
+
+
+def get_withdrawal(withdrawal_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM crypto_withdrawals WHERE id = ?", (withdrawal_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def admin_pay_withdrawal(withdrawal_id: int) -> dict | None:
+    """Marks a pending request paid. Cards stay voided — they left the game for good, in
+    exchange for the crypto the admin already sent manually outside this system. Returns
+    None if the request no longer exists or isn't pending (already resolved)."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM crypto_withdrawals WHERE id = ?", (withdrawal_id,)).fetchone()
+        if row is None or row["status"] != "pending":
+            return None
+        conn.execute(
+            "UPDATE crypto_withdrawals SET status = 'paid', resolved_at = ? WHERE id = ?",
+            (_now(), withdrawal_id),
+        )
+    return dict(row)
+
+
+def admin_cancel_withdrawal(withdrawal_id: int) -> dict | None:
+    """Marks a pending request cancelled and restores (un-voids) exactly the cards that
+    were held for it. Returns None if the request no longer exists or isn't pending."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM crypto_withdrawals WHERE id = ?", (withdrawal_id,)).fetchone()
+        if row is None or row["status"] != "pending":
+            return None
+        card_ids = [r["user_card_id"] for r in conn.execute(
+            "SELECT user_card_id FROM crypto_withdrawal_cards WHERE withdrawal_id = ?", (withdrawal_id,)
+        ).fetchall()]
+        if card_ids:
+            placeholders = ",".join("?" for _ in card_ids)
+            conn.execute(f"UPDATE user_cards SET voided = 0 WHERE id IN ({placeholders})", card_ids)
+        conn.execute(
+            "UPDATE crypto_withdrawals SET status = 'cancelled', resolved_at = ? WHERE id = ?",
+            (_now(), withdrawal_id),
+        )
+    return dict(row)
 
 
 if __name__ == "__main__":
