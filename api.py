@@ -29,6 +29,7 @@ load_dotenv()
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "Peeppobot")
+ADMIN_ID = os.environ.get("ADMIN_ID")  # same account bot.py uses — kept off public leaderboards
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 # 1 Telegram Star buys GEMS_PER_STAR gems (100 ⭐ = 1000 гемов). Change this in one
@@ -217,6 +218,10 @@ def auth(body: InitDataBody):
         # Player rank (time-played tier, not card rarity) — shown next to the name in
         # Profile with matching avatar/card border colors.
         "player_rank": db.get_player_rank(user["telegram_id"]),
+        # Login streak — consecutive days claim_daily_bonus() above has fired without
+        # a gap. Shown as the "День: N" tile in Profile (separate from bot_day, which
+        # counts days the BOT has existed, not this player's own login streak).
+        "streak": db.get_streak_info(user["telegram_id"]),
     }
 
 
@@ -601,6 +606,14 @@ def swap_history(body: InitDataBody):
 def pvp_history(body: InitDataBody):
     _authenticate(body.initData)
     return {"rounds": db.get_pvp_history()}
+
+
+@app.post("/api/pvp/leaderboard")
+def pvp_leaderboard(body: InitDataBody):
+    """Top-10 by total PvP round wins, for the "Топ 10" tab next to Правила/История.
+    ADMIN_ID (if set) is left out, same as the /ref referral leaderboard."""
+    _authenticate(body.initData)
+    return {"leaderboard": db.get_pvp_win_leaderboard(10, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)}
 
 
 @app.post("/api/wheel/spin")

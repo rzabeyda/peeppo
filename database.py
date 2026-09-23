@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS users (
     gems          INTEGER NOT NULL DEFAULT 0,
     gems_earned   INTEGER NOT NULL DEFAULT 0,
     last_daily_bonus TEXT,
+    streak_days   INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL
 );
 
@@ -300,6 +301,23 @@ def init_db():
         # the chat later doesn't un-count them.
         if "chat_member_verified" not in u_cols:
             conn.execute("ALTER TABLE users ADD COLUMN chat_member_verified INTEGER NOT NULL DEFAULT 0")
+        # migration for the login-streak feature (get_streak_info()/claim_daily_bonus())
+        if "streak_days" not in u_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN streak_days INTEGER NOT NULL DEFAULT 0")
+        # One-time backfill for players who signed up before the streak feature existed:
+        # the column defaults to 0, but claim_daily_bonus() only ever advances it on a
+        # genuine NEW-day claim, so anyone who already claimed today before this feature
+        # was deployed would sit at "0 days" until their NEXT visit, which reads as a
+        # bug ("I logged in today, why does it say 0?"). We have no history of exactly
+        # how many consecutive days they'd already been showing up (last_daily_bonus only
+        # ever stored the single most recent day, never a log), so this can't reconstruct
+        # a true past streak — it just sets a fair floor of 1 for anyone who has ever
+        # claimed at least once, so today counts as day 1 instead of day 0. Harmless to
+        # run on every startup: claim_daily_bonus() never sets streak_days back to 0
+        # itself, so once fixed a row never matches this WHERE again.
+        conn.execute(
+            "UPDATE users SET streak_days = 1 WHERE streak_days = 0 AND last_daily_bonus IS NOT NULL"
+        )
         # migration for the trade-history feature — market/swap trades previously
         # weren't logged at all once completed (only current ownership was kept), so
         # there was nothing to show in a "История" list. seller_id/completed_at (or
@@ -383,8 +401,8 @@ def get_or_create_user(telegram_id: int, username: str | None, first_name: str |
         signup_bonus = EARLY_SIGNUP_BONUS_GEMS if total_users < EARLY_SIGNUP_LIMIT else SIGNUP_BONUS_GEMS
         conn.execute(
             "INSERT INTO users (telegram_id, username, first_name, photo_url, ref_by, gems, gems_earned, "
-            "last_daily_bonus, created_at, ref_reward_pending) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (telegram_id, username, first_name, photo_url, ref_by, signup_bonus, signup_bonus, today, _now(), ref_reward_pending),
+            "last_daily_bonus, streak_days, created_at, ref_reward_pending) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (telegram_id, username, first_name, photo_url, ref_by, signup_bonus, signup_bonus, today, 1, _now(), ref_reward_pending),
         )
         return conn.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone(), True
 
@@ -511,24 +529,52 @@ def get_daily_bonus_info(user_id: int) -> dict:
     }
 
 
+# Login streak — consecutive CALENDAR days (UTC, same clock as last_daily_bonus) the
+# player has opened the app without a gap. Piggybacks on last_daily_bonus's existing
+# "did they already claim today" gate below instead of a separate column/date: the
+# streak only ever advances at the same moment the daily bonus does, so there's
+# nothing to keep in sync between two independent timers.
+STREAK_BONUS_PER_DAY = 5
+STREAK_BONUS_CAP_DAYS = 30  # streak bonus tops out at STREAK_BONUS_CAP_DAYS * STREAK_BONUS_PER_DAY gems/day
+
+
+def _streak_bonus_for(streak_days: int) -> int:
+    return min(streak_days, STREAK_BONUS_CAP_DAYS) * STREAK_BONUS_PER_DAY
+
+
+def get_streak_info(user_id: int) -> dict:
+    """Current streak length and the extra gems/day it's currently worth — for the
+    "День: N" tile in Profile and its info modal."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT streak_days FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+    days = row["streak_days"] if row else 0
+    return {"days": days, "bonus": _streak_bonus_for(days)}
+
+
 def claim_daily_bonus(user_id: int) -> int:
     """Credits the current daily-bonus amount (see _daily_bonus_amount_for — grows +25
-    every 30 days since signup) once per calendar day (UTC) the user opens the app —
-    returns the amount credited (0 if they already claimed today, or the signup day,
-    since new users already get SIGNUP_BONUS_GEMS and last_daily_bonus is pre-set
-    to that day in get_or_create_user)."""
-    today = datetime.now(timezone.utc).date().isoformat()
+    every 30 days since signup, plus the login-streak bonus below) once per calendar
+    day (UTC) the user opens the app — returns the amount credited (0 if they already
+    claimed today, or the signup day, since new users already get SIGNUP_BONUS_GEMS
+    and last_daily_bonus is pre-set to that day in get_or_create_user). Also advances
+    streak_days: +1 if the last credited day was yesterday, reset to 1 otherwise (a
+    missed day breaks the streak, same as any login-streak feature)."""
+    today_date = datetime.now(timezone.utc).date()
+    today = today_date.isoformat()
+    yesterday = (today_date - timedelta(days=1)).isoformat()
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT last_daily_bonus, created_at FROM users WHERE telegram_id = ?", (user_id,)
+            "SELECT last_daily_bonus, created_at, streak_days FROM users WHERE telegram_id = ?", (user_id,)
         ).fetchone()
         if row is None or row["last_daily_bonus"] == today:
             return 0
+        new_streak = (row["streak_days"] or 0) + 1 if row["last_daily_bonus"] == yesterday else 1
         days_elapsed = (datetime.now(timezone.utc) - _parse_utc(row["created_at"])).days
-        amount = _daily_bonus_amount_for(days_elapsed)
+        amount = _daily_bonus_amount_for(days_elapsed) + _streak_bonus_for(new_streak)
         conn.execute(
-            "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ?, last_daily_bonus = ? WHERE telegram_id = ?",
-            (amount, amount, today, user_id),
+            "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ?, last_daily_bonus = ?, "
+            "streak_days = ? WHERE telegram_id = ?",
+            (amount, amount, today, new_streak, user_id),
         )
         return amount
 
@@ -593,12 +639,15 @@ def get_users_missing_daily_bonus() -> list[int]:
         return [r["telegram_id"] for r in rows]
 
 
-def add_card_to_catalog(filename: str, name: str | None = None) -> int:
-    """Register one image file in the catalog. Call this once per image you drop into static/cards/."""
+def add_card_to_catalog(filename: str, name: str | None = None, rarity: str = "silver") -> int:
+    """Register one image file in the catalog. Call this once per image you drop into static/cards/.
+    rarity is passed explicitly (defaulting to "silver") rather than left to the column's DEFAULT,
+    since older production DBs still carry a stale DEFAULT of 'rare' from before the silver/gold/
+    platinum/diamond tier rename — relying on it silently mislabels every new card."""
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO cards (filename, name, is_active, created_at) VALUES (?, ?, 1, ?)",
-            (filename, name, _now()),
+            "INSERT INTO cards (filename, name, rarity, is_active, created_at) VALUES (?, ?, ?, 1, ?)",
+            (filename, name, rarity, _now()),
         )
         return cur.lastrowid
 
@@ -2459,6 +2508,27 @@ def get_pvp_history(limit: int = 50) -> list[dict]:
                 "total_players": total_players,
             })
     return out
+
+
+def get_pvp_win_leaderboard(limit: int = 10, exclude_id: int | None = None) -> list[dict]:
+    """Top players by total resolved PvP round wins, highest first. exclude_id leaves
+    one telegram_id out entirely (used to keep the dev's own account off the public
+    leaderboard, same convention as get_ref_leaderboard())."""
+    with get_conn() as conn:
+        query = (
+            "SELECT pr.winner_id AS telegram_id, u.username AS username, u.first_name AS first_name, "
+            "COUNT(*) AS wins "
+            "FROM pvp_rounds pr JOIN users u ON u.telegram_id = pr.winner_id "
+            "WHERE pr.status = 'resolved' AND pr.winner_id IS NOT NULL"
+        )
+        params: list = []
+        if exclude_id is not None:
+            query += " AND pr.winner_id != ?"
+            params.append(exclude_id)
+        query += " GROUP BY pr.winner_id ORDER BY wins DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
 
 
 def resolve_due_pvp_rounds() -> list[dict]:
