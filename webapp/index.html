@@ -466,6 +466,11 @@
     display:inline-block;
   }
   #wall-sub{font-size:11.5px; color:#888; line-height:1.5; margin-bottom:12px;}
+  #wall-close-bottom{
+    margin-top:16px; width:100%;
+    background:rgba(255,255,255,.08); color:#ccc; border:none; border-radius:12px;
+    padding:12px; font-size:13px; font-weight:700; cursor:pointer;
+  }
   .grid-item.pinned{
     border-color:#ec4899;
     box-shadow:0 0 0 2px rgba(236,72,153,.5);
@@ -2223,6 +2228,7 @@
       <div id="wall-title">Стена</div>
       <div id="wall-sub"></div>
       <div class="grid" id="wall-grid"></div>
+      <button id="wall-close-bottom">Закрыть</button>
     </div>
   </div>
 
@@ -2375,17 +2381,16 @@ function minListingPrice(rarity){
 }
 let initData = tg?.initData || "";
 let inventory = [];
-// Gems shown as "∞" past this threshold (used for a dev/testing account with a huge
-// balance via /addgem — not a real game mechanic). gemsBalance tracks the real numeric
-// value separately from the displayed text, so client-side "can I afford this" checks
-// still work correctly even while the display shows the infinity symbol.
-const GEMS_INFINITE_DISPLAY_THRESHOLD = 1000000;
+// The infinity symbol is shown ONLY on the admin's own account (isAdminUser, set from
+// /auth's is_admin flag in loadProfile()) — a cosmetic flex for the dev, never for real
+// players, who always see their honest balance. gemsBalance tracks the real numeric
+// value separately from the displayed text either way, so client-side "can I afford
+// this" checks stay correct even while the admin's display shows the infinity symbol.
+let isAdminUser = false;
 let gemsBalance = 0;
 function setGemsDisplay(n){
-  // Always shown as the infinity symbol, never the raw number — gemsBalance still
-  // tracks the real balance underneath for client-side afford-checks.
   gemsBalance = n;
-  document.getElementById("gems-amount").textContent = "∞";
+  document.getElementById("gems-amount").textContent = isAdminUser ? "∞" : n;
 }
 let daysUntilNextIncome = null;
 let selectedUserCardId = null;
@@ -2574,6 +2579,7 @@ let currentStreak = { days: 1, bonus: 2 };
 async function refreshGems(){
   try{
     const auth = await api("/auth");
+    isAdminUser = !!auth.is_admin;
     setGemsDisplay(auth.gems);
     applyPlayerRank(auth.player_rank);
     myTelegramId = auth.telegram_id;
@@ -3588,7 +3594,7 @@ function openPvpPicker(){
 function renderPvpPickerGrid(){
   const grid = document.getElementById("pvp-picker-grid");
   const available = inventory
-    .filter(c => !c.listed_price && !c.swap_listed && !c.staked_at && !c.pvp_round_id)
+    .filter(c => !c.listed_price && !c.swap_listed && !c.staked_at && !c.pvp_round_id && !c.pinned_at)
     // Bronze always first (same "worst first" ordering as the market's Bronze filter) —
     // makes it easy to stake your least valuable cards without hunting for them.
     .sort((a, b) => (RARITY_ORDER[b.rarity] ?? 4) - (RARITY_ORDER[a.rarity] ?? 4));
@@ -3852,7 +3858,7 @@ function startFarmAnimation(cards, hintHTML){
     }, 180);
   }
 
-  const duration = 5000;
+  const duration = 4000;
   const start = Date.now();
   return new Promise(resolve=>{
     clearInterval(farmProgressTimer);
@@ -3922,6 +3928,7 @@ document.getElementById("farm-btn").addEventListener("click", async ()=>{
 async function loadProfile(){
   try{
     const auth = await api("/auth");
+    isAdminUser = !!auth.is_admin;
     document.getElementById("profile-name").textContent = auth.first_name || auth.username || "Игрок";
     document.getElementById("profile-username").textContent = auth.username ? `@${auth.username}` : "";
     const avatarEl = document.getElementById("profile-avatar");
@@ -4056,6 +4063,9 @@ document.getElementById("wall-open-btn").addEventListener("click", ()=>{
 document.getElementById("wall-close").addEventListener("click", ()=>{
   document.getElementById("wall-overlay").classList.remove("active");
 });
+document.getElementById("wall-close-bottom").addEventListener("click", ()=>{
+  document.getElementById("wall-overlay").classList.remove("active");
+});
 
 let modalIndex = -1;
 
@@ -4168,7 +4178,7 @@ document.getElementById("rank-info-overlay").addEventListener("click", (e)=>{
 
 function updateCraftButton(item){
   const btn = document.getElementById("modal-craft");
-  const busy = !!(item.staked_at || item.listed_price || item.swap_listed || item.pvp_round_id);
+  const busy = !!(item.staked_at || item.listed_price || item.swap_listed || item.pvp_round_id || item.pinned_at);
   btn.disabled = busy;
   btn.classList.toggle("disabled", busy);
   if(busy){
@@ -4182,6 +4192,11 @@ function updateSellButton(item){
   const btn = document.getElementById("modal-sell");
   btn.classList.remove("active", "listed");
   btn.disabled = false;
+  if(item.pinned_at){
+    btn.textContent = "Закреплено на Стене";
+    btn.disabled = true;
+    return;
+  }
   if(item.pvp_round_id){
     btn.textContent = "В игре (PvP)";
     btn.disabled = true;
@@ -4204,6 +4219,11 @@ function updateSwapButton(item){
   const btn = document.getElementById("modal-swap");
   btn.classList.remove("active", "listed");
   btn.disabled = false;
+  if(item.pinned_at){
+    btn.textContent = "Закреплено на Стене";
+    btn.disabled = true;
+    return;
+  }
   if(item.pvp_round_id){
     btn.textContent = "В игре (PvP)";
     btn.disabled = true;
@@ -4965,7 +4985,7 @@ function openBurnPicker(recipe){
 
 function renderBurnPickerGrid(){
   const grid = document.getElementById("burn-picker-grid");
-  const eligible = inventory.filter(c => c.rarity === burnPickerRarity && !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at);
+  const eligible = inventory.filter(c => c.rarity === burnPickerRarity && !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.pinned_at);
   if(eligible.length === 0){
     grid.innerHTML = `<div class="empty-state">Нет подходящих карт</div>`;
     return;

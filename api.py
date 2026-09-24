@@ -235,6 +235,10 @@ def auth(body: InitDataBody):
         "photo_url": user["photo_url"],
         "referrals": db.get_referral_count(user["telegram_id"]),
         "gems": db.get_gems(user["telegram_id"]),
+        # Only true for ADMIN_ID (the dev's own account) — the ONLY account the
+        # webapp is allowed to show an infinity gems display for. Every other
+        # player always sees their real, honest balance.
+        "is_admin": bool(ADMIN_ID) and str(user["telegram_id"]) == str(ADMIN_ID),
         "is_new": user["_is_new"],
         "daily_bonus": daily_bonus,
         "daily_bonus_amount": bonus_info["amount"],

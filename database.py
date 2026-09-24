@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS users (
     gems_earned   INTEGER NOT NULL DEFAULT 0,
     last_daily_bonus TEXT,
     streak_days   INTEGER NOT NULL DEFAULT 0,
-    created_at    TEXT NOT NULL
+    created_at    TEXT NOT NULL,
+    last_seen_at  TEXT
 );
 
 CREATE TABLE IF NOT EXISTS cards (
@@ -137,6 +138,28 @@ CREATE TABLE IF NOT EXISTS giveaway_entries (
     user_id       INTEGER NOT NULL REFERENCES users(telegram_id),
     joined_at     TEXT NOT NULL,
     UNIQUE(giveaway_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS number_giveaways (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id      INTEGER NOT NULL,
+    user_card_id  INTEGER NOT NULL REFERENCES user_cards(id),
+    number        INTEGER NOT NULL,
+    card_name     TEXT,
+    card_rarity   TEXT,
+    card_filename TEXT,
+    created_at    TEXT NOT NULL,
+    draw_at       TEXT NOT NULL,
+    drawn_at      TEXT,
+    message_id    INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS number_giveaway_entries (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    number_giveaway_id  INTEGER NOT NULL REFERENCES number_giveaways(id),
+    user_id             INTEGER NOT NULL REFERENCES users(telegram_id),
+    joined_at           TEXT NOT NULL,
+    UNIQUE(number_giveaway_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS hundred_club (
@@ -369,6 +392,10 @@ def init_db():
         # the PvP reveal, since there's nowhere client-side to remember it either).
         if "referral_reward_notice" not in u_cols:
             conn.execute("ALTER TABLE users ADD COLUMN referral_reward_notice TEXT")
+        # migration for last_seen_at (drives the /admin "active today" stat — updated
+        # every time a player's client calls /api/auth, i.e. every time they open the app)
+        if "last_seen_at" not in u_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN last_seen_at TEXT")
         # migration for purchasable player rank (see purchase_rank()/set_purchased_rank())
         # — a floor under the normal time-based rank, bought with Telegram Stars. 0 means
         # "nothing bought", so the time-based rank alone still applies.
@@ -466,10 +493,11 @@ def get_or_create_user(telegram_id: int, username: str | None, first_name: str |
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
         if row:
-            # keep profile fields fresh, never overwrite an existing ref_by
+            # keep profile fields fresh, never overwrite an existing ref_by; also stamp
+            # last_seen_at here since this runs on every /api/auth call, i.e. every app open
             conn.execute(
-                "UPDATE users SET username = ?, first_name = ?, photo_url = ? WHERE telegram_id = ?",
-                (username, first_name, photo_url, telegram_id),
+                "UPDATE users SET username = ?, first_name = ?, photo_url = ?, last_seen_at = ? WHERE telegram_id = ?",
+                (username, first_name, photo_url, _now(), telegram_id),
             )
             return conn.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone(), False
 
@@ -499,8 +527,9 @@ def get_or_create_user(telegram_id: int, username: str | None, first_name: str |
         signup_bonus = EARLY_SIGNUP_BONUS_GEMS if total_users < EARLY_SIGNUP_LIMIT else SIGNUP_BONUS_GEMS
         conn.execute(
             "INSERT INTO users (telegram_id, username, first_name, photo_url, ref_by, gems, gems_earned, "
-            "last_daily_bonus, streak_days, created_at, ref_reward_pending) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (telegram_id, username, first_name, photo_url, ref_by, signup_bonus, signup_bonus, today, 1, _now(), ref_reward_pending),
+            "last_daily_bonus, streak_days, created_at, ref_reward_pending, last_seen_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (telegram_id, username, first_name, photo_url, ref_by, signup_bonus, signup_bonus, today, 1, _now(), ref_reward_pending, _now()),
         )
         return conn.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone(), True
 
@@ -990,7 +1019,8 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
             f"SELECT uc.id FROM user_cards uc JOIN cards c ON c.id = uc.card_id "
             f"WHERE uc.id IN ({placeholders}) AND uc.user_id = ? AND c.rarity = ? "
             f"AND uc.listed_price IS NULL AND uc.swap_listed = 0 "
-            f"AND uc.staked_at IS NULL AND uc.pvp_round_id IS NULL AND uc.voided = 0",
+            f"AND uc.staked_at IS NULL AND uc.pvp_round_id IS NULL AND uc.voided = 0 "
+            f"AND uc.pinned_at IS NULL",
             (*user_card_ids, user_id, rarity),
         ).fetchall()
         if len(rows) != count:
@@ -1203,7 +1233,7 @@ CRAFT_WEIGHTS = {
     "bronze":   {"bronze": 70, "silver": 16, "gold": 8, "platinum": 5, "diamond": 1},
     "silver":   {"silver": 76, "gold": 13, "platinum": 8, "diamond": 3},
     "gold":     {"gold": 80, "platinum": 10, "diamond": 10},
-    "platinum": {"platinum": 49, "diamond": 51},
+    "platinum": {"platinum": 50, "diamond": 50},
     # Diamond is the top tier — nowhere higher to go, so crafting one just re-rolls
     # another random Diamond (people reroll for a different Diamond card they want more).
     "diamond": {"diamond": 100},
@@ -1249,14 +1279,14 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
     gem balance is too low, CraftNotOwned if user_card_id isn't this user's."""
     with get_conn() as conn:
         owned = conn.execute(
-            "SELECT uc.id, uc.obtained_at, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, c.rarity "
+            "SELECT uc.id, uc.obtained_at, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, uc.pinned_at, c.rarity "
             "FROM user_cards uc JOIN cards c ON c.id = uc.card_id "
             "WHERE uc.id = ? AND uc.user_id = ?",
             (user_card_id, user_id),
         ).fetchone()
         if owned is None:
             raise CraftNotOwned()
-        if owned["listed_price"] is not None or owned["swap_listed"] or owned["staked_at"] is not None or owned["pvp_round_id"] is not None:
+        if owned["listed_price"] is not None or owned["swap_listed"] or owned["staked_at"] is not None or owned["pvp_round_id"] is not None or owned["pinned_at"] is not None:
             raise CraftNotOwned()
         cost = get_craft_cost(owned["rarity"])
         gems_row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
@@ -1384,8 +1414,15 @@ def _finalize_expired_number_auctions(conn: sqlite3.Connection) -> None:
 # LOW number up to LOW_NUMBER_SEED_UP_TO (1..25) — both get proactively surfaced in
 # the marketplace the moment they are not held by any live card, instead of waiting
 # for someone to burn/evolve a card that happened to hold one.
-VANITY_NUMBERS = [11, 22, 33, 44, 55, 66, 67, 77, 88, 99, 111, 222, 333, 444, 555, 666, 777, 888, 999]
+VANITY_NUMBERS = [11, 22, 33, 44, 55, 66, 67, 69, 77, 88, 99, 111, 222, 333, 444, 555, 666, 777, 888, 999]
 LOW_NUMBER_SEED_UP_TO = 25
+# The auction/free pool is intentionally curated, not "every number any card ever
+# held" — a card being burned/evolved still frees whatever number it had (via
+# _free_number, tracked in card_numbers as usual), but the board only shows and the
+# bid endpoint only accepts numbers in this exact set: VANITY_NUMBERS plus every low
+# number 1..LOW_NUMBER_SEED_UP_TO. Anything else that gets freed just sits untracked
+# in the UI — not for sale, by design.
+ALLOWED_AUCTION_NUMBERS = frozenset(VANITY_NUMBERS) | frozenset(range(1, LOW_NUMBER_SEED_UP_TO + 1))
 
 
 def _seed_number_if_unclaimed(conn: sqlite3.Connection, n: int) -> None:
@@ -1425,16 +1462,21 @@ def seed_vanity_numbers(conn: sqlite3.Connection) -> None:
 
 def get_numbers_board(limit: int = 100) -> dict:
     """Top `limit` lowest numbers still free/up for auction (what the "Номера" screen
-    shows by default), plus every number currently listed for resale by another player."""
+    shows by default — restricted to ALLOWED_AUCTION_NUMBERS, see its comment), plus
+    every number currently listed for resale by another player (unrestricted — that's
+    a player reselling a number they already legitimately own)."""
     with get_conn() as conn:
         _finalize_expired_number_auctions(conn)
         seed_vanity_numbers(conn)
+        allowed = sorted(ALLOWED_AUCTION_NUMBERS)
+        placeholders = ",".join("?" for _ in allowed)
         auction_rows = conn.execute(
             "SELECT cn.number, cn.status, cn.highest_bid, cn.highest_bidder_id, cn.bid_expires_at, "
             "u.username AS bidder_username, u.first_name AS bidder_first_name "
             "FROM card_numbers cn LEFT JOIN users u ON u.telegram_id = cn.highest_bidder_id "
-            "WHERE cn.status IN ('free', 'auction') ORDER BY cn.number ASC LIMIT ?",
-            (limit,),
+            f"WHERE cn.status IN ('free', 'auction') AND cn.number IN ({placeholders}) "
+            "ORDER BY cn.number ASC LIMIT ?",
+            (*allowed, limit),
         ).fetchall()
         listing_rows = conn.execute(
             "SELECT cn.number, cn.list_price, cn.owner_id, u.username, u.first_name "
@@ -1465,7 +1507,11 @@ def get_my_numbers(user_id: int) -> list[dict]:
 def place_number_bid(user_id: int, number: int, amount_gems: int) -> dict:
     """Bids amount_gems on a free/currently-auctioned number. Gems are escrowed right
     away — refunded in full if someone outbids you, spent for good if you win. Every bid
-    (including the first one) resets the 24h countdown from that moment."""
+    (including the first one) resets the 24h countdown from that moment. Enforces
+    ALLOWED_AUCTION_NUMBERS server-side too — not just a UI filter — so a number that
+    was never meant to be for sale can't be bid on via a direct API call either."""
+    if number not in ALLOWED_AUCTION_NUMBERS:
+        raise NumberNotAvailable()
     with get_conn() as conn:
         _finalize_expired_number_auctions(conn)
         row = conn.execute("SELECT * FROM card_numbers WHERE number = ?", (number,)).fetchone()
@@ -1885,6 +1931,153 @@ def draw_giveaway(giveaway_id: int) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Number giveaways — admin picks ONE of their own cards by its display number (the
+# same number a player sees next to a card in the app) and raffles it off live in
+# PUBLIC_CHAT: a "Участвовать" button, anyone who taps it is entered, and after
+# duration_hours one random entrant wins that exact card. Deliberately NOT
+# reserved/locked server-side for the whole window the way listing/staking/PvP/Wall
+# are — this is admin-only and a short window, so the admin is simply expected not to
+# also sell/craft/burn/PvP/re-pin that exact card while its giveaway is pending.
+# draw_number_giveaway() re-checks at draw time and skips the transfer (reporting why)
+# if that assumption was broken.
+# ---------------------------------------------------------------------------
+
+class NumberGiveawayError(Exception):
+    """Raised by create_number_giveaway() when the admin doesn't currently own a
+    live, free (unbusy) card showing the given display number."""
+
+
+def _find_admin_number_card(conn: sqlite3.Connection, admin_id: int, number: int) -> sqlite3.Row | None:
+    rows = conn.execute(
+        """
+        SELECT uc.id AS user_card_id, c.filename, c.name, c.rarity,
+               uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, uc.pinned_at,
+               COALESCE(uc.number_override,
+                   (SELECT COUNT(*) FROM user_cards uc2 WHERE uc2.obtained_at <= uc.obtained_at)) AS drop_number
+        FROM user_cards uc
+        JOIN cards c ON c.id = uc.card_id
+        WHERE uc.user_id = ? AND uc.voided = 0
+        """,
+        (admin_id,),
+    ).fetchall()
+    return next((r for r in rows if r["drop_number"] == number), None)
+
+
+def create_number_giveaway(admin_id: int, number: int, duration_hours: float = 1.0) -> dict:
+    """Admin's /numbergiveaway command: validates the admin owns a free (not
+    listed/swapped/staked/in PvP/pinned to the Wall) card currently showing `number`,
+    creates a number_giveaways row that auto-draws after duration_hours, and returns
+    {"id", "card": {"user_card_id","name","rarity","filename","number"}}."""
+    with get_conn() as conn:
+        match = _find_admin_number_card(conn, admin_id, number)
+        if match is None:
+            raise NumberGiveawayError(f"у тебя нет карты с номером {number}")
+        if (match["listed_price"] is not None or match["swap_listed"] or match["staked_at"] is not None
+                or match["pvp_round_id"] is not None or match["pinned_at"] is not None):
+            raise NumberGiveawayError(f"карта №{number} сейчас занята (продажа/обмен/стейк/пвп/стена) — сними сначала")
+        draw_at = (datetime.now(timezone.utc) + timedelta(hours=duration_hours)).isoformat()
+        cur = conn.execute(
+            "INSERT INTO number_giveaways (admin_id, user_card_id, number, card_name, card_rarity, "
+            "card_filename, created_at, draw_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (admin_id, match["user_card_id"], number, match["name"], match["rarity"], match["filename"], _now(), draw_at),
+        )
+        return {
+            "id": cur.lastrowid,
+            "card": {
+                "user_card_id": match["user_card_id"], "name": match["name"],
+                "rarity": match["rarity"], "filename": match["filename"], "number": number,
+            },
+        }
+
+
+def set_number_giveaway_message(giveaway_id: int, message_id: int):
+    with get_conn() as conn:
+        conn.execute("UPDATE number_giveaways SET message_id = ? WHERE id = ?", (message_id, giveaway_id))
+
+
+def join_number_giveaway(giveaway_id: int, user_id: int) -> str:
+    """Same return convention as join_giveaway(): 'joined', 'already_joined', 'drawn',
+    'not_found', plus 'is_admin' (the admin can't win their own card)."""
+    with get_conn() as conn:
+        giveaway = conn.execute(
+            "SELECT admin_id, drawn_at FROM number_giveaways WHERE id = ?", (giveaway_id,)
+        ).fetchone()
+        if giveaway is None:
+            return "not_found"
+        if giveaway["admin_id"] == user_id:
+            return "is_admin"
+        if giveaway["drawn_at"] is not None:
+            return "drawn"
+        existing = conn.execute(
+            "SELECT 1 FROM number_giveaway_entries WHERE number_giveaway_id = ? AND user_id = ?",
+            (giveaway_id, user_id),
+        ).fetchone()
+        if existing:
+            return "already_joined"
+        conn.execute(
+            "INSERT INTO number_giveaway_entries (number_giveaway_id, user_id, joined_at) VALUES (?, ?, ?)",
+            (giveaway_id, user_id, _now()),
+        )
+        return "joined"
+
+
+def get_due_number_giveaways() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM number_giveaways WHERE drawn_at IS NULL AND draw_at <= ?", (_now(),)
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def draw_number_giveaway(giveaway_id: int) -> dict:
+    """Randomly picks one entrant (if any) and transfers the card to them — same
+    ownership-reassignment pattern as create_card_giveaway(). Returns {"card",
+    "winner" (or None), "total_entries", "transferred" (bool), "reason" (set only when
+    a winner was picked but the transfer couldn't happen — e.g. the admin sold/used
+    the card meanwhile)}."""
+    with get_conn() as conn:
+        giveaway = conn.execute("SELECT * FROM number_giveaways WHERE id = ?", (giveaway_id,)).fetchone()
+        entries = [
+            dict(row) for row in conn.execute(
+                "SELECT u.telegram_id, u.username, u.first_name FROM number_giveaway_entries ge "
+                "JOIN users u ON u.telegram_id = ge.user_id WHERE ge.number_giveaway_id = ?",
+                (giveaway_id,),
+            ).fetchall()
+        ]
+        card = {
+            "number": giveaway["number"], "name": giveaway["card_name"],
+            "rarity": giveaway["card_rarity"], "filename": giveaway["card_filename"],
+        }
+        winner = random.choice(entries) if entries else None
+        transferred = False
+        reason = None
+        if winner is not None:
+            row = conn.execute(
+                "SELECT user_id, voided, listed_price, swap_listed, staked_at, pvp_round_id, pinned_at "
+                "FROM user_cards WHERE id = ?",
+                (giveaway["user_card_id"],),
+            ).fetchone()
+            if row is None or row["voided"] or row["user_id"] != giveaway["admin_id"]:
+                reason = "карта уже недоступна (продана/потрачена)"
+            elif (row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None
+                    or row["pvp_round_id"] is not None or row["pinned_at"] is not None):
+                reason = "карта сейчас занята (продажа/обмен/стейк/пвп/стена)"
+            else:
+                _detach_number_on_card_transfer(conn, giveaway["user_card_id"])
+                conn.execute(
+                    "UPDATE user_cards SET user_id = ?, listed_price = NULL, swap_listed = 0, "
+                    "staked_at = NULL, pvp_round_id = NULL, number_override = NULL, pinned_at = NULL WHERE id = ?",
+                    (winner["telegram_id"], giveaway["user_card_id"]),
+                )
+                transferred = True
+        conn.execute("UPDATE number_giveaways SET drawn_at = ? WHERE id = ?", (_now(), giveaway_id))
+        return {
+            "card": card, "winner": winner, "total_entries": len(entries),
+            "transferred": transferred, "reason": reason,
+        }
+
+
+# ---------------------------------------------------------------------------
 # "Hundred club" — a one-off contest that fires by itself exactly once, the moment
 # the 100th player ever registers (or immediately on first check after deploy, if
 # there are already 100+): draws 10 random winners from the first 100 registered
@@ -1944,13 +2137,13 @@ def list_card(user_card_id: int, seller_id: int, price_gems: int) -> bool:
     get_min_listing_price())."""
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT uc.user_id, uc.swap_listed, uc.staked_at, uc.pvp_round_id, c.rarity "
+            "SELECT uc.user_id, uc.swap_listed, uc.staked_at, uc.pvp_round_id, uc.pinned_at, c.rarity "
             "FROM user_cards uc JOIN cards c ON c.id = uc.card_id WHERE uc.id = ?",
             (user_card_id,),
         ).fetchone()
         if row is None or row["user_id"] != seller_id:
             return False
-        if row["swap_listed"] or row["staked_at"] is not None or row["pvp_round_id"] is not None:
+        if row["swap_listed"] or row["staked_at"] is not None or row["pvp_round_id"] is not None or row["pinned_at"] is not None:
             return False
         min_price = get_min_listing_price(row["rarity"])
         if price_gems < min_price:
@@ -2154,11 +2347,11 @@ def list_for_swap(user_card_id: int, seller_id: int) -> bool:
     Also blocked while the copy is staked — it has to be pulled out of staking first."""
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT user_id, listed_price, swap_listed, staked_at, pvp_round_id FROM user_cards WHERE id = ?", (user_card_id,)
+            "SELECT user_id, listed_price, swap_listed, staked_at, pvp_round_id, pinned_at FROM user_cards WHERE id = ?", (user_card_id,)
         ).fetchone()
         if row is None or row["user_id"] != seller_id:
             return False
-        if row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None or row["pvp_round_id"] is not None:
+        if row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None or row["pvp_round_id"] is not None or row["pinned_at"] is not None:
             return False
         conn.execute("UPDATE user_cards SET swap_listed = 1 WHERE id = ?", (user_card_id,))
         return True
@@ -2772,14 +2965,14 @@ def join_pvp_round(user_id: int, user_card_ids: list[int]) -> dict:
 
         for ucid in user_card_ids:
             row = conn.execute(
-                "SELECT user_id, listed_price, swap_listed, staked_at, pvp_round_id, card_id "
+                "SELECT user_id, listed_price, swap_listed, staked_at, pvp_round_id, pinned_at, card_id "
                 "FROM user_cards WHERE id = ?",
                 (ucid,),
             ).fetchone()
             if row is None or row["user_id"] != user_id:
                 raise PvpCardNotOwned()
             if (row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None
-                    or row["pvp_round_id"] is not None):
+                    or row["pvp_round_id"] is not None or row["pinned_at"] is not None):
                 raise PvpCardNotOwned()
             card_row = conn.execute("SELECT rarity FROM cards WHERE id = ?", (row["card_id"],)).fetchone()
             rarity = (card_row["rarity"] if card_row else None) or "bronze"
@@ -3086,12 +3279,26 @@ def get_admin_stats() -> dict:
         users = conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
         cards = conn.execute("SELECT COUNT(*) AS n FROM cards WHERE is_active = 1").fetchone()["n"]
         gems_total = conn.execute("SELECT COALESCE(SUM(gems), 0) AS n FROM users").fetchone()["n"]
+        seen_rows = conn.execute(
+            "SELECT last_seen_at FROM users WHERE last_seen_at IS NOT NULL"
+        ).fetchall()
+    # "Active today" = last_seen_at (stamped on every /api/auth call, i.e. every app open)
+    # falls on today's LOCAL (Tallinn) calendar date — same day-rollover convention used
+    # for streaks/daily bonus elsewhere, not a raw 24h window.
+    today_local_date = datetime.now(timezone.utc).astimezone(TALLINN_TZ).date()
+    active_today = sum(
+        1 for row in seen_rows
+        if _parse_utc(row["last_seen_at"]).astimezone(TALLINN_TZ).date() == today_local_date
+    )
     # Reuse get_total_farmed() instead of a separate raw COUNT(*) here — that raw query
     # used to forget the "WHERE voided = 0" filter that burn_cards()/craft_card() rely on,
     # so /admin showed a higher, stale card count than the in-app "Карты" figure once any
     # burning/evolution had happened. Sharing the one function keeps them from drifting again.
     total_farmed = get_total_farmed()
-    stats = {"users": users, "cards": cards, "gems_total": gems_total, "total_farmed": total_farmed}
+    stats = {
+        "users": users, "cards": cards, "gems_total": gems_total,
+        "total_farmed": total_farmed, "active_today": active_today,
+    }
     stats.update(get_action_counters())
     return stats
 

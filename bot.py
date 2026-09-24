@@ -173,15 +173,16 @@ async def handle_admin_panel(message: Message):
     stats = db.get_admin_stats()
     await message.answer(
         "👑 <b>Админ-панель Peeppo</b>\n\n"
-        f"Юзеров: <b>{stats['users']}</b>\n"
-        f"Карт в обороте: <b>{stats['total_farmed']}</b>\n"
-        f"Гемов в обороте: <b>{stats['gems_total']}</b> 💎\n"
-        f"Куплено кейсов: <b>{stats['cases_bought']}</b>\n"
-        f"Скрафчено карт: <b>{stats['cards_crafted']}</b>\n"
-        f"Эволюционировано карт: <b>{stats['cards_evolved']}</b>\n\n"
+        f"Юзеры: <b>{stats['users']}</b>\n"
+        f"Сегодня: <b>{stats['active_today']}</b>\n"
+        f"Карты: <b>{stats['total_farmed']}</b>\n"
+        f"Кейсы: <b>{stats['cases_bought']}</b>\n"
+        f"Крафт: <b>{stats['cards_crafted']}</b>\n"
+        f"Эволюция: <b>{stats['cards_evolved']}</b>\n\n"
         "<b>Команды:</b>\n"
         "/addgem id_или_@username кол-во — начислить гемы\n"
-        "/cardgiveaway [редкость] [кол-во] [мин] [макс] — мгновенный розыгрыш ТВОИХ карт среди всех юзеров бота",
+        "/cardgiveaway [редкость] [кол-во] [мин] [макс] — мгновенный розыгрыш ТВОИХ карт среди всех юзеров бота\n"
+        "/numbergiveaway номер [часов] — розыгрыш ТВОЕЙ карты с этим номером живьём в чате (кнопка «Участвовать», по умолчанию 1 час)",
         parse_mode="HTML",
     )
 
@@ -254,7 +255,7 @@ async def handle_admin_find_user(message: Message):
     )
 
 
-GEM_DROP_AMOUNT = 25
+GEM_DROP_AMOUNT = 100
 
 # Auto-scheduler: fires roughly once every hour, only between 06:00 and 00:00
 # (midnight) Tallinn local time. GEM_DROP_MIN_GAP_SECONDS guards against firing a
@@ -270,9 +271,7 @@ GEM_DROP_MIN_GAP_SECONDS = 3000
 
 async def _post_gem_drop(amount: int = GEM_DROP_AMOUNT, label: str = "💎 Дроп") -> bool:
     """Creates a gem drop and posts the "Забрать" button into PUBLIC_CHAT. Shared by
-    the manual /gem command, the automatic hourly scheduler, and the daily 100-gem
-    airdrop — label lets that last one read "Аирдроп" instead of "Дроп" so it reads as
-    a distinct, bigger event rather than just another regular drop."""
+    the manual /gem command and the automatic hourly scheduler."""
     drop_id = db.create_gem_drop(amount)
     kb = InlineKeyboardBuilder()
     kb.button(text="Забрать", callback_data=f"gem_claim:{drop_id}")
@@ -303,8 +302,8 @@ async def handle_admin_gem_drop(message: Message):
 async def gem_drop_scheduler():
     """Background loop living for the lifetime of the bot process: roughly once every
     hour, checks whether it's currently 06:00-00:00 in Tallinn and — if no drop went
-    out too recently — posts an automatic 25-gem drop into PUBLIC_CHAT."""
-    logger.info("gem drop scheduler started (06:00-00:00 Europe/Tallinn, ~every 1h)")
+    out too recently — posts an automatic GEM_DROP_AMOUNT-gem drop into PUBLIC_CHAT."""
+    logger.info("gem drop scheduler started (06:00-00:00 Europe/Tallinn, ~every 1h, %d gems)", GEM_DROP_AMOUNT)
     while True:
         try:
             now_local = datetime.now(GEM_DROP_TZ)
@@ -321,47 +320,6 @@ async def gem_drop_scheduler():
         except Exception:
             logger.exception("gem drop scheduler iteration failed")
         await asyncio.sleep(GEM_DROP_INTERVAL_SECONDS + random.randint(-180, 180))
-
-
-DAILY_AIRDROP_AMOUNT = 100
-DAILY_AIRDROP_MIN_GAP_SECONDS = 8 * 60 * 60  # ~3x/day
-# Cross-scheduler guard: the regular 25-gem drops check "any drop in the last hour"
-# before firing, but this loop used to only check its OWN 100-gem history — so it could
-# land seconds after a 25-gem drop and post two "Забрать" messages back to back. This
-# makes it respect the same any-drop gap too.
-MIN_GAP_SINCE_ANY_DROP_SECONDS = 900  # 15 min
-
-
-async def daily_airdrop_scheduler():
-    """Background loop living for the lifetime of the bot process: independently of
-    the regular ~1h/25-gem drops above, posts an extra big 100-gem first-come-first-
-    served drop into PUBLIC_CHAT roughly 3 times a day (~every 8 hours). Reuses the
-    exact same gem_drops table/claim mechanic as _post_gem_drop() — this is just a
-    bigger amount on its own cadence, tracked separately via
-    get_last_gem_drop_time_by_amount() so it doesn't get confused by the smaller drops
-    firing in between — but it ALSO checks get_last_gem_drop_time() (any amount) so it
-    never lands right on top of a recent 25-gem drop either."""
-    logger.info("daily airdrop scheduler started (~3x/day, %d gems)", DAILY_AIRDROP_AMOUNT)
-    while True:
-        try:
-            last = db.get_last_gem_drop_time_by_amount(DAILY_AIRDROP_AMOUNT)
-            due = True
-            if last:
-                last_dt = datetime.fromisoformat(last)
-                due = (datetime.now(timezone.utc) - last_dt).total_seconds() >= DAILY_AIRDROP_MIN_GAP_SECONDS
-            if due:
-                last_any = db.get_last_gem_drop_time()
-                if last_any:
-                    last_any_dt = datetime.fromisoformat(last_any)
-                    if (datetime.now(timezone.utc) - last_any_dt).total_seconds() < MIN_GAP_SINCE_ANY_DROP_SECONDS:
-                        due = False
-            if due:
-                ok = await _post_gem_drop(DAILY_AIRDROP_AMOUNT, label="🪂 Аирдроп")
-                if ok:
-                    logger.info("daily airdrop posted")
-        except Exception:
-            logger.exception("daily airdrop scheduler iteration failed")
-        await asyncio.sleep(3600)
 
 
 @dp.callback_query(F.data.startswith("gem_claim:"))
@@ -486,6 +444,99 @@ async def handle_admin_card_giveaway(message: Message):
     await message.answer(f"Готово — {result['total_distributed']} карт разыграно среди {len(result['winners'])} игроков, результат опубликован в {PUBLIC_CHAT}.")
 
 
+@dp.message(Command("numbergiveaway"))
+async def handle_admin_number_giveaway(message: Message):
+    """Admin-only: /numbergiveaway номер [часов] — posts a "Розыгрыш" of the ONE of
+    the admin's own cards currently showing that display number into PUBLIC_CHAT with
+    an "Участвовать" button, exactly like the regular in-chat gem drops (no deep link
+    needed — PUBLIC_CHAT is a real chat the bot is already a member of, so a plain
+    callback button works). After duration_hours (default 1), giveaway_scheduler picks
+    one random entrant and transfers the card to them."""
+    if not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 2:
+        await message.answer("Формат: /numbergiveaway номер [часов], например /numbergiveaway 67 1")
+        return
+    try:
+        number = int(parts[1])
+        hours = float(parts[2]) if len(parts) > 2 else 1.0
+    except ValueError:
+        await message.answer("Формат: /numbergiveaway номер [часов], например /numbergiveaway 67 1")
+        return
+
+    try:
+        result = db.create_number_giveaway(message.from_user.id, number, hours)
+    except db.NumberGiveawayError as e:
+        await message.answer(f"Не удалось разыграть: {e}")
+        return
+
+    card = result["card"]
+    kb = InlineKeyboardBuilder()
+    kb.button(text="Участвовать", callback_data=f"numgiveaway_join:{result['id']}")
+    text = (
+        f"🎉 Розыгрыш карты №{card['number']}!\n\n"
+        f"«{card['name'] or card['rarity']}» ({card['rarity']}) достанется одному случайному участнику.\n"
+        f"Жми «Участвовать» — итоги подведём тут же через {_format_hours(hours)}."
+    )
+    try:
+        sent = await bot.send_message(PUBLIC_CHAT, text, reply_markup=kb.as_markup())
+    except Exception:
+        await message.answer(f"Не удалось опубликовать в {PUBLIC_CHAT} — бот точно там состоит?")
+        return
+    db.set_number_giveaway_message(result["id"], sent.message_id)
+    await message.answer(f"Розыгрыш карты №{number} опубликован в {PUBLIC_CHAT}. Итоги через {_format_hours(hours)}.")
+
+
+@dp.callback_query(F.data.startswith("numgiveaway_join:"))
+async def handle_number_giveaway_join(call: CallbackQuery):
+    giveaway_id = int(call.data.split(":")[1])
+    # Register the tapper even if they've never DM'd the bot before — same as gem_claim.
+    db.get_or_create_user(
+        telegram_id=call.from_user.id,
+        username=call.from_user.username,
+        first_name=call.from_user.first_name,
+        ref_by=None,
+    )
+    status = db.join_number_giveaway(giveaway_id, call.from_user.id)
+    if status == "joined":
+        await call.answer("Ты участвуешь! Удачи 🍀", show_alert=True)
+    elif status == "already_joined":
+        await call.answer("Ты уже участвуешь", show_alert=True)
+    elif status == "is_admin":
+        await call.answer("Нельзя участвовать в своём же розыгрыше", show_alert=True)
+    elif status == "drawn":
+        await call.answer("Розыгрыш уже завершён", show_alert=True)
+    else:
+        await call.answer("Розыгрыш не найден", show_alert=True)
+
+
+async def _announce_number_giveaway_result(giveaway: dict, result: dict):
+    card = result["card"]
+    if result["winner"] and result["transferred"]:
+        w = result["winner"]
+        who = f"@{w['username']}" if w["username"] else (w["first_name"] or str(w["telegram_id"]))
+        text = (
+            f"🎉 Розыгрыш карты №{card['number']} завершён!\n\n"
+            f"Участников: {result['total_entries']}\n"
+            f"«{card['name'] or card['rarity']}» уходит игроку {who}!"
+        )
+    elif result["winner"] and not result["transferred"]:
+        text = (
+            f"🎉 Розыгрыш карты №{card['number']} завершён, но приз не выдан: {result['reason']}. "
+            f"Загляни в /admin, чтобы разобраться."
+        )
+    else:
+        text = f"🎉 Розыгрыш карты №{card['number']} завершён — участников не набралось, увы."
+    try:
+        if giveaway.get("message_id"):
+            await bot.edit_message_text(chat_id=PUBLIC_CHAT, message_id=giveaway["message_id"], text=text)
+        else:
+            await bot.send_message(PUBLIC_CHAT, text)
+    except Exception:
+        logger.warning("could not announce number giveaway %s result", giveaway["id"])
+
+
 async def _announce_giveaway_result(giveaway: dict, result: dict):
     winners = result["winners"]
     if winners:
@@ -511,13 +562,17 @@ async def _announce_giveaway_result(giveaway: dict, result: dict):
 
 async def giveaway_scheduler():
     """Background loop living for the lifetime of the bot process: every few minutes,
-    checks for giveaways whose draw time has passed and draws them."""
+    checks for giveaways whose draw time has passed and draws them — both the regular
+    gem giveaways and the admin's card-by-number chat giveaways."""
     logger.info("giveaway scheduler started")
     while True:
         try:
             for giveaway in db.get_due_giveaways():
                 result = db.draw_giveaway(giveaway["id"])
                 await _announce_giveaway_result(giveaway, result)
+            for giveaway in db.get_due_number_giveaways():
+                result = db.draw_number_giveaway(giveaway["id"])
+                await _announce_number_giveaway_result(giveaway, result)
         except Exception:
             logger.exception("giveaway scheduler iteration failed")
         await asyncio.sleep(300)
@@ -1023,7 +1078,6 @@ async def main():
     logger.info("Peeppo bot starting (polling)...")
     await check_hundred_club()  # in case we already had 100+ users before this deploy
     asyncio.create_task(gem_drop_scheduler())
-    asyncio.create_task(daily_airdrop_scheduler())
     asyncio.create_task(giveaway_scheduler())
     asyncio.create_task(ref_race_scheduler())
     await dp.start_polling(bot)
