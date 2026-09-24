@@ -256,14 +256,16 @@ async def handle_admin_find_user(message: Message):
 
 GEM_DROP_AMOUNT = 25
 
-# Auto-scheduler: fires roughly once every 2 hours, only between 06:00 and 22:00
-# Tallinn local time. GEM_DROP_MIN_GAP_SECONDS guards against firing a second drop too
-# soon if the bot process restarts a few times in a row (e.g. during a deploy).
+# Auto-scheduler: fires roughly once every hour, only between 06:00 and 00:00
+# (midnight) Tallinn local time. GEM_DROP_MIN_GAP_SECONDS guards against firing a
+# second drop too soon if the bot process restarts a few times in a row (e.g. during
+# a deploy) — kept a bit below GEM_DROP_INTERVAL_SECONDS so the +/-180s jitter on the
+# sleep below never causes a legitimate hourly drop to be skipped.
 GEM_DROP_TZ = ZoneInfo("Europe/Tallinn")
 GEM_DROP_START_HOUR = 6
-GEM_DROP_END_HOUR = 22
-GEM_DROP_INTERVAL_SECONDS = 7200
-GEM_DROP_MIN_GAP_SECONDS = 3600
+GEM_DROP_END_HOUR = 24
+GEM_DROP_INTERVAL_SECONDS = 3600
+GEM_DROP_MIN_GAP_SECONDS = 3000
 
 
 async def _post_gem_drop(amount: int = GEM_DROP_AMOUNT, label: str = "💎 Дроп") -> bool:
@@ -300,9 +302,9 @@ async def handle_admin_gem_drop(message: Message):
 
 async def gem_drop_scheduler():
     """Background loop living for the lifetime of the bot process: roughly once every
-    2 hours, checks whether it's currently 06:00-22:00 in Tallinn and — if no drop went
+    hour, checks whether it's currently 06:00-00:00 in Tallinn and — if no drop went
     out too recently — posts an automatic 25-gem drop into PUBLIC_CHAT."""
-    logger.info("gem drop scheduler started (06:00-22:00 Europe/Tallinn, ~every 2h)")
+    logger.info("gem drop scheduler started (06:00-00:00 Europe/Tallinn, ~every 1h)")
     while True:
         try:
             now_local = datetime.now(GEM_DROP_TZ)
@@ -322,17 +324,24 @@ async def gem_drop_scheduler():
 
 
 DAILY_AIRDROP_AMOUNT = 100
-DAILY_AIRDROP_MIN_GAP_SECONDS = 24 * 60 * 60
+DAILY_AIRDROP_MIN_GAP_SECONDS = 8 * 60 * 60  # ~3x/day
+# Cross-scheduler guard: the regular 25-gem drops check "any drop in the last hour"
+# before firing, but this loop used to only check its OWN 100-gem history — so it could
+# land seconds after a 25-gem drop and post two "Забрать" messages back to back. This
+# makes it respect the same any-drop gap too.
+MIN_GAP_SINCE_ANY_DROP_SECONDS = 900  # 15 min
 
 
 async def daily_airdrop_scheduler():
     """Background loop living for the lifetime of the bot process: independently of
-    the regular ~2h/25-gem drops above, posts one extra big 100-gem first-come-first-
-    served drop into PUBLIC_CHAT roughly once every 24 hours. Reuses the exact same
-    gem_drops table/claim mechanic as _post_gem_drop() — this is just a bigger amount
-    on its own daily cadence, tracked separately via get_last_gem_drop_time_by_amount()
-    so it doesn't get confused by the smaller drops firing in between."""
-    logger.info("daily airdrop scheduler started (~once every 24h, %d gems)", DAILY_AIRDROP_AMOUNT)
+    the regular ~1h/25-gem drops above, posts an extra big 100-gem first-come-first-
+    served drop into PUBLIC_CHAT roughly 3 times a day (~every 8 hours). Reuses the
+    exact same gem_drops table/claim mechanic as _post_gem_drop() — this is just a
+    bigger amount on its own cadence, tracked separately via
+    get_last_gem_drop_time_by_amount() so it doesn't get confused by the smaller drops
+    firing in between — but it ALSO checks get_last_gem_drop_time() (any amount) so it
+    never lands right on top of a recent 25-gem drop either."""
+    logger.info("daily airdrop scheduler started (~3x/day, %d gems)", DAILY_AIRDROP_AMOUNT)
     while True:
         try:
             last = db.get_last_gem_drop_time_by_amount(DAILY_AIRDROP_AMOUNT)
@@ -340,6 +349,12 @@ async def daily_airdrop_scheduler():
             if last:
                 last_dt = datetime.fromisoformat(last)
                 due = (datetime.now(timezone.utc) - last_dt).total_seconds() >= DAILY_AIRDROP_MIN_GAP_SECONDS
+            if due:
+                last_any = db.get_last_gem_drop_time()
+                if last_any:
+                    last_any_dt = datetime.fromisoformat(last_any)
+                    if (datetime.now(timezone.utc) - last_any_dt).total_seconds() < MIN_GAP_SINCE_ANY_DROP_SECONDS:
+                        due = False
             if due:
                 ok = await _post_gem_drop(DAILY_AIRDROP_AMOUNT, label="🪂 Аирдроп")
                 if ok:
@@ -632,6 +647,18 @@ async def notify_card_sold(seller_id: int, buyer_name: str, card_name: str | Non
         await bot.send_message(seller_id, f"{buyer_name} купил(а) твою «{name}» за {price} 💎")
     except Exception:
         logger.warning("could not notify seller %s of a sale", seller_id)
+
+
+async def notify_diamond_farmed(who_name: str, card_name: str):
+    """Posted to PUBLIC_CHAT whenever anyone farms a Diamond card — social-proof/FOMO
+    hook so the chat sees big drops happening live. Best-effort, never blocks the farm."""
+    try:
+        await bot.send_message(
+            PUBLIC_CHAT,
+            f"🎉 Игрок {who_name} зафармил «{card_name}» (Diamond)!",
+        )
+    except Exception:
+        logger.warning("could not announce diamond farm to %s", PUBLIC_CHAT)
 
 
 async def notify_new_offer(seller_id: int, offer_id: int, buyer_name: str, card_name: str | None,

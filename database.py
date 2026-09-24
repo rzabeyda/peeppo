@@ -15,6 +15,7 @@ Design notes (per project decisions):
 
 import sqlite3
 import random
+import json
 from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
@@ -182,6 +183,36 @@ CREATE TABLE IF NOT EXISTS crypto_withdrawal_cards (
 
 CREATE INDEX IF NOT EXISTS idx_crypto_withdrawal_cards_wd ON crypto_withdrawal_cards(withdrawal_id);
 
+-- Card-number marketplace: drop_number is normally the live count of user_cards rows
+-- with obtained_at <= this row's own (see get_inventory()) — but a row can instead
+-- carry user_cards.number_override, a permanently PINNED number that always wins over
+-- the computed one. That's what buying/winning a number actually sets — a real stored
+-- value, not a timestamp trick — because a voided row is never deleted (FK history) and
+-- still silently counts in that live formula forever, so reproducing someone's old
+-- number by copying their old timestamp would double-count and drift everyone's numbers
+-- who came after it. card_numbers is a small state machine keyed by the number itself:
+--   free    — nobody has bid on it, open for auction at NUMBER_MIN_BID_GEMS
+--   auction — has a highest_bid/highest_bidder_id, bid_expires_at counts down 24h from
+--             the LAST bid; when it lapses the number flips to 'owned'
+--   owned   — owner_id owns it outright; user_card_id is set when it's currently pinned
+--             on one of their cards (NULL means "won but not attached yet"), and
+--             list_price is set when they've put it up for resale to another player
+-- See _free_number() / place_number_bid() / attach_number() / list_number_for_sale() /
+-- buy_listed_number().
+CREATE TABLE IF NOT EXISTS card_numbers (
+    number              INTEGER PRIMARY KEY,
+    status              TEXT NOT NULL DEFAULT 'free',
+    owner_id            INTEGER REFERENCES users(telegram_id),
+    user_card_id        INTEGER REFERENCES user_cards(id),
+    highest_bid         INTEGER,
+    highest_bidder_id   INTEGER REFERENCES users(telegram_id),
+    bid_expires_at      TEXT,
+    list_price          INTEGER,
+    updated_at          TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_card_numbers_owner ON card_numbers(owner_id);
+
 -- Auto-compensation: whenever a card is retired (is_active 1 -> 0), every
 -- current owner gets +25 gems per copy they hold, automatically — no matter
 -- how the deactivation happens (script, admin query, anything).
@@ -207,6 +238,52 @@ def _bump_counter(conn: sqlite3.Connection, action: str, by: int = 1) -> None:
         "INSERT INTO action_counters (action, count) VALUES (?, ?) "
         "ON CONFLICT(action) DO UPDATE SET count = count + excluded.count",
         (action, by),
+    )
+
+
+def _free_number(conn: sqlite3.Connection, user_card_id: int) -> None:
+    """Captures the number a row CURRENTLY shows — its number_override if it has one
+    (also covers a number cycling free -> bought -> free again), otherwise the live
+    count formula — into card_numbers as 'free', right before that row stops showing it
+    (voided, or about to be reused for a different card). A number can pass through this
+    many times over the game's life, so this is an upsert, not a one-shot insert. No-op
+    if the row doesn't exist."""
+    row = conn.execute(
+        "SELECT obtained_at, number_override FROM user_cards WHERE id = ?", (user_card_id,)
+    ).fetchone()
+    if row is None:
+        return
+    if row["number_override"] is not None:
+        number = row["number_override"]
+    else:
+        number = conn.execute(
+            "SELECT COUNT(*) FROM user_cards WHERE obtained_at <= ?", (row["obtained_at"],)
+        ).fetchone()[0]
+    now = _now()
+    conn.execute(
+        """
+        INSERT INTO card_numbers (number, status, updated_at)
+        VALUES (?, 'free', ?)
+        ON CONFLICT(number) DO UPDATE SET
+            status = 'free', owner_id = NULL, user_card_id = NULL,
+            highest_bid = NULL, highest_bidder_id = NULL, bid_expires_at = NULL,
+            list_price = NULL, updated_at = excluded.updated_at
+        """,
+        (number, now),
+    )
+
+
+def _detach_number_on_card_transfer(conn: sqlite3.Connection, user_card_id: int) -> None:
+    """When a card that may be carrying a pinned/purchased number changes owner
+    (sold, traded, gifted, transferred, lost in PvP, given away), the NUMBER itself
+    stays with whoever owns it in card_numbers (owner_id is left untouched) -- but
+    card_numbers.user_card_id must stop pointing at this row, since the card no
+    longer belongs to that owner. The original owner can then re-attach the freed
+    number to another one of their own cards, or resell it. No-op if no card_numbers
+    row currently points at this card."""
+    conn.execute(
+        "UPDATE card_numbers SET user_card_id = NULL, updated_at = ? WHERE user_card_id = ?",
+        (_now(), user_card_id),
     )
 
 
@@ -253,6 +330,10 @@ def init_db():
             conn.execute("ALTER TABLE user_cards ADD COLUMN listed_price INTEGER")
         if "swap_listed" not in uc_cols:
             conn.execute("ALTER TABLE user_cards ADD COLUMN swap_listed INTEGER NOT NULL DEFAULT 0")
+        if "number_override" not in uc_cols:
+            conn.execute("ALTER TABLE user_cards ADD COLUMN number_override INTEGER")
+        if "pinned_at" not in uc_cols:
+            conn.execute("ALTER TABLE user_cards ADD COLUMN pinned_at TEXT")
         # migration for DBs created before gems existed
         u_cols = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
         if "gems" not in u_cols:
@@ -349,8 +430,25 @@ def init_db():
 
 
 DAILY_BONUS_GEMS = 25
-REFERRAL_REWARD_GEMS = 25
+# Graduated referral payout: bigger rewards for the referrer's later invites (in the
+# same signup), to encourage inviting more than just one friend. Referrals past
+# MAX_REWARDED_REFERRALS still count (get_referral_count/leaderboards keep growing)
+# but never pay out gems.
+REFERRAL_REWARD_SCHEDULE = [25, 50, 100, 200, 300, 400, 500]  # 1st..7th referral
+REFERRAL_REWARD_STEP_GEMS = 50  # +50 per referral after the 7th, up to the cap below
 MAX_REWARDED_REFERRALS = 10  # after this many, referrals still count but stop paying out
+
+
+def _referral_reward_for_position(position: int) -> int:
+    """position is 0-indexed (0 = this referrer's 1st referral this run). Returns the
+    gem reward due for that position — REFERRAL_REWARD_SCHEDULE for the first 7, then
+    +REFERRAL_REWARD_STEP_GEMS per referral after that, 0 once past MAX_REWARDED_REFERRALS."""
+    if position >= MAX_REWARDED_REFERRALS:
+        return 0
+    if position < len(REFERRAL_REWARD_SCHEDULE):
+        return REFERRAL_REWARD_SCHEDULE[position]
+    extra_steps = position - len(REFERRAL_REWARD_SCHEDULE) + 1
+    return REFERRAL_REWARD_SCHEDULE[-1] + REFERRAL_REWARD_STEP_GEMS * extra_steps
 SIGNUP_BONUS_GEMS = 50
 EARLY_SIGNUP_BONUS_GEMS = 100
 EARLY_SIGNUP_LIMIT = 100  # the first 100 users ever to register get EARLY_SIGNUP_BONUS_GEMS
@@ -396,7 +494,7 @@ def get_or_create_user(telegram_id: int, username: str | None, first_name: str |
         # Still capped at their first MAX_REWARDED_REFERRALS invites, same as before —
         # referrals beyond that still count (get_referral_count keeps growing) but never
         # flip this flag, so they simply never pay out.
-        ref_reward_pending = 1 if (ref_by is not None and prior_referrals < MAX_REWARDED_REFERRALS) else 0
+        ref_reward_pending = _referral_reward_for_position(prior_referrals) if ref_by is not None else 0
         total_users = conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
         signup_bonus = EARLY_SIGNUP_BONUS_GEMS if total_users < EARLY_SIGNUP_LIMIT else SIGNUP_BONUS_GEMS
         conn.execute(
@@ -697,14 +795,16 @@ def _draw_card_weighted(weights: dict[str, float]) -> sqlite3.Row | None:
 
 
 CASE_DEFS = {
-    "hamster": {"name": "Хомяк", "price": 50, "image": "case/case_hamster.jpg",
-                "weights": {"bronze": 40, "silver": 30, "gold": 18, "platinum": 9, "diamond": 3}},
-    "duck": {"name": "Уточка", "price": 100, "image": "case/case_utya.jpg",
-             "weights": {"bronze": 25, "silver": 30, "gold": 25, "platinum": 14, "diamond": 6}},
-    "capybara": {"name": "Капибара", "price": 200, "image": "case/case_capybara.jpg",
-                 "weights": {"bronze": 10, "silver": 25, "gold": 33, "platinum": 22, "diamond": 10}},
-    "pepe": {"name": "Пепе", "price": 500, "image": "case/case_pep.jpg",
-             "weights": {"silver": 5, "gold": 25, "platinum": 45, "diamond": 25}},
+    # Each case is themed around ONE target tier — the clear best source for that tier
+    # among all four cases — rather than a flat price->ROI curve.
+    "hamster": {"name": "Хомяк", "price": 50, "image": "case/case_hamster.jpg",  # best for Silver
+                "weights": {"bronze": 50, "silver": 40, "gold": 7, "platinum": 2, "diamond": 1}},
+    "duck": {"name": "Уточка", "price": 100, "image": "case/case_utya.jpg",  # best for Gold
+             "weights": {"bronze": 30, "silver": 25, "gold": 35, "platinum": 8, "diamond": 2}},
+    "capybara": {"name": "Капибара", "price": 200, "image": "case/case_capybara.jpg",  # best for Platinum
+                 "weights": {"bronze": 10, "silver": 15, "gold": 25, "platinum": 40, "diamond": 10}},
+    "pepe": {"name": "Пепе", "price": 500, "image": "case/case_pep.jpg",  # best for Diamond
+             "weights": {"silver": 5, "gold": 10, "platinum": 20, "diamond": 65}},
 }
 
 
@@ -796,9 +896,11 @@ def create_card_giveaway(admin_id: int, rarity: str, total_cards: int,
             amount = min(random.randint(min_per_winner, max_per_winner), len(pool_ids))
             given_ids = [pool_ids.pop() for _ in range(amount)]
             placeholders = ",".join("?" for _ in given_ids)
+            for gid in given_ids:
+                _detach_number_on_card_transfer(conn, gid)
             conn.execute(
                 f"UPDATE user_cards SET user_id = ?, listed_price = NULL, swap_listed = 0, "
-                f"staked_at = NULL, pvp_round_id = NULL WHERE id IN ({placeholders})",
+                f"staked_at = NULL, pvp_round_id = NULL, number_override = NULL, pinned_at = NULL WHERE id IN ({placeholders})",
                 (p["telegram_id"], *given_ids),
             )
             w = winners.setdefault(p["telegram_id"], {
@@ -902,11 +1004,13 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
         if new_card is not None:
             # Reuse the first burned row in place for the new card (same trick as
             # craft_card()) — keeps its id/history valid instead of touching FK-sensitive
-            # rows unnecessarily.
+            # rows unnecessarily. Its old number (natural or bought) is about to stop
+            # being shown by anyone — free it into the numbers marketplace first.
             recipient_id = burn_ids[0]
+            _free_number(conn, recipient_id)
             conn.execute(
                 "UPDATE user_cards SET card_id = ?, obtained_at = ?, listed_price = NULL, "
-                "swap_listed = 0, staked_at = NULL, pvp_round_id = NULL, voided = 0 WHERE id = ?",
+                "swap_listed = 0, staked_at = NULL, pvp_round_id = NULL, voided = 0, number_override = NULL, pinned_at = NULL WHERE id = ?",
                 (new_card["id"], _now(), recipient_id),
             )
             new_user_card_id = recipient_id
@@ -916,10 +1020,14 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
             remaining_ids = burn_ids
 
         if remaining_ids:
+            # These cards are genuinely destroyed (voided) — their numbers are now free
+            # to bid on, see place_number_bid().
+            for rid in remaining_ids:
+                _free_number(conn, rid)
             placeholders = ",".join("?" for _ in remaining_ids)
             conn.execute(
                 f"UPDATE user_cards SET voided = 1, listed_price = NULL, swap_listed = 0, "
-                f"staked_at = NULL, pvp_round_id = NULL WHERE id IN ({placeholders})",
+                f"staked_at = NULL, pvp_round_id = NULL, number_override = NULL, pinned_at = NULL WHERE id IN ({placeholders})",
                 remaining_ids,
             )
 
@@ -959,12 +1067,27 @@ class InsufficientGems(Exception):
     """Raised by farm() when the user's balance is below FARM_COST_GEMS."""
 
 
+# Secret onboarding hook: a brand new player's first NEW_PLAYER_BOOST_FARMS farms draw
+# from a friendlier table instead of RARITY_WEIGHTS, so their very first session has a
+# real shot at something exciting. Deliberately undisclosed anywhere in the UI/copy —
+# it's meant to read as luck, not a stated mechanic.
+NEW_PLAYER_BOOST_FARMS = 2
+NEW_PLAYER_BOOST_WEIGHTS = {"bronze": 17, "silver": 40, "gold": 22, "platinum": 15, "diamond": 6}
+
+
 def farm(user_id: int) -> dict | None:
     """Draw a random card in exchange for FARM_COST_GEMS and grant it to the user, all in
     one transaction. Returns the granted card, or None if the catalog is empty. Raises
     InsufficientGems if the balance check fails (checked and deducted atomically, so two
-    farms fired in quick succession can't both spend the same last few gems)."""
-    card = draw_random_card()
+    farms fired in quick succession can't both spend the same last few gems). The very
+    first NEW_PLAYER_BOOST_FARMS farms of a brand new account use NEW_PLAYER_BOOST_WEIGHTS
+    instead of RARITY_WEIGHTS — see the comment above."""
+    with get_conn() as conn:
+        farms_so_far = conn.execute(
+            "SELECT COUNT(*) FROM user_cards WHERE user_id = ?", (user_id,)
+        ).fetchone()[0]
+    weights = NEW_PLAYER_BOOST_WEIGHTS if farms_so_far < NEW_PLAYER_BOOST_FARMS else RARITY_WEIGHTS
+    card = _draw_card_weighted(weights)
     if card is None:
         return None
     with get_conn() as conn:
@@ -993,12 +1116,13 @@ def farm(user_id: int) -> dict | None:
                 "SELECT ref_by, ref_reward_pending FROM users WHERE telegram_id = ?", (user_id,)
             ).fetchone()
             if me["ref_by"] is not None and me["ref_reward_pending"]:
+                reward_amount = me["ref_reward_pending"]
                 conn.execute(
                     "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
-                    (REFERRAL_REWARD_GEMS, REFERRAL_REWARD_GEMS, me["ref_by"]),
+                    (reward_amount, reward_amount, me["ref_by"]),
                 )
                 conn.execute("UPDATE users SET ref_reward_pending = 0 WHERE telegram_id = ?", (user_id,))
-                referral_reward = {"referrer_id": me["ref_by"]}
+                referral_reward = {"referrer_id": me["ref_by"], "amount": reward_amount}
 
     result = {
         "user_card_id": user_card_id,
@@ -1076,10 +1200,10 @@ CRAFT_WEIGHTS = {
     # which the very first cut of this rebalance missed for bronze and silver (0 premium).
     # Diamond input is the one deliberate exception — it's meant to be a real sink/risk (see
     # CRAFT_DIAMOND_SUCCESS_RATE), so it gets no "beat the odds" treatment at all.
-    "bronze":   {"bronze": 44, "silver": 32, "gold": 15, "platinum": 8, "diamond": 1},
-    "silver":   {"silver": 72, "gold": 17, "platinum": 9, "diamond": 2},
-    "gold":     {"gold": 85, "platinum": 10, "diamond": 5},
-    "platinum": {"platinum": 95, "diamond": 5},
+    "bronze":   {"bronze": 70, "silver": 16, "gold": 8, "platinum": 5, "diamond": 1},
+    "silver":   {"silver": 76, "gold": 13, "platinum": 8, "diamond": 3},
+    "gold":     {"gold": 80, "platinum": 10, "diamond": 10},
+    "platinum": {"platinum": 49, "diamond": 51},
     # Diamond is the top tier — nowhere higher to go, so crafting one just re-rolls
     # another random Diamond (people reroll for a different Diamond card they want more).
     "diamond": {"diamond": 100},
@@ -1172,9 +1296,11 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
             # Diamond craft failure — card destroyed outright. Same "voided" soft-destroy
             # trick as burn_cards(): never DELETE (would hit the same FK constraint), just
             # flag it out of totals/inventory/leaderboard while keeping the row (and every
-            # historical FK reference to it) intact.
+            # historical FK reference to it) intact. Its number is now free to bid on.
+            _free_number(conn, owned["obtained_at"])
+            _free_number(conn, user_card_id)
             conn.execute(
-                "UPDATE user_cards SET voided = 1, listed_price = NULL, swap_listed = 0, staked_at = NULL, pvp_round_id = NULL WHERE id = ?",
+                "UPDATE user_cards SET voided = 1, listed_price = NULL, swap_listed = 0, staked_at = NULL, pvp_round_id = NULL, number_override = NULL, pinned_at = NULL WHERE id = ?",
                 (user_card_id,),
             )
             new_user_card_id = None
@@ -1194,6 +1320,334 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
     return result
 
 
+# ---------------------------------------------------------------------------
+# Card-number auctions — see the card_numbers schema comment for the state machine.
+# Minimum bid is flat for every number (not tiered by how low/rare it is): the market
+# decides how much a specific number is worth by how high people actually bid it up.
+# ---------------------------------------------------------------------------
+
+NUMBER_MIN_BID_GEMS = 100
+NUMBER_AUCTION_WINDOW_SECONDS = 24 * 60 * 60  # each bid resets the timer to +24h
+
+
+class NumberNotAvailable(Exception):
+    """Raised when a number isn't in the state the caller expects — already claimed by
+    someone else, not up for auction, not listed for resale, etc."""
+
+
+class NumberCardNotUsable(Exception):
+    """Raised when the target/source user_cards row doesn't belong to that user, is
+    voided, or is busy (listed/swapped/staked/in a PvP round)."""
+
+
+class NumberBidTooLow(Exception):
+    """Raised by place_number_bid() when amount_gems doesn't beat the current highest
+    bid (or NUMBER_MIN_BID_GEMS, whichever is higher) — carries the minimum that would
+    have worked."""
+    def __init__(self, min_bid: int):
+        self.min_bid = min_bid
+        super().__init__(f"minimum bid is {min_bid} gems")
+
+
+def _usable_owned_card(conn: sqlite3.Connection, user_id: int, user_card_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT id, obtained_at FROM user_cards WHERE id = ? AND user_id = ? AND voided = 0 "
+        "AND listed_price IS NULL AND swap_listed = 0 AND staked_at IS NULL AND pvp_round_id IS NULL",
+        (user_card_id, user_id),
+    ).fetchone()
+
+
+def _finalize_expired_number_auctions(conn: sqlite3.Connection) -> None:
+    """Any auction whose 24h window has lapsed with no new bid flips to 'owned' — the
+    last bidder wins, gems they already paid stay spent. Called opportunistically at the
+    top of every numbers-marketplace read/write, same no-background-job philosophy as
+    settle_staking()/PvP resolution."""
+    now = _now()
+    rows = conn.execute(
+        "SELECT number, highest_bidder_id FROM card_numbers WHERE status = 'auction' AND bid_expires_at <= ?",
+        (now,),
+    ).fetchall()
+    for r in rows:
+        conn.execute(
+            "UPDATE card_numbers SET status = 'owned', owner_id = ?, "
+            "highest_bid = NULL, highest_bidder_id = NULL, bid_expires_at = NULL, updated_at = ? "
+            "WHERE number = ?",
+            (r["highest_bidder_id"], now, r["number"]),
+        )
+
+
+# Repdigit "vanity" numbers — 111, 222, ... 999 — read as more desirable even when no
+# card ever actually freed them naturally. seed_vanity_numbers() makes each one available
+# ONLY if it isn't currently displayed by a real, live card (checked fresh every call —
+# see its docstring), so this never creates a duplicate number.
+# Repdigit "vanity" numbers (11, 22, ... 999) plus 67 by special request, and every
+# LOW number up to LOW_NUMBER_SEED_UP_TO (1..25) — both get proactively surfaced in
+# the marketplace the moment they are not held by any live card, instead of waiting
+# for someone to burn/evolve a card that happened to hold one.
+VANITY_NUMBERS = [11, 22, 33, 44, 55, 66, 67, 77, 88, 99, 111, 222, 333, 444, 555, 666, 777, 888, 999]
+LOW_NUMBER_SEED_UP_TO = 25
+
+
+def _seed_number_if_unclaimed(conn: sqlite3.Connection, n: int) -> None:
+    """Inserts number `n` into card_numbers as 'free' if it ISN'T currently shown by any
+    live (non-voided) card (natural or pinned via override) and isn't already tracked
+    there. Safe to call every time the board is loaded; idempotent."""
+    live = conn.execute(
+        """
+        SELECT 1 FROM user_cards uc WHERE uc.voided = 0 AND
+            COALESCE(uc.number_override,
+                (SELECT COUNT(*) FROM user_cards uc2 WHERE uc2.obtained_at <= uc.obtained_at)) = ?
+        LIMIT 1
+        """,
+        (n,),
+    ).fetchone()
+    if live is not None:
+        return
+    existing = conn.execute("SELECT 1 FROM card_numbers WHERE number = ?", (n,)).fetchone()
+    if existing is not None:
+        return
+    conn.execute(
+        "INSERT INTO card_numbers (number, status, updated_at) VALUES (?, 'free', ?)",
+        (n, _now()),
+    )
+
+
+def seed_vanity_numbers(conn: sqlite3.Connection) -> None:
+    """Proactively surfaces every VANITY_NUMBERS entry and every LOW number (1..
+    LOW_NUMBER_SEED_UP_TO) that isn't currently claimed by a live card, so they show up
+    in the marketplace as soon as they are free — not only once someone happens to
+    burn/evolve a card that held one."""
+    for n in VANITY_NUMBERS:
+        _seed_number_if_unclaimed(conn, n)
+    for n in range(1, LOW_NUMBER_SEED_UP_TO + 1):
+        _seed_number_if_unclaimed(conn, n)
+
+
+def get_numbers_board(limit: int = 100) -> dict:
+    """Top `limit` lowest numbers still free/up for auction (what the "Номера" screen
+    shows by default), plus every number currently listed for resale by another player."""
+    with get_conn() as conn:
+        _finalize_expired_number_auctions(conn)
+        seed_vanity_numbers(conn)
+        auction_rows = conn.execute(
+            "SELECT cn.number, cn.status, cn.highest_bid, cn.highest_bidder_id, cn.bid_expires_at, "
+            "u.username AS bidder_username, u.first_name AS bidder_first_name "
+            "FROM card_numbers cn LEFT JOIN users u ON u.telegram_id = cn.highest_bidder_id "
+            "WHERE cn.status IN ('free', 'auction') ORDER BY cn.number ASC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        listing_rows = conn.execute(
+            "SELECT cn.number, cn.list_price, cn.owner_id, u.username, u.first_name "
+            "FROM card_numbers cn JOIN users u ON u.telegram_id = cn.owner_id "
+            "WHERE cn.status = 'owned' AND cn.list_price IS NOT NULL ORDER BY cn.number ASC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return {
+        "auctions": [dict(r) for r in auction_rows],
+        "listings": [dict(r) for r in listing_rows],
+        "min_bid": NUMBER_MIN_BID_GEMS,
+    }
+
+
+def get_my_numbers(user_id: int) -> list[dict]:
+    """Numbers this player currently owns (won auctions or bought resales) — whether
+    already attached to one of their cards, or still waiting to be attached/listed."""
+    with get_conn() as conn:
+        _finalize_expired_number_auctions(conn)
+        rows = conn.execute(
+            "SELECT number, user_card_id, list_price FROM card_numbers "
+            "WHERE owner_id = ? AND status = 'owned' ORDER BY number ASC",
+            (user_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def place_number_bid(user_id: int, number: int, amount_gems: int) -> dict:
+    """Bids amount_gems on a free/currently-auctioned number. Gems are escrowed right
+    away — refunded in full if someone outbids you, spent for good if you win. Every bid
+    (including the first one) resets the 24h countdown from that moment."""
+    with get_conn() as conn:
+        _finalize_expired_number_auctions(conn)
+        row = conn.execute("SELECT * FROM card_numbers WHERE number = ?", (number,)).fetchone()
+        if row is None or row["status"] not in ("free", "auction"):
+            raise NumberNotAvailable()
+        current_high = row["highest_bid"] or 0
+        min_required = max(NUMBER_MIN_BID_GEMS, current_high + 1)
+        if amount_gems < min_required:
+            raise NumberBidTooLow(min_required)
+        gems_row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        if gems_row is None or gems_row["gems"] < amount_gems:
+            raise InsufficientGems()
+
+        if row["highest_bidder_id"] is not None:
+            conn.execute(
+                "UPDATE users SET gems = gems + ? WHERE telegram_id = ?",
+                (row["highest_bid"], row["highest_bidder_id"]),
+            )
+        conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (amount_gems, user_id))
+        expires_at = (datetime.now(timezone.utc) + timedelta(seconds=NUMBER_AUCTION_WINDOW_SECONDS)).isoformat()
+        conn.execute(
+            "UPDATE card_numbers SET status = 'auction', highest_bid = ?, highest_bidder_id = ?, "
+            "bid_expires_at = ?, updated_at = ? WHERE number = ?",
+            (amount_gems, user_id, expires_at, _now(), number),
+        )
+        gems_left = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()["gems"]
+    return {"number": number, "bid": amount_gems, "expires_at": expires_at, "gems": gems_left}
+
+
+def attach_number(user_id: int, number: int, user_card_id: int) -> dict:
+    """Pins a number you own onto one of your own cards (moving it off whichever card
+    it was on before, if any — that card reverts to its live-computed natural number).
+    Whatever number the TARGET card had before (natural or a different bought one) is
+    freed back into the pool first."""
+    with get_conn() as conn:
+        _finalize_expired_number_auctions(conn)
+        row = conn.execute("SELECT * FROM card_numbers WHERE number = ?", (number,)).fetchone()
+        if row is None or row["owner_id"] != user_id or row["status"] != "owned":
+            raise NumberNotAvailable()
+        target = _usable_owned_card(conn, user_id, user_card_id)
+        if target is None:
+            raise NumberCardNotUsable()
+        prev_card_id = row["user_card_id"]
+        if prev_card_id is not None and prev_card_id != user_card_id:
+            conn.execute("UPDATE user_cards SET number_override = NULL WHERE id = ?", (prev_card_id,))
+        _free_number(conn, user_card_id)
+        conn.execute("UPDATE user_cards SET number_override = ? WHERE id = ?", (number, user_card_id))
+        conn.execute(
+            "UPDATE card_numbers SET user_card_id = ?, updated_at = ? WHERE number = ?",
+            (user_card_id, _now(), number),
+        )
+    return {"number": number}
+
+
+def list_number_for_sale(user_id: int, number: int, price_gems: int) -> None:
+    """Puts a number you own up for sale to another player, without taking it off your
+    card if it's currently attached — it keeps showing on your card until it actually
+    sells."""
+    if price_gems <= 0:
+        raise ListingPriceTooLow(1)
+    with get_conn() as conn:
+        _finalize_expired_number_auctions(conn)
+        row = conn.execute("SELECT * FROM card_numbers WHERE number = ?", (number,)).fetchone()
+        if row is None or row["owner_id"] != user_id or row["status"] != "owned":
+            raise NumberNotAvailable()
+        conn.execute(
+            "UPDATE card_numbers SET list_price = ?, updated_at = ? WHERE number = ?",
+            (price_gems, _now(), number),
+        )
+
+
+def cancel_number_listing(user_id: int, number: int) -> None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT owner_id FROM card_numbers WHERE number = ?", (number,)).fetchone()
+        if row is None or row["owner_id"] != user_id:
+            raise NumberCardNotUsable()
+        conn.execute("UPDATE card_numbers SET list_price = NULL, updated_at = ? WHERE number = ?", (_now(), number))
+
+
+def buy_listed_number(buyer_id: int, number: int, buyer_user_card_id: int) -> dict:
+    """Buys a number another player listed for resale, paying them directly (no house
+    cut) and pinning it straight onto one of the buyer's own cards. If the number was
+    still pinned to the seller's card, that card reverts to its live-computed natural
+    number instead of being left duplicated."""
+    with get_conn() as conn:
+        _finalize_expired_number_auctions(conn)
+        row = conn.execute("SELECT * FROM card_numbers WHERE number = ?", (number,)).fetchone()
+        if row is None or row["list_price"] is None:
+            raise NumberNotAvailable()
+        if row["owner_id"] == buyer_id:
+            raise NumberCardNotUsable()
+        buyer_card = _usable_owned_card(conn, buyer_id, buyer_user_card_id)
+        if buyer_card is None:
+            raise NumberCardNotUsable()
+        price = row["list_price"]
+        gems_row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (buyer_id,)).fetchone()
+        if gems_row is None or gems_row["gems"] < price:
+            raise InsufficientGems()
+
+        conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (price, buyer_id))
+        conn.execute(
+            "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
+            (price, price, row["owner_id"]),
+        )
+        if row["user_card_id"] is not None:
+            conn.execute("UPDATE user_cards SET number_override = NULL WHERE id = ?", (row["user_card_id"],))
+        _free_number(conn, buyer_user_card_id)
+        conn.execute("UPDATE user_cards SET number_override = ? WHERE id = ?", (number, buyer_user_card_id))
+        conn.execute(
+            "UPDATE card_numbers SET owner_id = ?, user_card_id = ?, list_price = NULL, status = 'owned', updated_at = ? "
+            "WHERE number = ?",
+            (buyer_id, buyer_user_card_id, _now(), number),
+        )
+    return {"number": number, "price": price}
+
+
+
+
+# ---------- Wall (Стена) — a personal curated showcase in Profile ----------
+# A player can pin up to MAX_WALL_CARDS of their own cards (pinned_at set) to admire
+# separately from the full collection grid. Purely cosmetic — pinning doesn't lock the
+# card (it can still be listed/staked/swapped/sent to PvP while pinned). Unpinned
+# automatically wherever a card's ownership changes or it's voided/reused, so the Wall
+# can never show a card that's no longer the player's, or that isn't the one they chose.
+MAX_WALL_CARDS = 9
+
+
+class WallCardNotUsable(Exception):
+    ...
+
+
+class WallFull(Exception):
+    def __init__(self, max_cards: int):
+        self.max_cards = max_cards
+        super().__init__(f"wall is full (max {max_cards})")
+
+
+def pin_to_wall(user_id: int, user_card_id: int) -> dict:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, pinned_at FROM user_cards WHERE id = ? AND user_id = ? AND voided = 0",
+            (user_card_id, user_id),
+        ).fetchone()
+        if row is None:
+            raise WallCardNotUsable()
+        if row["pinned_at"] is not None:
+            return {"pinned": True}
+        count = conn.execute(
+            "SELECT COUNT(*) FROM user_cards WHERE user_id = ? AND voided = 0 AND pinned_at IS NOT NULL",
+            (user_id,),
+        ).fetchone()[0]
+        if count >= MAX_WALL_CARDS:
+            raise WallFull(MAX_WALL_CARDS)
+        conn.execute("UPDATE user_cards SET pinned_at = ? WHERE id = ?", (_now(), user_card_id))
+    return {"pinned": True}
+
+
+def unpin_from_wall(user_id: int, user_card_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE user_cards SET pinned_at = NULL WHERE id = ? AND user_id = ?",
+            (user_card_id, user_id),
+        )
+
+
+def get_wall(user_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT uc.id AS user_card_id, c.filename, c.name, c.rarity, uc.pinned_at,
+                   COALESCE(uc.number_override,
+                       (SELECT COUNT(*) FROM user_cards uc2 WHERE uc2.obtained_at <= uc.obtained_at)) AS drop_number
+            FROM user_cards uc
+            JOIN cards c ON c.id = uc.card_id
+            WHERE uc.user_id = ? AND uc.voided = 0 AND uc.pinned_at IS NOT NULL
+            ORDER BY uc.pinned_at ASC
+            """,
+            (user_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_inventory(user_id: int) -> list[dict]:
     """Cards the user owns — one row per copy, shown separately even when duplicated
     (duplicates are common since supply is unlimited). drop_number is a GLOBAL rank —
@@ -1203,8 +1657,9 @@ def get_inventory(user_id: int) -> list[dict]:
         rows = conn.execute(
             """
             SELECT uc.id AS user_card_id, c.id AS card_id, c.filename, c.name, c.rarity,
-                   uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id,
-                   (SELECT COUNT(*) FROM user_cards uc2 WHERE uc2.obtained_at <= uc.obtained_at) AS drop_number
+                   uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, uc.pinned_at,
+                   COALESCE(uc.number_override,
+                       (SELECT COUNT(*) FROM user_cards uc2 WHERE uc2.obtained_at <= uc.obtained_at)) AS drop_number
             FROM user_cards uc
             JOIN cards c ON c.id = uc.card_id
             WHERE uc.user_id = ? AND uc.voided = 0
@@ -1257,8 +1712,9 @@ def claim_transfer(user_card_id: int, new_owner_id: int) -> dict | None:
         ).fetchone()
         if row is None or not row["transfer_pending"] or row["from_user_id"] == new_owner_id:
             return None
+        _detach_number_on_card_transfer(conn, user_card_id)
         conn.execute(
-            "UPDATE user_cards SET user_id = ?, transfer_pending = 0 WHERE id = ?",
+            "UPDATE user_cards SET user_id = ?, transfer_pending = 0, number_override = NULL, pinned_at = NULL WHERE id = ?",
             (new_owner_id, user_card_id),
         )
         return {"from_user_id": row["from_user_id"], "filename": row["filename"], "name": row["name"]}
@@ -1557,8 +2013,9 @@ def buy_listing(user_card_id: int, buyer_id: int) -> dict | None:
             return None
         conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (price, buyer_id))
         conn.execute("UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?", (price, price, row["seller_id"]))
+        _detach_number_on_card_transfer(conn, user_card_id)
         conn.execute(
-            "UPDATE user_cards SET user_id = ?, listed_price = NULL, listed_at = NULL WHERE id = ?",
+            "UPDATE user_cards SET user_id = ?, listed_price = NULL, listed_at = NULL, number_override = NULL, pinned_at = NULL WHERE id = ?",
             (buyer_id, user_card_id),
         )
         conn.execute(
@@ -1648,8 +2105,9 @@ def accept_offer(offer_id: int, seller_id: int) -> dict | None:
         ).fetchone()
         conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (offer["price_gems"], offer["buyer_id"]))
         conn.execute("UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?", (offer["price_gems"], offer["price_gems"], seller_id))
+        _detach_number_on_card_transfer(conn, offer["user_card_id"])
         conn.execute(
-            "UPDATE user_cards SET user_id = ?, listed_price = NULL WHERE id = ?",
+            "UPDATE user_cards SET user_id = ?, listed_price = NULL, number_override = NULL, pinned_at = NULL WHERE id = ?",
             (offer["buyer_id"], offer["user_card_id"]),
         )
         conn.execute(
@@ -1944,13 +2402,15 @@ def accept_swap_offer(offer_id: int, seller_id: int) -> dict | None:
             conn.execute("UPDATE swap_offers SET status = 'expired' WHERE id = ?", (offer_id,))
             return None
 
+        _detach_number_on_card_transfer(conn, offer["user_card_id"])
         conn.execute(
-            "UPDATE user_cards SET user_id = ?, swap_listed = 0 WHERE id = ?",
+            "UPDATE user_cards SET user_id = ?, swap_listed = 0, number_override = NULL, pinned_at = NULL WHERE id = ?",
             (offer["buyer_id"], offer["user_card_id"]),
         )
         for oid in offered_ids:
+            _detach_number_on_card_transfer(conn, oid)
             conn.execute(
-                "UPDATE user_cards SET user_id = ?, swap_listed = 0 WHERE id = ?",
+                "UPDATE user_cards SET user_id = ?, swap_listed = 0, number_override = NULL, pinned_at = NULL WHERE id = ?",
                 (seller_id, oid),
             )
         conn.execute(
@@ -2018,8 +2478,9 @@ def transfer_card_to(user_card_id: int, from_user_id: int, to_user_id: int) -> d
         if gems_row is None or gems_row["gems"] < TRANSFER_FEE_GEMS:
             raise InsufficientGems()
         conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (TRANSFER_FEE_GEMS, from_user_id))
+        _detach_number_on_card_transfer(conn, user_card_id)
         conn.execute(
-            "UPDATE user_cards SET user_id = ?, listed_price = NULL, transfer_pending = 0 WHERE id = ?",
+            "UPDATE user_cards SET user_id = ?, listed_price = NULL, transfer_pending = 0, number_override = NULL, pinned_at = NULL WHERE id = ?",
             (to_user_id, user_card_id),
         )
         conn.execute(
@@ -2097,30 +2558,35 @@ def mark_ref_race_announced() -> None:
         conn.execute("INSERT INTO ref_race_announced (announced_at) VALUES (?)", (_now(),))
 
 
-def set_referral_notice(referrer_id: int, who_name: str) -> None:
+def set_referral_notice(referrer_id: int, who_name: str, amount: int) -> None:
     """Called from /api/farm the moment a referral reward is credited — stores the
-    referred player's display name so the referrer's own client can pop an in-app
-    'you got 25 gems' modal next time it loads, instead of a bot DM."""
+    referred player's display name AND the (now graduated, not always 25) gem amount
+    so the referrer's own client can pop an in-app 'you got N gems' modal next time it
+    loads, instead of a bot DM."""
     with get_conn() as conn:
         conn.execute(
             "UPDATE users SET referral_reward_notice = ? WHERE telegram_id = ?",
-            (who_name, referrer_id),
+            (json.dumps({"name": who_name, "amount": amount}), referrer_id),
         )
 
 
-def get_and_clear_referral_notice(user_id: int) -> str | None:
-    """Read-once: returns the pending referral-reward name (if any) and clears it in
-    the same call, so /api/auth shows the popup exactly once per reward."""
+def get_and_clear_referral_notice(user_id: int) -> dict | None:
+    """Read-once: returns the pending referral-reward {name, amount} (if any) and
+    clears it in the same call, so /api/auth shows the popup exactly once per reward."""
     with get_conn() as conn:
         row = conn.execute(
             "SELECT referral_reward_notice FROM users WHERE telegram_id = ?", (user_id,)
         ).fetchone()
-        notice = row["referral_reward_notice"] if row else None
-        if notice:
+        raw = row["referral_reward_notice"] if row else None
+        if raw:
             conn.execute(
                 "UPDATE users SET referral_reward_notice = NULL WHERE telegram_id = ?", (user_id,)
             )
-        return notice
+            try:
+                return json.loads(raw)
+            except (ValueError, TypeError):
+                return None
+        return None
 
 
 def get_total_farmed() -> int:
@@ -2258,11 +2724,12 @@ def get_swap_history(limit: int = 50) -> list[dict]:
 # someone is actually looking at the PvP screen.
 # ---------------------------------------------------------------------------
 
-PVP_LOCK_SECONDS = 60
-# Staking closes this many seconds before the round actually resolves, so a card can't
-# be thrown in right at the wire (matches the frontend disabling the stake button once
-# the on-screen countdown reaches this threshold).
-PVP_JOIN_CUTOFF_SECONDS = 5
+PVP_LOCK_SECONDS = 30
+# Staking used to close a few seconds before the round resolved so a card couldn't be
+# thrown in right at the wire — removed by request, betting is now allowed right up to
+# the round actually resolving. Kept at 0 (not deleted) so join_pvp_round()'s "already
+# past lock_at" guard still blocks joining a round that has actually finished.
+PVP_JOIN_CUTOFF_SECONDS = 0
 # Rarity -> "power" in the pot. Mirrors real-world value tiers (bronze junk vs.
 # diamond-grade), not farm drop odds — a single Diamond outweighs many Bronze cards.
 PVP_RARITY_WEIGHTS = {"bronze": 1, "silver": 3, "gold": 8, "platinum": 20, "diamond": 50}
@@ -2579,8 +3046,10 @@ def resolve_due_pvp_rounds() -> list[dict]:
                 winner_id = list(weights_by_user.keys())[-1]
 
             card_ids = [e["user_card_id"] for e in entries]
+            for cid in card_ids:
+                _detach_number_on_card_transfer(conn, cid)
             conn.executemany(
-                "UPDATE user_cards SET user_id = ?, pvp_round_id = NULL WHERE id = ?",
+                "UPDATE user_cards SET user_id = ?, pvp_round_id = NULL, number_override = NULL, pinned_at = NULL WHERE id = ?",
                 [(winner_id, cid) for cid in card_ids],
             )
             conn.execute(

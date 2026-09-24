@@ -257,6 +257,14 @@
     box-shadow:0 4px 10px rgba(0,0,0,.35);
   }
   .case-btn:active{transform:scale(.95);}
+  .number-btn{
+    position:absolute; left:0; bottom:0;
+    background:linear-gradient(135deg,#3b82f6,#1d4ed8);
+    color:#fff; border:none; border-radius:999px;
+    padding:9px 16px; font-size:12px; font-weight:800; cursor:pointer;
+    box-shadow:0 4px 10px rgba(0,0,0,.35);
+  }
+  .number-btn:active{transform:scale(.95);}
   .farm-total-pill{
     font-size:12px; color:#999;
     background:rgba(255,255,255,.05);
@@ -426,6 +434,50 @@
   }
   .stat-value{font-size:16px; font-weight:800; line-height:1.1;}
   .stat-label{font-size:10px; color:#777; margin-top:2px; text-transform:uppercase; letter-spacing:.5px;}
+
+  /* ---------- Wall (Стена) — small button in the Коллекция row + one modal; pinned
+     cards get a highlighted border + tag and float to the top of the SAME collection
+     grid (no separate block) ---------- */
+  .wall-open-btn{
+    background:linear-gradient(135deg,#a855f7,#ec4899);
+    color:#fff; border:none; border-radius:999px;
+    padding:5px 12px; font-size:11px; font-weight:800;
+    cursor:pointer;
+  }
+  .wall-open-btn:active{transform:scale(.95);}
+
+  #wall-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.92);
+    display:none; align-items:center; justify-content:center;
+    z-index:80; padding:24px;
+  }
+  #wall-overlay.active{display:flex;}
+  #wall-modal-card{
+    position:relative;
+    width:100%; max-width:340px; max-height:86vh; overflow-y:auto;
+    background:var(--card-bg); border:1px solid var(--card-border); border-radius:20px;
+    padding:22px 18px 18px; box-sizing:border-box; text-align:left;
+  }
+  #wall-title{
+    font-size:16px; font-weight:800; margin-bottom:4px;
+    background:linear-gradient(135deg,#c084fc,#f472b6);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    display:inline-block;
+  }
+  #wall-sub{font-size:11.5px; color:#888; line-height:1.5; margin-bottom:12px;}
+  .grid-item.pinned{
+    border-color:#ec4899;
+    box-shadow:0 0 0 2px rgba(236,72,153,.5);
+  }
+  .grid-item .wall-pin-tag{
+    position:absolute; top:5px; right:5px;
+    width:16px; height:16px; border-radius:50%;
+    background:#000;
+    display:flex; align-items:center; justify-content:center;
+    font-size:9px; line-height:1;
+    box-shadow:0 2px 5px rgba(0,0,0,.4);
+  }
   .section-label{
     font-size:12px; font-weight:700; color:#666;
     text-transform:uppercase; letter-spacing:.6px;
@@ -951,6 +1003,76 @@
   #pvp-picker-confirm{background:#22c55e; color:#fff;}
   #pvp-picker-cancel{background:#ef4444; color:#fff;}
 
+  /* ---------- Numbers auction ---------- */
+  #numbers-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.92);
+    display:none; align-items:center; justify-content:center;
+    z-index:80; padding:24px;
+  }
+  #numbers-overlay.active{display:flex;}
+  #numbers-card{
+    position:relative;
+    width:100%; max-width:340px; max-height:86vh; overflow-y:auto;
+    background:var(--card-bg); border:1px solid var(--card-border); border-radius:20px;
+    padding:22px 18px 18px; box-sizing:border-box; text-align:left;
+  }
+  #numbers-title{font-size:16px; font-weight:800; margin-bottom:12px;}
+  #numbers-mode-switch{margin-bottom:10px;}
+  #numbers-mode-switch .mode-switch-btn[data-mode="auction"].active{background:rgba(59,130,246,.18); color:#3b82f6;}
+  #numbers-mode-switch .mode-switch-btn[data-mode="listings"].active{background:rgba(250,204,21,.18); color:#facc15;}
+  #numbers-mode-switch .mode-switch-btn[data-mode="mine"].active{background:rgba(34,197,94,.18); color:#22c55e;}
+  #numbers-sub{font-size:11.5px; color:#888; line-height:1.5; margin-bottom:12px;}
+  #numbers-list{display:flex; flex-direction:column; gap:8px;}
+  .number-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:rgba(255,255,255,.04); border:1px solid var(--card-border); border-radius:12px;
+    padding:10px 12px;
+  }
+  .number-row .num{font-size:16px; font-weight:900; color:#fff; flex-shrink:0; min-width:44px;}
+  .number-row .info{flex:1; min-width:0;}
+  .number-row .info .lbl{font-size:11px; color:#888; margin-bottom:2px;}
+  .number-row .info .val{font-size:13px; font-weight:800; color:var(--accent2); display:flex; align-items:center; gap:3px;}
+  .number-row .info .val img{width:13px; height:13px;}
+  .number-row .act{
+    flex-shrink:0; border:none; border-radius:10px; padding:9px 12px;
+    font-size:12px; font-weight:800; cursor:pointer; color:#fff;
+  }
+  .number-row .act.bid{background:linear-gradient(135deg,#3b82f6,#1d4ed8);}
+  .number-row .act.buy{background:linear-gradient(135deg,#facc15,#f59e0b); color:#111;}
+  .number-row .act.attach{background:#22c55e;}
+  .number-row .act.sell{background:#8b5cf6;}
+  .number-row .act.cancel{background:#ef4444;}
+  .number-row .act:active{transform:scale(.95);}
+
+  #number-card-picker-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.94);
+    display:none;
+    align-items:center; justify-content:center;
+    z-index:82;
+    padding:24px;
+  }
+  #number-card-picker-overlay.active{display:flex;}
+  #number-card-picker-card{
+    width:100%; max-width:340px; max-height:80vh;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-radius:20px;
+    padding:18px;
+    display:flex; flex-direction:column;
+  }
+  #number-card-picker-title{font-weight:700; margin-bottom:14px; text-align:center;}
+  #number-card-picker-grid{
+    overflow-y:auto;
+    max-height:44vh;
+    margin-bottom:14px;
+  }
+  #number-card-picker-actions{display:flex; gap:10px;}
+  #number-card-picker-actions button{flex:1; padding:12px; border-radius:12px; border:none; font-weight:700; font-size:13px; cursor:pointer;}
+  #number-card-picker-confirm{background:#22c55e; color:#fff;}
+  #number-card-picker-cancel{background:rgba(255,255,255,.08); color:#ccc;}
+
   /* ---------- Burn overlay ---------- */
   #burn-overlay{
     position:absolute; inset:0;
@@ -1187,7 +1309,7 @@
     background:rgba(0,0,0,.85);
     display:none;
     align-items:center; justify-content:center;
-    z-index:60;
+    z-index:150;
     padding:24px;
   }
   #input-overlay.active{display:flex;}
@@ -1208,6 +1330,8 @@
   }
   #input-actions{display:flex; gap:10px;}
   #input-actions button{flex:1; padding:12px; border-radius:12px; border:none; font-weight:700; font-size:13px; cursor:pointer;}
+  #burn-picker-confirm{background:#ec4899; color:#fff;}
+  #burn-picker-cancel{background:rgba(255,255,255,.08); color:#ccc;}
   #input-cancel{background:#ef4444; color:#fff;}
   #input-confirm{background:#22c55e; color:#fff;}
 
@@ -1358,6 +1482,30 @@
   #alert-ok{width:100%; padding:13px; border-radius:12px; border:none; background:var(--accent); color:#fff; font-weight:700; font-size:14px; cursor:pointer;}
   #alert-ok:active{transform:scale(.97);}
 
+  #confirm-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.9);
+    display:none;
+    align-items:center; justify-content:center;
+    z-index:94;
+    padding:24px;
+  }
+  #confirm-overlay.active{display:flex;}
+  #confirm-card{
+    width:100%; max-width:320px;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-radius:20px;
+    padding:22px 20px 18px;
+    text-align:left;
+  }
+  #confirm-text{font-size:14px; color:#eee; line-height:1.5; margin-bottom:18px; font-weight:600; white-space:pre-line;}
+  #confirm-actions{display:flex; gap:10px;}
+  #confirm-actions button{flex:1; padding:13px; border-radius:12px; border:none; font-weight:700; font-size:14px; cursor:pointer;}
+  #confirm-ok{background:#22c55e; color:#fff;}
+  #confirm-cancel{background:#ef4444; color:#fff;}
+  #confirm-ok:active, #confirm-cancel:active{transform:scale(.97);}
+
   #referral-reward-overlay{
     position:absolute; inset:0;
     background:rgba(0,0,0,.55);
@@ -1484,7 +1632,9 @@
     padding:22px 18px 18px; box-sizing:border-box; text-align:left;
   }
   #referral-title{font-size:16px; font-weight:800; margin-bottom:14px; text-align:left;}
-  #referral-rows{display:flex; flex-direction:column; gap:12px; margin-bottom:18px;}
+  #referral-rows{display:flex; flex-direction:column; gap:12px; margin-bottom:14px;}
+  #referral-reward-rows{display:flex; flex-direction:column; gap:6px; margin-bottom:14px;}
+  #referral-footnote{font-size:11.5px; color:#888; line-height:1.5; margin-bottom:14px;}
   #referral-share-btn{width:100%; padding:13px; border-radius:12px; border:none; background:#3b82f6; color:#fff; font-weight:700; font-size:14px; cursor:pointer;}
   .stat-tile.clickable{cursor:pointer;}
 
@@ -1582,6 +1732,7 @@
       </div>
       <div id="farm-hint"></div>
       <button class="case-btn" id="cases-btn">🎁 Кейсы</button>
+      <button class="number-btn" id="numbers-btn"># Номера</button>
     </section>
 
     <!-- MARKET -->
@@ -1650,6 +1801,7 @@
       <div class="section-label-row">
         <div class="section-label">Коллекция</div>
         <div class="profile-sort-buttons">
+          <button id="wall-open-btn" class="wall-open-btn">Стена</button>
           <button id="burn-open-btn" class="burn-open-btn">Эволюция</button>
           <button id="profile-rarity-sort-btn" class="active-sort">Ранг ↓</button>
         </div>
@@ -1682,24 +1834,23 @@
           <div class="info-feature-icon" style="background:rgba(250,204,21,.18); color:#facc15;">🎁</div>
           <div class="info-feature-body">
             <div class="info-feature-title" style="color:#facc15;">Награда</div>
-            <div class="info-feature-desc">25 <img src="/static/icons/diamond.png" alt=""> за каждого друга, который зайдёт по твоей ссылке и сделает первый фарм</div>
-          </div>
-        </div>
-        <div class="info-feature-row">
-          <div class="info-feature-icon" style="background:rgba(59,130,246,.18); color:#3b82f6;">🔟</div>
-          <div class="info-feature-body">
-            <div class="info-feature-title" style="color:#3b82f6;">Лимит</div>
-            <div class="info-feature-desc">Гемы платятся за первых 10 друзей — дальше приглашения считаются, но без бонуса</div>
-          </div>
-        </div>
-        <div class="info-feature-row">
-          <div class="info-feature-icon" style="background:rgba(236,72,153,.18); color:#ec4899;">📊</div>
-          <div class="info-feature-body">
-            <div class="info-feature-title" style="color:#ec4899;">Твой прогресс</div>
-            <div class="info-feature-desc" id="referral-progress-text">Приглашено: 0</div>
+            <div class="info-feature-desc">Друг просто заходит по твоей ссылке и делает первый фарм — ты получаешь гемы сразу. Чем больше друзей позовёшь, тем больше награда за каждого следующего:</div>
           </div>
         </div>
       </div>
+      <div id="referral-reward-rows">
+        <div class="streak-info-row"><span class="m">1-й реферал</span><span class="amt">+25 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">2-й реферал</span><span class="amt">+50 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">3-й реферал</span><span class="amt">+100 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">4-й реферал</span><span class="amt">+200 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">5-й реферал</span><span class="amt">+300 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">6-й реферал</span><span class="amt">+400 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">7-й реферал</span><span class="amt">+500 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">8-й реферал</span><span class="amt">+550 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">9-й реферал</span><span class="amt">+600 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">10-й реферал</span><span class="amt">+650 <img src="/static/icons/diamond.png" alt=""></span></div>
+      </div>
+      <div id="referral-footnote">После 10-го друга гемы за новых рефералов не платятся — но сами приглашения продолжают считаться.</div>
       <button id="referral-share-btn">Поделиться</button>
     </div>
   </div>
@@ -1851,8 +2002,8 @@
         <span class="val" id="stake-confirm-fee">0 <img src="/static/icons/diamond.png" alt=""></span>
       </div>
       <div id="stake-confirm-actions">
-        <button id="stake-confirm-cancel">Отмена</button>
         <button id="stake-confirm-confirm">Застейкать</button>
+        <button id="stake-confirm-cancel">Отмена</button>
       </div>
     </div>
   </div>
@@ -1928,6 +2079,16 @@
     </div>
   </div>
 
+  <div id="confirm-overlay">
+    <div id="confirm-card">
+      <div id="confirm-text"></div>
+      <div id="confirm-actions">
+        <button id="confirm-ok">ОК</button>
+        <button id="confirm-cancel">Отмена</button>
+      </div>
+    </div>
+  </div>
+
   <div id="referral-reward-overlay">
     <div id="referral-reward-card">
       <img class="emoji" src="/static/icons/diamond.png" alt="" style="width:30px;height:30px;object-fit:contain;">
@@ -1961,8 +2122,8 @@
       <div id="input-title">Введи число</div>
       <input id="input-field" type="number" inputmode="numeric" min="1" placeholder="0">
       <div id="input-actions">
-        <button id="input-cancel">Отмена</button>
         <button id="input-confirm">ОК</button>
+        <button id="input-cancel">Отмена</button>
       </div>
     </div>
   </div>
@@ -1991,8 +2152,8 @@
       <div id="swap-picker-title">Выбери свои карты для обмена</div>
       <div class="grid" id="swap-picker-grid"></div>
       <div id="input-actions">
-        <button id="swap-picker-cancel">Отмена</button>
         <button id="swap-picker-confirm">Предложить</button>
+        <button id="swap-picker-cancel">Отмена</button>
       </div>
     </div>
   </div>
@@ -2002,8 +2163,8 @@
       <div id="burn-picker-title">Выбери карты для эволюции</div>
       <div class="grid" id="burn-picker-grid"></div>
       <div id="input-actions">
-        <button id="burn-picker-cancel">Отмена</button>
         <button id="burn-picker-confirm">Эволюция</button>
+        <button id="burn-picker-cancel">Отмена</button>
       </div>
     </div>
   </div>
@@ -2014,8 +2175,8 @@
       <div id="gram-picker-sub">Выбрано: 0 — нужно кратно 10</div>
       <div class="grid" id="gram-picker-grid"></div>
       <div id="input-actions">
-        <button id="gram-picker-cancel">Отмена</button>
         <button id="gram-picker-confirm">Далее</button>
+        <button id="gram-picker-cancel">Отмена</button>
       </div>
     </div>
   </div>
@@ -2028,6 +2189,40 @@
         <button id="pvp-picker-confirm">Поставить</button>
         <button id="pvp-picker-cancel">Отмена</button>
       </div>
+    </div>
+  </div>
+
+  <div id="numbers-overlay">
+    <div id="numbers-card">
+      <button class="btn-close-inline" id="numbers-close">✕</button>
+      <div id="numbers-title"># Номера</div>
+      <div class="mode-switch" id="numbers-mode-switch">
+        <button class="mode-switch-btn active" data-mode="auction">Аукцион</button>
+        <button class="mode-switch-btn" data-mode="listings">Продажа</button>
+        <button class="mode-switch-btn" data-mode="mine">Мои</button>
+      </div>
+      <div id="numbers-sub"></div>
+      <div id="numbers-list"></div>
+    </div>
+  </div>
+
+  <div id="number-card-picker-overlay">
+    <div id="number-card-picker-card">
+      <div id="number-card-picker-title">Выбери карту</div>
+      <div class="grid" id="number-card-picker-grid"></div>
+      <div id="number-card-picker-actions">
+        <button id="number-card-picker-confirm">Выбрать</button>
+        <button id="number-card-picker-cancel">Отмена</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="wall-overlay">
+    <div id="wall-modal-card">
+      <button class="btn-close-inline" id="wall-close">✕</button>
+      <div id="wall-title">Стена</div>
+      <div id="wall-sub"></div>
+      <div class="grid" id="wall-grid"></div>
     </div>
   </div>
 
@@ -2072,7 +2267,7 @@
       <button class="btn-close-inline" id="pvp-rules-close">✕</button>
       <div id="pvp-rules-title">⚔️ Правила PvP</div>
       <div id="pvp-rules-text">
-        Ставь свои карты в общий банк — как только зашёл первый игрок, запускается обратный отсчёт 60 секунд. Победитель определяется случайно и забирает <b>ВСЕ</b> карты банка.<br><br>
+        Ставь свои карты в общий банк — как только зашёл первый игрок, запускается обратный отсчёт 30 секунд. Победитель определяется случайно и забирает <b>ВСЕ</b> карты банка.<br><br>
         Шанс на победу зависит от того, какие карты ты поставил — у каждой редкости свой «вес»:
       </div>
       <div id="pvp-rules-weights">
@@ -2180,6 +2375,18 @@ function minListingPrice(rarity){
 }
 let initData = tg?.initData || "";
 let inventory = [];
+// Gems shown as "∞" past this threshold (used for a dev/testing account with a huge
+// balance via /addgem — not a real game mechanic). gemsBalance tracks the real numeric
+// value separately from the displayed text, so client-side "can I afford this" checks
+// still work correctly even while the display shows the infinity symbol.
+const GEMS_INFINITE_DISPLAY_THRESHOLD = 1000000;
+let gemsBalance = 0;
+function setGemsDisplay(n){
+  // Always shown as the infinity symbol, never the raw number — gemsBalance still
+  // tracks the real balance underneath for client-side afford-checks.
+  gemsBalance = n;
+  document.getElementById("gems-amount").textContent = "∞";
+}
 let daysUntilNextIncome = null;
 let selectedUserCardId = null;
 let selectedItem = null;
@@ -2213,15 +2420,24 @@ document.getElementById("alert-ok").addEventListener("click", ()=>{
   document.getElementById("alert-overlay").classList.remove("active");
 });
 
+// Custom in-app confirm modal (replaces tg.showConfirm) — Telegram's native popup button
+// order is controlled by the Telegram client, not us, and can't be forced to a fixed
+// side. This one is ours, so "OK"/confirm always renders on the left, cancel on the right.
+let genericConfirmResolve = null;
 function confirmAction(text){
   return new Promise(resolve=>{
-    if(tg?.showConfirm){
-      tg.showConfirm(text, (ok)=>resolve(!!ok));
-    }else{
-      resolve(window.confirm(text));
-    }
+    genericConfirmResolve = resolve;
+    document.getElementById("confirm-text").textContent = text;
+    document.getElementById("confirm-overlay").classList.add("active");
   });
 }
+function closeConfirmModal(ok){
+  document.getElementById("confirm-overlay").classList.remove("active");
+  if(genericConfirmResolve) genericConfirmResolve(ok);
+  genericConfirmResolve = null;
+}
+document.getElementById("confirm-ok").addEventListener("click", ()=>closeConfirmModal(true));
+document.getElementById("confirm-cancel").addEventListener("click", ()=>closeConfirmModal(false));
 
 // Custom in-app confirm modal for staking — tg.showConfirm() is capped at 256 chars by
 // Telegram, and the staking rules text (rates for all 5 rarities + limits) blew past that,
@@ -2358,7 +2574,7 @@ let currentStreak = { days: 1, bonus: 2 };
 async function refreshGems(){
   try{
     const auth = await api("/auth");
-    document.getElementById("gems-amount").textContent = auth.gems;
+    setGemsDisplay(auth.gems);
     applyPlayerRank(auth.player_rank);
     myTelegramId = auth.telegram_id;
     document.getElementById("bot-day-count").textContent = auth.bot_day || 1;
@@ -2372,7 +2588,7 @@ async function refreshGems(){
       document.getElementById("daily-bonus-overlay").classList.add("active");
     }
     if(auth.referral_reward_notice){
-      showReferralRewardModal(auth.referral_reward_notice);
+      showReferralRewardModal(auth.referral_reward_notice.name, auth.referral_reward_notice.amount);
     }
     if(auth.wheel_available){
       // Small delay so it doesn't visually collide with the welcome/daily-bonus
@@ -2385,10 +2601,10 @@ refreshGems();
 
 // Read-once in-app popup for "you earned 25 gems for a referral" — replaces the old
 // bot-DM notifications, auto-closes on its own after 3s (no button to tap).
-function showReferralRewardModal(whoName){
+function showReferralRewardModal(whoName, amount){
   const el = document.getElementById("referral-reward-overlay");
   document.getElementById("referral-reward-text").innerHTML =
-    `Ты получил 25 гемов за реферала — <span class="who">${whoName}</span>`;
+    `Ты получил ${amount} гемов за реферала — <span class="who">${whoName}</span>`;
   el.classList.add("active");
   clearTimeout(el._hideTimer);
   el._hideTimer = setTimeout(()=>el.classList.remove("active"), 3000);
@@ -2600,7 +2816,7 @@ let marketListings = [];
 async function loadMarket(){
   try{
     const data = await api("/market/listings");
-    document.getElementById("gems-amount").textContent = data.gems;
+    setGemsDisplay(data.gems);
     marketListings = data.listings;
     renderMarket();
   }catch(e){
@@ -2835,7 +3051,7 @@ async function openPvpTop(){
     }
     const medals = ["🥇","🥈","🥉"];
     rowsEl.innerHTML = rows.map((r, i)=>{
-      const name = r.username ? `@${r.username}` : (r.first_name || `Игрок ${r.telegram_id}`);
+      const name = r.username ? r.username : (r.first_name || `Игрок ${r.telegram_id}`);
       const rank = medals[i] || `${i + 1}.`;
       return `<div class="pvp-top-row"><span class="rank">${rank}</span><span class="name">${name}</span><span class="wins">${r.wins} 🏆</span></div>`;
     }).join("");
@@ -3125,7 +3341,9 @@ function renderPvp(){
 
   const { seconds_left, participants, last_result, unseen_result } = pvpState;
   const counting = seconds_left !== null && seconds_left !== undefined;
-  const PVP_JOIN_CUTOFF_SECONDS = 5;
+  // Betting used to close a few seconds before the round resolved — removed by request,
+  // you can now stake cards right up until the round actually resolves.
+  const PVP_JOIN_CUTOFF_SECONDS = 0;
   const joinClosed = counting && seconds_left <= PVP_JOIN_CUTOFF_SECONDS;
 
   let timerText, holeBig, holeSmall;
@@ -3615,7 +3833,14 @@ function startFarmAnimation(cards, hintHTML){
   progressWrap.classList.add("active");
   progressBar.style.width = "0%";
 
-  const pool = cards && cards.length ? cards : [];
+  // Shuffle a COPY each run (Fisher-Yates) so the spin shows a different, random order of
+  // cards every time you farm — previously it always cycled the catalog in the exact same
+  // fixed order from the start, which looked like it kept showing "the same cards".
+  const pool = cards && cards.length ? [...cards] : [];
+  for(let i = pool.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
   let cycleIdx = 0;
   clearInterval(farmCycleTimer);
   if(pool.length){
@@ -3650,7 +3875,7 @@ document.getElementById("farm-btn").addEventListener("click", async ()=>{
   const btn = document.getElementById("farm-btn");
   if(btn.disabled) return;
 
-  const currentGems = parseInt(document.getElementById("gems-amount").textContent, 10) || 0;
+  const currentGems = gemsBalance;
   if(currentGems < FARM_COST_GEMS){
     notEnoughGemsToast();
     return;
@@ -3675,7 +3900,7 @@ document.getElementById("farm-btn").addEventListener("click", async ()=>{
     rarityEl.textContent = card.rarity || "";
     rarityEl.className = card.rarity || "";
     document.getElementById("total-farmed").textContent = card.total_farmed;
-    document.getElementById("gems-amount").textContent = card.gems;
+    setGemsDisplay(card.gems);
     tg?.HapticFeedback?.notificationOccurred("success");
   }catch(e){
     if(mySeq !== farmRequestSeq) return;
@@ -3706,7 +3931,7 @@ async function loadProfile(){
       avatarEl.textContent = (auth.first_name||auth.username||"?")[0].toUpperCase();
     }
     document.getElementById("stat-refs").textContent = auth.referrals || 0;
-    document.getElementById("gems-amount").textContent = auth.gems || 0;
+    setGemsDisplay(auth.gems || 0);
     document.getElementById("stat-income").textContent = auth.daily_bonus_amount || 25;
     daysUntilNextIncome = auth.daily_bonus_days_until_next ?? null;
     applyPlayerRank(auth.player_rank);
@@ -3735,6 +3960,12 @@ function sortInventoryAndRender(){
     if(ra !== rb) return profileRarityAsc ? rb - ra : ra - rb;
     return b.user_card_id - a.user_card_id;
   });
+  // Стена: pinned cards float to the very top of the SAME grid, in the order they
+  // were pinned — everything else keeps the rarity sort right below them.
+  const pinned = inventory.filter(c => c.pinned_at)
+    .sort((a, b) => (a.pinned_at < b.pinned_at ? -1 : a.pinned_at > b.pinned_at ? 1 : 0));
+  const rest = inventory.filter(c => !c.pinned_at);
+  inventory = [...pinned, ...rest];
   document.getElementById("profile-rarity-sort-btn").textContent = profileRarityAsc ? "Ранг ↑" : "Ранг ↓";
   renderProfileGrid();
 }
@@ -3749,10 +3980,11 @@ function renderProfileGrid(){
   }
   document.getElementById("empty-hint")?.remove();
   grid.innerHTML = inventory.map(c => `
-    <div class="grid-item rarity-border-${c.rarity}" data-uc="${c.user_card_id}">
+    <div class="grid-item rarity-border-${c.rarity}${c.pinned_at ? " pinned" : ""}" data-uc="${c.user_card_id}">
       <img src="/static/cards/${c.filename}" alt="${c.name||''}">
       <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
       <div class="drop-number">#${c.drop_number}</div>
+      ${c.pinned_at ? `<div class="wall-pin-tag"><svg viewBox="0 0 24 24" width="9" height="9"><rect x="7" y="2" width="10" height="2.2" rx="1" fill="#fff"/><rect x="10.5" y="4" width="3" height="12" fill="#fff"/><polygon points="10.5,16 13.5,16 12,21" fill="#fff"/></svg></div>` : ""}
       ${c.listed_price ? `<div class="profile-sale-tag"><img src="/static/icons/diamond.png" alt=""><span>${c.listed_price}</span></div>` : ""}
       ${c.swap_listed ? `<div class="profile-swap-tag">Обмен</div>` : ""}
       ${c.staked_at ? `<div class="profile-stake-tag">${formatStakedDuration(c.staked_at)}</div>` : ""}
@@ -3764,6 +3996,66 @@ function renderProfileGrid(){
     el.addEventListener("click", ()=>openModal(parseInt(el.dataset.uc)));
   });
 }
+
+
+// ---------- Wall (Стена) — small button next to "Коллекция"; opens a modal where any
+// owned card can be tapped to pin/unpin it. Pinned state lives directly on each
+// inventory card (c.pinned_at, from get_inventory()) — no separate block, no separate
+// fetch: pinned cards just float to the top of the SAME collection grid (see
+// sortInventoryAndRender/renderProfileGrid above).
+const WALL_MAX_CARDS = 9;
+
+function renderWallModal(){
+  const pinnedCount = inventory.filter(c => c.pinned_at).length;
+  document.getElementById("wall-sub").textContent =
+    `Нажми на карту, чтобы закрепить или снять со Стены (${pinnedCount}/${WALL_MAX_CARDS})`;
+  const grid = document.getElementById("wall-grid");
+  if(!inventory.length){
+    grid.innerHTML = `<div class="empty-state">Пока пусто — иди фармить</div>`;
+    return;
+  }
+  grid.innerHTML = inventory.map(c => `
+    <div class="grid-item rarity-border-${c.rarity}${c.pinned_at ? " pinned" : ""}" data-uc="${c.user_card_id}">
+      <img src="/static/cards/${c.filename}" alt="${c.name||''}">
+      <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
+      <div class="drop-number">#${c.drop_number}</div>
+      ${c.pinned_at ? `<div class="wall-pin-tag"><svg viewBox="0 0 24 24" width="9" height="9"><rect x="7" y="2" width="10" height="2.2" rx="1" fill="#fff"/><rect x="10.5" y="4" width="3" height="12" fill="#fff"/><polygon points="10.5,16 13.5,16 12,21" fill="#fff"/></svg></div>` : ""}
+    </div>
+  `).join("");
+  grid.querySelectorAll(".grid-item").forEach(el=>{
+    el.addEventListener("click", async ()=>{
+      const ucId = parseInt(el.dataset.uc);
+      const card = inventory.find(c => c.user_card_id === ucId);
+      if(!card) return;
+      const isPinned = !!card.pinned_at;
+      try{
+        if(isPinned){
+          await api("/wall/unpin", { user_card_id: ucId });
+          card.pinned_at = null;
+        }else{
+          if(pinnedCount >= WALL_MAX_CARDS){
+            toast(`Стена заполнена (макс. ${WALL_MAX_CARDS})`);
+            return;
+          }
+          await api("/wall/pin", { user_card_id: ucId });
+          card.pinned_at = new Date().toISOString();
+        }
+        renderWallModal();
+        sortInventoryAndRender();
+      }catch(err){
+        toast("Не получилось: " + err.message);
+      }
+    });
+  });
+}
+
+document.getElementById("wall-open-btn").addEventListener("click", ()=>{
+  document.getElementById("wall-overlay").classList.add("active");
+  renderWallModal();
+});
+document.getElementById("wall-close").addEventListener("click", ()=>{
+  document.getElementById("wall-overlay").classList.remove("active");
+});
 
 let modalIndex = -1;
 
@@ -4019,7 +4311,7 @@ document.getElementById("modal-share").addEventListener("click", async ()=>{
 
 const TRANSFER_FEE_GEMS = 3;
 document.getElementById("modal-give").addEventListener("click", async ()=>{
-  const currentGems = parseInt(document.getElementById("gems-amount").textContent, 10) || 0;
+  const currentGems = gemsBalance;
   if(currentGems < TRANSFER_FEE_GEMS){
     toastHTML(`Не хватает гемов — передача стоит ${TRANSFER_FEE_GEMS} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
     return;
@@ -4146,7 +4438,7 @@ document.getElementById("modal-stake").addEventListener("click", async ()=>{
       updateStakeButton(selectedItem);
       updateSellButton(selectedItem);
       updateSwapButton(selectedItem);
-      if(res && typeof res.gems === "number") document.getElementById("gems-amount").textContent = res.gems;
+      if(res && typeof res.gems === "number") setGemsDisplay(res.gems);
       renderProfileGrid();
       toast("Снято со стейкинга");
     }catch(e){
@@ -4158,7 +4450,7 @@ document.getElementById("modal-stake").addEventListener("click", async ()=>{
       return;
     }
     const fee = STAKE_DAILY_RATES[selectedItem.rarity] ?? 5;
-    const currentGems = parseInt(document.getElementById("gems-amount").textContent, 10) || 0;
+    const currentGems = gemsBalance;
     if(currentGems < fee){
       toastHTML(`Не хватает гемов — нужно ${fee} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
       return;
@@ -4171,7 +4463,7 @@ document.getElementById("modal-stake").addEventListener("click", async ()=>{
       updateStakeButton(selectedItem);
       updateSellButton(selectedItem);
       updateSwapButton(selectedItem);
-      if(res && typeof res.gems === "number") document.getElementById("gems-amount").textContent = res.gems;
+      if(res && typeof res.gems === "number") setGemsDisplay(res.gems);
       renderProfileGrid();
       toast(`В стейкинге! +${fee} гемов в сутки за карту`);
     }catch(e){
@@ -4193,10 +4485,10 @@ const CRAFT_COST_BY_RARITY = { bronze: 25, silver: 25, gold: 50, platinum: 100, 
 // burned, so each row only lists tiers same-or-higher (burn Gold, only Gold/Platinum/
 // Diamond are possible).
 const CRAFT_CHANCES = {
-  bronze:   { bronze: 44, silver: 32, gold: 15, platinum: 8, diamond: 1 },
-  silver:   { silver: 72, gold: 17, platinum: 9, diamond: 2 },
-  gold:     { gold: 85, platinum: 10, diamond: 5 },
-  platinum: { platinum: 95, diamond: 5 },
+  bronze:   { bronze: 70, silver: 16, gold: 8, platinum: 5, diamond: 1 },
+  silver:   { silver: 76, gold: 13, platinum: 8, diamond: 3 },
+  gold:     { gold: 80, platinum: 10, diamond: 10 },
+  platinum: { platinum: 74, diamond: 26 },
   diamond:  { diamond: 100 },
 };
 function craftHintHTML(rarity){
@@ -4215,7 +4507,7 @@ document.getElementById("modal-craft").addEventListener("click", async ()=>{
     return;
   }
   const craftCost = CRAFT_COST_BY_RARITY[selectedItem.rarity] || CRAFT_COST_BY_RARITY.bronze;
-  const currentGems = parseInt(document.getElementById("gems-amount").textContent, 10) || 0;
+  const currentGems = gemsBalance;
   if(currentGems < craftCost){
     toastHTML(`Не хватает гемов — нужно ${craftCost} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
     return;
@@ -4259,7 +4551,7 @@ document.getElementById("modal-craft").addEventListener("click", async ()=>{
       document.getElementById("farm-result-number").textContent = "";
       rarityEl.textContent = "";
       rarityEl.className = "";
-      document.getElementById("gems-amount").textContent = card.gems;
+      setGemsDisplay(card.gems);
       tg?.HapticFeedback?.notificationOccurred("error");
     }else{
       stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}" alt="${card.name||''}">`;
@@ -4267,7 +4559,7 @@ document.getElementById("modal-craft").addEventListener("click", async ()=>{
       document.getElementById("farm-result-number").textContent = `№${card.drop_number}`;
       rarityEl.textContent = card.rarity || "";
       rarityEl.className = card.rarity || "";
-      document.getElementById("gems-amount").textContent = card.gems;
+      setGemsDisplay(card.gems);
       tg?.HapticFeedback?.notificationOccurred("success");
     }
   }catch(e){
@@ -4286,13 +4578,13 @@ document.getElementById("modal-craft").addEventListener("click", async ()=>{
 // ---------- Gem cases ("Кейсы") ----------
 const CASES = [
   {key:"hamster", name:"Хомяк", price:50, image:"case/case_hamster.jpg",
-   weights:{bronze:40, silver:30, gold:18, platinum:9, diamond:3}},
+   weights:{bronze:50, silver:40, gold:7, platinum:2, diamond:1}},
   {key:"duck", name:"Уточка", price:100, image:"case/case_utya.jpg",
-   weights:{bronze:25, silver:30, gold:25, platinum:14, diamond:6}},
+   weights:{bronze:30, silver:25, gold:35, platinum:8, diamond:2}},
   {key:"capybara", name:"Капибара", price:200, image:"case/case_capybara.jpg",
-   weights:{bronze:10, silver:25, gold:33, platinum:22, diamond:10}},
+   weights:{bronze:10, silver:15, gold:25, platinum:40, diamond:10}},
   {key:"pepe", name:"Пепе", price:500, image:"case/case_pep.jpg",
-   weights:{silver:5, gold:25, platinum:45, diamond:25}},
+   weights:{silver:5, gold:10, platinum:20, diamond:65}},
 ];
 
 function caseHintHTML(def){
@@ -4348,7 +4640,7 @@ async function openCase(caseKey){
   const def = CASES.find(c => c.key === caseKey);
   if(!def) return;
 
-  const currentGems = parseInt(document.getElementById("gems-amount").textContent, 10) || 0;
+  const currentGems = gemsBalance;
   if(currentGems < def.price){
     toastHTML(`Не хватает гемов — нужно ${def.price} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
     return;
@@ -4376,7 +4668,7 @@ async function openCase(caseKey){
     const rarityEl = document.getElementById("farm-result-rarity");
     rarityEl.textContent = card.rarity || "";
     rarityEl.className = card.rarity || "";
-    document.getElementById("gems-amount").textContent = card.gems;
+    setGemsDisplay(card.gems);
     document.getElementById("total-farmed").textContent = card.drop_number; // drop_number IS the new global total (same COUNT(*) as farm's total_farmed)
     tg?.HapticFeedback?.notificationOccurred("success");
   }catch(e){
@@ -4393,6 +4685,221 @@ async function openCase(caseKey){
     caseOpenBusy = false;
   }
 }
+
+// ---------- Numbers auction ("Номера") — bid gems on the lowest still-free/auctioned
+// collection numbers; win one, then either attach it to your own card or resell it. ----------
+let numbersMode = "auction";
+let numbersBoard = { auctions: [], listings: [] };
+let numbersMine = [];
+
+function numberTimeLeftLabel(expiresAt){
+  if(!expiresAt) return "";
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if(ms <= 0) return "завершается...";
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  return h > 0 ? `осталось ${h}ч ${m}м` : `осталось ${m}м`;
+}
+
+async function loadNumbers(){
+  const board = await api("/numbers/board");
+  numbersBoard = board;
+  setGemsDisplay(board.gems);
+  const mine = await api("/numbers/mine");
+  numbersMine = mine.numbers;
+  renderNumbersList();
+}
+
+function renderNumbersList(){
+  const list = document.getElementById("numbers-list");
+  const sub = document.getElementById("numbers-sub");
+  if(numbersMode === "auction"){
+    sub.textContent = `Топ 100 самых низких свободных номеров — минимальная ставка ${numbersBoard.min_bid || 100} гемов, таймер 24ч с момента последней ставки`;
+    if(!numbersBoard.auctions.length){
+      list.innerHTML = `<div class="empty-state">Пока нет свободных номеров</div>`;
+      return;
+    }
+    list.innerHTML = numbersBoard.auctions.map(a=>{
+      const leading = a.status === "auction"
+        ? `<div class="lbl">Ставка (${numberTimeLeftLabel(a.bid_expires_at)})</div><div class="val">${a.highest_bid} <img src="/static/icons/diamond.png" alt=""></div>`
+        : `<div class="lbl">Свободен</div><div class="val">от ${numbersBoard.min_bid || 100} <img src="/static/icons/diamond.png" alt=""></div>`;
+      return `
+        <div class="number-row" data-number="${a.number}">
+          <div class="num">#${a.number}</div>
+          <div class="info">${leading}</div>
+          <button class="act bid" data-number="${a.number}" data-min="${Math.max(numbersBoard.min_bid || 100, (a.highest_bid||0)+1)}">Ставка</button>
+        </div>`;
+    }).join("");
+    list.querySelectorAll(".act.bid").forEach(btn=>{
+      btn.addEventListener("click", ()=>bidOnNumber(parseInt(btn.dataset.number), parseInt(btn.dataset.min)));
+    });
+  }else if(numbersMode === "listings"){
+    sub.textContent = "Номера, которые другие игроки выставили на продажу";
+    if(!numbersBoard.listings.length){
+      list.innerHTML = `<div class="empty-state">Пока никто ничего не продаёт</div>`;
+      return;
+    }
+    list.innerHTML = numbersBoard.listings.map(l=>{
+      const seller = l.username ? `@${l.username}` : (l.first_name || "Игрок");
+      return `
+        <div class="number-row" data-number="${l.number}">
+          <div class="num">#${l.number}</div>
+          <div class="info"><div class="lbl">${seller}</div><div class="val">${l.list_price} <img src="/static/icons/diamond.png" alt=""></div></div>
+          <button class="act buy" data-number="${l.number}">Купить</button>
+        </div>`;
+    }).join("");
+    list.querySelectorAll(".act.buy").forEach(btn=>{
+      btn.addEventListener("click", ()=>buyListedNumber(parseInt(btn.dataset.number)));
+    });
+  }else{
+    sub.textContent = "Номера, которые ты выиграл или купил";
+    if(!numbersMine.length){
+      list.innerHTML = `<div class="empty-state">У тебя пока нет купленных номеров</div>`;
+      return;
+    }
+    list.innerHTML = numbersMine.map(n=>{
+      const status = n.user_card_id
+        ? `<div class="lbl">Закреплён за картой</div><div class="val">${n.list_price ? `Продаётся за ${n.list_price}` : "Не продаётся"}</div>`
+        : `<div class="lbl">Не закреплён</div><div class="val">${n.list_price ? `Продаётся за ${n.list_price}` : "Свободен для действия"}</div>`;
+      const actions = n.list_price
+        ? `<button class="act cancel" data-number="${n.number}" data-action="cancel">Снять</button>`
+        : `<button class="act attach" data-number="${n.number}" data-action="attach">Закрепить</button><button class="act sell" data-number="${n.number}" data-action="sell">Продать</button>`;
+      return `
+        <div class="number-row" data-number="${n.number}">
+          <div class="num">#${n.number}</div>
+          <div class="info">${status}</div>
+          <div style="display:flex; gap:6px; flex-shrink:0;">${actions}</div>
+        </div>`;
+    }).join("");
+    list.querySelectorAll("[data-action='attach']").forEach(btn=>{
+      btn.addEventListener("click", ()=>attachNumberFlow(parseInt(btn.dataset.number)));
+    });
+    list.querySelectorAll("[data-action='sell']").forEach(btn=>{
+      btn.addEventListener("click", ()=>sellNumberFlow(parseInt(btn.dataset.number)));
+    });
+    list.querySelectorAll("[data-action='cancel']").forEach(btn=>{
+      btn.addEventListener("click", ()=>cancelNumberListingFlow(parseInt(btn.dataset.number)));
+    });
+  }
+}
+
+async function bidOnNumber(number, minBid){
+  const amount = await promptNumber(`Ставка на номер #${number} (минимум ${minBid} гемов)`);
+  if(!amount) return;
+  try{
+    const result = await api("/numbers/bid", { number, amount });
+    setGemsDisplay(result.gems);
+    toast(`Ставка ${amount} гемов принята — таймер обновлён на 24ч`);
+    await loadNumbers();
+  }catch(e){
+    toast("Не получилось: " + e.message);
+  }
+}
+
+async function buyListedNumber(number){
+  const userCardId = await openNumberCardPicker("Выбери свою карту, которая получит номер");
+  if(!userCardId) return;
+  try{
+    const result = await api("/numbers/buy_listed", { number, user_card_id: userCardId });
+    setGemsDisplay(result.gems);
+    toast(`Номер #${number} куплен и закреплён`);
+    await loadNumbers();
+    sortInventoryAndRender();
+  }catch(e){
+    toast("Не получилось: " + e.message);
+  }
+}
+
+async function attachNumberFlow(number){
+  const userCardId = await openNumberCardPicker("Выбери свою карту для номера #" + number);
+  if(!userCardId) return;
+  try{
+    await api("/numbers/attach", { number, user_card_id: userCardId });
+    toast(`Номер #${number} закреплён`);
+    await loadNumbers();
+    sortInventoryAndRender();
+  }catch(e){
+    toast("Не получилось: " + e.message);
+  }
+}
+
+async function sellNumberFlow(number){
+  const price = await promptNumber(`За сколько гемов продать номер #${number}?`);
+  if(!price) return;
+  try{
+    await api("/numbers/list", { number, price_gems: price });
+    toast(`Номер #${number} выставлен за ${price} гемов`);
+    await loadNumbers();
+  }catch(e){
+    toast("Не получилось: " + e.message);
+  }
+}
+
+async function cancelNumberListingFlow(number){
+  try{
+    await api("/numbers/cancel_listing", { number });
+    toast(`Продажа номера #${number} снята`);
+    await loadNumbers();
+  }catch(e){
+    toast("Не получилось: " + e.message);
+  }
+}
+
+// Single-card picker, reused by "buy a listed number" and "attach a number to a card".
+let numberCardPickerResolve = null;
+function openNumberCardPicker(title){
+  document.getElementById("number-card-picker-title").textContent = title;
+  const grid = document.getElementById("number-card-picker-grid");
+  const eligible = inventory.filter(c => !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at);
+  if(!eligible.length){
+    grid.innerHTML = `<div class="empty-state">Нет свободных карт</div>`;
+  }else{
+    grid.innerHTML = eligible.map(c => `
+      <div class="grid-item picker-item rarity-border-${c.rarity}" data-uc="${c.user_card_id}">
+        <img src="/static/cards/${c.filename}" alt="${c.name || ''}">
+        <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
+        <div class="check">✓</div>
+      </div>
+    `).join("");
+  }
+  let selected = null;
+  grid.querySelectorAll(".picker-item").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      grid.querySelectorAll(".picker-item").forEach(x=>x.classList.remove("selected"));
+      el.classList.add("selected");
+      selected = parseInt(el.dataset.uc);
+    });
+  });
+  document.getElementById("number-card-picker-overlay").classList.add("active");
+  return new Promise(resolve=>{
+    numberCardPickerResolve = (confirmed)=>{
+      document.getElementById("number-card-picker-overlay").classList.remove("active");
+      resolve(confirmed ? selected : null);
+    };
+  });
+}
+document.getElementById("number-card-picker-confirm").addEventListener("click", ()=>{
+  if(numberCardPickerResolve) numberCardPickerResolve(true);
+});
+document.getElementById("number-card-picker-cancel").addEventListener("click", ()=>{
+  if(numberCardPickerResolve) numberCardPickerResolve(false);
+});
+
+document.getElementById("numbers-btn").addEventListener("click", async ()=>{
+  document.getElementById("numbers-overlay").classList.add("active");
+  try{ await loadNumbers(); }catch(e){ toast("Ошибка загрузки номеров: " + e.message); }
+});
+document.getElementById("numbers-close").addEventListener("click", ()=>{
+  document.getElementById("numbers-overlay").classList.remove("active");
+});
+document.getElementById("numbers-mode-switch").addEventListener("click", (e)=>{
+  const btn = e.target.closest(".mode-switch-btn");
+  if(!btn) return;
+  document.querySelectorAll("#numbers-mode-switch .mode-switch-btn").forEach(b=>b.classList.remove("active"));
+  btn.classList.add("active");
+  numbersMode = btn.dataset.mode;
+  renderNumbersList();
+});
 
 // ---------- Burn (сжигание): sacrifice N same-rarity cards for a guaranteed shot at the
 // next tier up. Free, but a real 3% chance of total loss (unlike craft, which always
@@ -4622,11 +5129,6 @@ document.getElementById("income-overlay").addEventListener("click", (e)=>{
 });
 
 document.getElementById("stat-refs-tile").addEventListener("click", ()=>{
-  const count = parseInt(document.getElementById("stat-refs").textContent, 10) || 0;
-  const remaining = Math.max(0, 10 - count);
-  document.getElementById("referral-progress-text").textContent = remaining > 0
-    ? `Приглашено: ${count} — осталось ${remaining} наградных мест`
-    : `Приглашено: ${count} — наградные места закончились, но приглашения всё равно засчитываются`;
   document.getElementById("referral-overlay").classList.add("active");
 });
 document.getElementById("referral-close").addEventListener("click", ()=>{

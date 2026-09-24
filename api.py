@@ -187,6 +187,38 @@ class CryptoWithdrawBody(InitDataBody):
     wallet_address: str
 
 
+class NumberBidBody(InitDataBody):
+    number: int
+    amount: int
+
+
+class NumberAttachBody(InitDataBody):
+    number: int
+    user_card_id: int
+
+
+class NumberListBody(InitDataBody):
+    number: int
+    price_gems: int
+
+
+class NumberCancelListingBody(InitDataBody):
+    number: int
+
+
+class NumberBuyListedBody(InitDataBody):
+    number: int
+    user_card_id: int
+
+
+class WallPinBody(InitDataBody):
+    user_card_id: int
+
+
+class WallUnpinBody(InitDataBody):
+    user_card_id: int
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -270,7 +302,12 @@ async def farm(body: InitDataBody):
     referral_reward = result.pop("referral_reward", None)
     if referral_reward:
         who_name = f"@{user['username']}" if user.get("username") else (user.get("first_name") or "Реферал")
-        db.set_referral_notice(referral_reward["referrer_id"], who_name)
+        db.set_referral_notice(referral_reward["referrer_id"], who_name, referral_reward["amount"])
+
+    if result.get("rarity") == "diamond":
+        import bot as bot_module
+        display_name = f"@{user['username']}" if user.get("username") else (user.get("first_name") or "Игрок")
+        await bot_module.notify_diamond_farmed(display_name, result["name"])
 
     return result
 
@@ -657,3 +694,111 @@ async def crypto_withdraw(body: CryptoWithdrawBody):
         result["card_count"], result["gram_amount"], result["wallet_address"],
     )
     return {"ok": True, "withdrawal_id": result["withdrawal_id"], "gram_amount": result["gram_amount"]}
+
+
+# ---------------------------------------------------------------------------
+# Card-number auctions — see database.py's card_numbers schema comment for the state
+# machine. "Номера" tab: browse the cheapest/lowest free-or-auctioned numbers, bid on
+# one, and once you win it, attach it to a card of yours or resell it to someone else.
+# ---------------------------------------------------------------------------
+
+@app.post("/api/numbers/board")
+def numbers_board(body: InitDataBody):
+    user = _authenticate(body.initData)
+    board = db.get_numbers_board()
+    board["gems"] = db.get_gems(user["telegram_id"])
+    return board
+
+
+@app.post("/api/numbers/mine")
+def numbers_mine(body: InitDataBody):
+    user = _authenticate(body.initData)
+    return {"numbers": db.get_my_numbers(user["telegram_id"])}
+
+
+@app.post("/api/numbers/bid")
+def numbers_bid(body: NumberBidBody):
+    user = _authenticate(body.initData)
+    try:
+        result = db.place_number_bid(user["telegram_id"], body.number, body.amount)
+    except db.NumberNotAvailable:
+        raise HTTPException(404, "number isn't up for auction right now")
+    except db.NumberBidTooLow as e:
+        raise HTTPException(400, f"minimum bid is {e.min_bid} gems")
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
+    return result
+
+
+@app.post("/api/numbers/attach")
+def numbers_attach(body: NumberAttachBody):
+    user = _authenticate(body.initData)
+    try:
+        result = db.attach_number(user["telegram_id"], body.number, body.user_card_id)
+    except db.NumberNotAvailable:
+        raise HTTPException(404, "you don't own this number")
+    except db.NumberCardNotUsable:
+        raise HTTPException(404, "card not found in your inventory, or it's busy (listed/staked/swapped/in a PvP round)")
+    return result
+
+
+@app.post("/api/numbers/list")
+def numbers_list(body: NumberListBody):
+    user = _authenticate(body.initData)
+    try:
+        db.list_number_for_sale(user["telegram_id"], body.number, body.price_gems)
+    except db.ListingPriceTooLow as e:
+        raise HTTPException(400, f"minimum price is {e.min_price} gems")
+    except db.NumberNotAvailable:
+        raise HTTPException(404, "you don't own this number")
+    return {"ok": True}
+
+
+@app.post("/api/numbers/cancel_listing")
+def numbers_cancel_listing(body: NumberCancelListingBody):
+    user = _authenticate(body.initData)
+    try:
+        db.cancel_number_listing(user["telegram_id"], body.number)
+    except db.NumberCardNotUsable:
+        raise HTTPException(404, "listing not found")
+    return {"ok": True}
+
+
+@app.post("/api/numbers/buy_listed")
+def numbers_buy_listed(body: NumberBuyListedBody):
+    user = _authenticate(body.initData)
+    try:
+        result = db.buy_listed_number(user["telegram_id"], body.number, body.user_card_id)
+    except db.NumberNotAvailable:
+        raise HTTPException(404, "listing no longer available")
+    except db.NumberCardNotUsable:
+        raise HTTPException(404, "card not found in your inventory, or it's busy (listed/staked/swapped/in a PvP round)")
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
+    result["gems"] = db.get_gems(user["telegram_id"])
+    return result
+
+
+@app.post("/api/wall/list")
+def wall_list(body: InitDataBody):
+    user = _authenticate(body.initData)
+    return {"cards": db.get_wall(user["telegram_id"]), "max_cards": db.MAX_WALL_CARDS}
+
+
+@app.post("/api/wall/pin")
+def wall_pin(body: WallPinBody):
+    user = _authenticate(body.initData)
+    try:
+        db.pin_to_wall(user["telegram_id"], body.user_card_id)
+    except db.WallCardNotUsable:
+        raise HTTPException(404, "card not found in your inventory")
+    except db.WallFull:
+        raise HTTPException(400, f"wall is full (max {db.MAX_WALL_CARDS} cards)")
+    return {"cards": db.get_wall(user["telegram_id"])}
+
+
+@app.post("/api/wall/unpin")
+def wall_unpin(body: WallUnpinBody):
+    user = _authenticate(body.initData)
+    db.unpin_from_wall(user["telegram_id"], body.user_card_id)
+    return {"cards": db.get_wall(user["telegram_id"])}
