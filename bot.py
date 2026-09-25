@@ -476,7 +476,7 @@ async def handle_admin_number_giveaway(message: Message):
     kb.button(text="Участвовать", callback_data=f"numgiveaway_join:{result['id']}")
     text = (
         f"🎉 Розыгрыш карты №{card['number']}!\n\n"
-        f"«{card['name'] or card['rarity']}» ({card['rarity']}) достанется одному случайному участнику.\n"
+        f"«{card['name'] or card['rarity']}» ({card['rarity'].upper()}) достанется одному случайному участнику.\n"
         f"Жми «Участвовать» — итоги подведём тут же через {_format_hours(hours)}."
     )
     try:
@@ -528,11 +528,17 @@ async def _announce_number_giveaway_result(giveaway: dict, result: dict):
         )
     else:
         text = f"🎉 Розыгрыш карты №{card['number']} завершён — участников не набралось, увы."
-    try:
-        if giveaway.get("message_id"):
+    # Edit the original post so it shows the final state in place, AND send a fresh
+    # message with the same text — a long giveaway (hours) can scroll the original post
+    # way up in chat history by the time it draws, so the edit alone is easy to miss;
+    # the new message guarantees the result actually surfaces where people are looking.
+    if giveaway.get("message_id"):
+        try:
             await bot.edit_message_text(chat_id=PUBLIC_CHAT, message_id=giveaway["message_id"], text=text)
-        else:
-            await bot.send_message(PUBLIC_CHAT, text)
+        except Exception:
+            logger.warning("could not edit original number giveaway %s post", giveaway["id"])
+    try:
+        await bot.send_message(PUBLIC_CHAT, text)
     except Exception:
         logger.warning("could not announce number giveaway %s result", giveaway["id"])
 

@@ -42,7 +42,10 @@
     height:100vh;
     height:100dvh;
     height:var(--tg-vh, 100dvh);
-    background:#000;
+    background:
+      linear-gradient(rgba(0,0,0,.5), rgba(0,0,0,.5)),
+      url("/static/back/7.jpg") center/cover no-repeat,
+      #000;
     position:relative;
     display:flex;
     flex-direction:column;
@@ -265,6 +268,36 @@
     box-shadow:0 4px 10px rgba(0,0,0,.35);
   }
   .number-btn:active{transform:scale(.95);}
+  .mining-btn{
+    position:absolute; left:50%; bottom:0; transform:translateX(-50%);
+    background:linear-gradient(135deg,#f472b6,#c026d3);
+    color:#fff; border:none; border-radius:999px;
+    padding:9px 16px; font-size:12px; font-weight:800; cursor:pointer;
+    box-shadow:0 4px 14px rgba(192,38,211,.45);
+    white-space:nowrap;
+  }
+  .mining-btn:active{transform:translateX(-50%) scale(.95);}
+  .mining-btn.ready{
+    background:linear-gradient(135deg,#facc15,#fbbf24); color:#1a1400;
+    box-shadow:0 4px 14px rgba(250,204,21,.5);
+    animation:fortuneGlow 2.4s ease-in-out infinite;
+  }
+  .mining-btn.mining{
+    animation:miningBtnBreathe 1.6s ease-in-out infinite;
+  }
+  @keyframes miningBtnBreathe{
+    0%,100%{box-shadow:0 4px 14px rgba(192,38,211,.45); opacity:1;}
+    50%{box-shadow:0 4px 22px rgba(192,38,211,.8); opacity:.88;}
+  }
+  .mining-pick{
+    display:inline-block;
+    animation:miningPickSwing 1s ease-in-out infinite;
+  }
+  @keyframes miningPickSwing{
+    0%,100%{transform:rotate(0deg) scale(1);}
+    30%{transform:rotate(-22deg) scale(1.05);}
+    55%{transform:rotate(10deg) scale(1.1);}
+  }
   .farm-total-pill{
     font-size:12px; color:#999;
     background:rgba(255,255,255,.05);
@@ -882,9 +915,10 @@
     background:linear-gradient(90deg, #facc15, #fff3c4, #facc15);
     -webkit-background-clip:text; background-clip:text; color:transparent;
   }
-  #fortune-card .pvp-wheel-wrap{filter:drop-shadow(0 0 18px rgba(250,204,21,.35));}
-  #fortune-card .pvp-wheel-pointer{filter:drop-shadow(0 2px 4px rgba(0,0,0,.6)) drop-shadow(0 0 6px rgba(250,204,21,.7));}
-  #fortune-hole{background:radial-gradient(circle, #1a1508, #0d0d0d 75%); border-color:rgba(250,204,21,.35);}
+  #fortune-card .pvp-wheel-wrap{width:210px; height:210px; max-width:66vw; max-height:66vw; filter:drop-shadow(0 0 22px rgba(250,204,21,.4));}
+  #fortune-card .pvp-wheel{box-shadow:inset 0 0 0 2px rgba(255,255,255,.08), inset 0 0 24px rgba(0,0,0,.5);}
+  #fortune-card .pvp-wheel-pointer{filter:drop-shadow(0 2px 4px rgba(0,0,0,.6)) drop-shadow(0 0 8px rgba(250,204,21,.8));}
+  #fortune-hole{background:radial-gradient(circle, #241c08, #0d0d0d 75%); border-color:rgba(250,204,21,.45); box-shadow:0 0 14px rgba(250,204,21,.2);}
   .fortune-legend{width:100%; margin-top:14px; display:flex; flex-direction:column; gap:6px;}
   .fortune-legend-row{
     display:flex; align-items:center; gap:8px; font-size:12px;
@@ -893,6 +927,11 @@
     border-radius:8px; padding:6px 10px;
   }
   .fortune-legend-row .name{flex:1 1 auto; text-align:left; font-weight:600;}
+  .fortune-legend-row.jackpot{
+    background:rgba(250,204,21,.08); border-color:rgba(250,204,21,.3);
+    animation:fortuneGlow 2.4s ease-in-out infinite;
+  }
+  .fortune-legend-row.jackpot .name{color:#facc15; font-weight:800;}
   #fortune-outcome{
     display:none; margin-top:16px; font-size:14px; font-weight:800; line-height:1.4;
   }
@@ -901,10 +940,19 @@
     text-shadow:0 0 12px rgba(250,204,21,.6);
     animation:fortuneWin .5s ease;
   }
+  #fortune-outcome.jackpot{
+    color:#facc15; font-size:19px;
+    text-shadow:0 0 18px rgba(250,204,21,.9), 0 0 34px rgba(250,204,21,.5);
+    animation:fortuneWin .5s ease, jackpotPulse 1.1s ease-in-out infinite .5s;
+  }
   @keyframes fortuneWin{
     0%{transform:scale(.85); opacity:0;}
     60%{transform:scale(1.08); opacity:1;}
     100%{transform:scale(1);}
+  }
+  @keyframes jackpotPulse{
+    0%,100%{text-shadow:0 0 18px rgba(250,204,21,.9), 0 0 34px rgba(250,204,21,.5);}
+    50%{text-shadow:0 0 26px rgba(250,204,21,1), 0 0 52px rgba(250,204,21,.8);}
   }
   #fortune-close{
     display:none; margin-top:16px; width:100%;
@@ -1023,6 +1071,47 @@
     padding:22px 18px 18px; box-sizing:border-box; text-align:left;
   }
   #numbers-title{font-size:16px; font-weight:800; margin-bottom:12px;}
+  #numbers-close-bottom{
+    margin-top:16px; width:100%;
+    background:rgba(255,255,255,.08); color:#ccc; border:none; border-radius:12px;
+    padding:12px; font-size:13px; font-weight:700; cursor:pointer;
+  }
+
+  /* ---------- Gem mining ---------- */
+  #mining-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.92);
+    display:none; align-items:center; justify-content:center;
+    z-index:80; padding:24px;
+  }
+  #mining-overlay.active{display:flex;}
+  #mining-card{
+    position:relative;
+    width:100%; max-width:300px;
+    background:linear-gradient(180deg, #2a0a1f, var(--card-bg) 45%);
+    border:1px solid rgba(236,72,153,.4); border-radius:20px;
+    padding:22px 18px 18px; box-sizing:border-box; text-align:center;
+  }
+  #mining-title{font-size:16px; font-weight:800; margin-bottom:10px; color:#f472b6;}
+  #mining-status{font-size:12.5px; color:#999; margin-bottom:14px; line-height:1.4;}
+  #mining-progress-wrap{
+    width:100%; height:7px; border-radius:999px; background:rgba(255,255,255,.08);
+    overflow:hidden; margin-bottom:16px; display:none;
+  }
+  #mining-progress-wrap.active{display:block;}
+  #mining-progress-bar{
+    height:100%; width:0%; background:linear-gradient(90deg,#f472b6,#c026d3);
+    transition:width 1s linear;
+  }
+  #mining-action-btn{
+    width:100%; border:none; border-radius:12px; padding:13px; font-size:14px; font-weight:800;
+    cursor:pointer; background:linear-gradient(135deg,#f472b6,#c026d3); color:#fff;
+  }
+  #mining-action-btn:disabled{background:#2a2a2a; color:#777; cursor:not-allowed;}
+  #mining-action-btn.ready{
+    background:linear-gradient(135deg,#facc15,#fbbf24); color:#1a1400;
+    animation:fortuneGlow 2.4s ease-in-out infinite;
+  }
   #numbers-mode-switch{margin-bottom:10px;}
   #numbers-mode-switch .mode-switch-btn[data-mode="auction"].active{background:rgba(59,130,246,.18); color:#3b82f6;}
   #numbers-mode-switch .mode-switch-btn[data-mode="listings"].active{background:rgba(250,204,21,.18); color:#facc15;}
@@ -1737,6 +1826,7 @@
       </div>
       <div id="farm-hint"></div>
       <button class="case-btn" id="cases-btn">🎁 Кейсы</button>
+      <button class="mining-btn" id="mining-open-btn">⛏️ Гемить</button>
       <button class="number-btn" id="numbers-btn"># Номера</button>
     </section>
 
@@ -2208,6 +2298,18 @@
       </div>
       <div id="numbers-sub"></div>
       <div id="numbers-list"></div>
+      <button id="numbers-close-bottom">Закрыть</button>
+    </div>
+    <button type="button" id="numbers-scroll-top" class="scroll-top-btn">↑</button>
+  </div>
+
+  <div id="mining-overlay">
+    <div id="mining-card">
+      <button class="btn-close-inline" id="mining-close">✕</button>
+      <div id="mining-title">⛏️ Добыча гемов</div>
+      <div id="mining-status">Жми, чтобы начать добычу</div>
+      <div id="mining-progress-wrap"><div id="mining-progress-bar"></div></div>
+      <button id="mining-action-btn">Начать добычу</button>
     </div>
   </div>
 
@@ -2601,6 +2703,7 @@ async function refreshGems(){
       // overlays above if one of those is also showing right now.
       setTimeout(maybeOpenFortuneWheel, 1200);
     }
+    if(auth.gem_mining) renderMining(auth.gem_mining);
   }catch(e){ /* non-critical */ }
 }
 refreshGems();
@@ -3493,21 +3596,25 @@ document.getElementById("pvp-reveal-close").addEventListener("click", ()=>{
 });
 
 // ---------- Daily fortune wheel ----------
-// Fixed visual layout — 8 equal 45° slices, 6 empty + one "25" + one "50". The
-// server never reveals the real odds (10% for 25, 1% for 50 — see database.py's
-// spin_fortune_wheel), so these slice sizes are NOT the true chances, just 8 even
-// slots to spin across. On a loss the wheel lands on a random empty slice.
+// Fixed visual layout — 12 equal 30° slices: 8 empty + two "25" + one "100" + one
+// "1000" (jackpot). The server never reveals the real odds (3%/2%/1% — see
+// database.py's spin_fortune_wheel), so these slice sizes are NOT the true chances,
+// just 12 even slots to spin across. On a loss the wheel lands on a random empty slice.
 const FORTUNE_SEGMENTS = [
-  { color:"#262626", amount:0 },
-  { color:"#333333", amount:0 },
-  { color:"#facc15", amount:25 },
-  { color:"#262626", amount:0 },
-  { color:"#333333", amount:0 },
-  { color:"#4ade80", amount:50 },
-  { color:"#262626", amount:0 },
-  { color:"#333333", amount:0 },
+  { color:"#1a1a1a", amount:0 },
+  { color:"#2a2a2a", amount:0 },
+  { color:"#34d399", amount:25 },
+  { color:"#1a1a1a", amount:0 },
+  { color:"#2a2a2a", amount:0 },
+  { color:"#34d399", amount:25 },
+  { color:"#1a1a1a", amount:0 },
+  { color:"#a78bfa", amount:100 },
+  { color:"#2a2a2a", amount:0 },
+  { color:"#1a1a1a", amount:0 },
+  { color:"#facc15", amount:1000 },
+  { color:"#2a2a2a", amount:0 },
 ].map((s, i)=>{
-  const size = 360 / 8;
+  const size = 360 / 12;
   const start = i * size, end = start + size;
   return { ...s, start, end, mid: (start + end) / 2 };
 });
@@ -3538,9 +3645,10 @@ function openFortuneWheel(amount){
   closeBtn.style.display = "none";
 
   legend.innerHTML = `
-    <div class="fortune-legend-row" style="border-left-color:#4b4b4b"><span class="pvp-swatch" style="background:#333"></span><span class="name">Пусто</span></div>
-    <div class="fortune-legend-row" style="border-left-color:#facc15"><span class="pvp-swatch" style="background:#facc15"></span><span class="name">+25 <img src="/static/icons/diamond.png" alt="" style="width:12px;height:12px;vertical-align:-1px;"></span></div>
-    <div class="fortune-legend-row" style="border-left-color:#4ade80"><span class="pvp-swatch" style="background:#4ade80"></span><span class="name">+50 <img src="/static/icons/diamond.png" alt="" style="width:12px;height:12px;vertical-align:-1px;"></span></div>
+    <div class="fortune-legend-row" style="border-left-color:#4b4b4b"><span class="pvp-swatch" style="background:#2a2a2a"></span><span class="name">Пусто</span></div>
+    <div class="fortune-legend-row" style="border-left-color:#34d399"><span class="pvp-swatch" style="background:#34d399"></span><span class="name">+25 <img src="/static/icons/diamond.png" alt="" style="width:12px;height:12px;vertical-align:-1px;"></span></div>
+    <div class="fortune-legend-row" style="border-left-color:#a78bfa"><span class="pvp-swatch" style="background:#a78bfa"></span><span class="name">+100 <img src="/static/icons/diamond.png" alt="" style="width:12px;height:12px;vertical-align:-1px;"></span></div>
+    <div class="fortune-legend-row jackpot" style="border-left-color:#facc15"><span class="pvp-swatch" style="background:#facc15"></span><span class="name">+1000 <img src="/static/icons/diamond.png" alt="" style="width:12px;height:12px;vertical-align:-1px;"> ДЖЕКПОТ</span></div>
   `;
 
   wheel.style.transition = "none";
@@ -3566,9 +3674,10 @@ function openFortuneWheel(amount){
   const finish = ()=>{
     if(finished) return;
     finished = true;
-    title.textContent = amount > 0 ? "🎉 Повезло!" : "🎡 Колесо фортуны";
+    const isJackpot = amount >= 1000;
+    title.textContent = isJackpot ? "🏆 ДЖЕКПОТ!!!" : (amount > 0 ? "🎉 Повезло!" : "🎡 Колесо фортуны");
     outcome.style.display = "block";
-    outcome.className = amount > 0 ? "won" : "";
+    outcome.className = amount > 0 ? (isJackpot ? "won jackpot" : "won") : "";
     outcome.innerHTML = amount > 0
       ? `Ты выиграл ${amount} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">! Приходи завтра ещё раз.`
       : "Сегодня не повезло — приходи завтра, будет ещё попытка.";
@@ -3581,6 +3690,116 @@ function openFortuneWheel(amount){
 document.getElementById("fortune-close").addEventListener("click", ()=>{
   document.getElementById("fortune-overlay").classList.remove("active");
 });
+
+// ---------- Gem mining (modal, opened from the Farm screen's "Добыча" button) ----------
+// Same one-button "press to start, wait 60 min, press again to collect + restart"
+// loop as before, just as its own modal now instead of an inline card, so it never
+// pushes the Кейсы/Номера buttons around. Status is fetched fresh from /auth each
+// time the modal opens; the countdown itself then runs client-side (cosmetic only —
+// /api/gemmining/collect is always the source of truth for whether a claim is ready).
+let miningTimer = null;
+let miningBusy = false;
+
+function formatMMSS(totalSeconds){
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${String(m).padStart(2,"0")}:${String(r).padStart(2,"0")}`;
+}
+
+function renderMining(status){
+  clearInterval(miningTimer);
+  const label = document.getElementById("mining-status");
+  const btn = document.getElementById("mining-action-btn");
+  const openBtn = document.getElementById("mining-open-btn");
+  const progressWrap = document.getElementById("mining-progress-wrap");
+  const progressBar = document.getElementById("mining-progress-bar");
+  const DURATION = 3600;
+
+  if(!status.active){
+    progressWrap.classList.remove("active");
+    btn.classList.remove("ready");
+    btn.disabled = false;
+    btn.textContent = "Начать добычу";
+    label.textContent = "Жми, чтобы начать — через час заберёшь 25 гемов";
+    openBtn.classList.remove("ready", "mining");
+    openBtn.textContent = "⛏️ Гемить";
+    return;
+  }
+
+  if(status.ready){
+    progressWrap.classList.remove("active");
+    btn.classList.add("ready");
+    btn.disabled = false;
+    btn.textContent = "Забрать 25 💎";
+    label.textContent = "Готово! Жми, чтобы забрать и начать заново";
+    openBtn.classList.remove("mining");
+    openBtn.classList.add("ready");
+    openBtn.textContent = "⛏️ Забрать";
+    return;
+  }
+
+  btn.classList.remove("ready");
+  btn.disabled = true;
+  progressWrap.classList.add("active");
+  openBtn.classList.remove("ready");
+  openBtn.classList.add("mining");
+  // While a cycle is running, the button itself becomes the "in progress" indicator —
+  // a spinning pickaxe (CSS animation on .mining-pick) plus the live countdown next to
+  // it, instead of just sitting there looking idle with the word "Гемить" on it.
+  let secondsLeft = status.seconds_left;
+  const tick = ()=>{
+    const pct = Math.max(0, Math.min(100, ((DURATION - secondsLeft) / DURATION) * 100));
+    progressBar.style.width = pct + "%";
+    label.textContent = `Добывается... осталось ${formatMMSS(secondsLeft)}`;
+    btn.textContent = `⏳ ${formatMMSS(secondsLeft)}`;
+    openBtn.innerHTML = `<span class="mining-pick">⛏️</span> ${formatMMSS(secondsLeft)}`;
+    if(secondsLeft <= 0){
+      clearInterval(miningTimer);
+      renderMining({ active:true, ready:true, seconds_left:0 });
+      return;
+    }
+    secondsLeft -= 1;
+  };
+  tick();
+  miningTimer = setInterval(tick, 1000);
+}
+
+document.getElementById("mining-open-btn").addEventListener("click", async ()=>{
+  document.getElementById("mining-overlay").classList.add("active");
+  try{
+    const auth = await api("/auth");
+    renderMining(auth.gem_mining || { active:false, ready:false, seconds_left:0 });
+  }catch(e){
+    toast("Ошибка загрузки: " + e.message);
+  }
+});
+document.getElementById("mining-close").addEventListener("click", ()=>{
+  document.getElementById("mining-overlay").classList.remove("active");
+  clearInterval(miningTimer);
+});
+
+document.getElementById("mining-action-btn").addEventListener("click", async ()=>{
+  if(miningBusy) return;
+  miningBusy = true;
+  const btn = document.getElementById("mining-action-btn");
+  btn.disabled = true;
+  try{
+    const result = await api("/gemmining/collect");
+    if(result.claimed > 0){
+      setGemsDisplay(result.gems);
+      toast(`+${result.claimed} 💎 добыто! Новый цикл начался.`);
+      tg?.HapticFeedback?.notificationOccurred("success");
+    }
+    renderMining(result);
+  }catch(e){
+    toast("Не получилось: " + e.message);
+    btn.disabled = false;
+  }finally{
+    miningBusy = false;
+  }
+});
+
 
 // ---------- PvP picker (choose which of your own cards to stake — no taking them back) ----------
 let pvpPickerSelected = new Set();
@@ -3858,7 +4077,7 @@ function startFarmAnimation(cards, hintHTML){
     }, 180);
   }
 
-  const duration = 4000;
+  const duration = 3000;
   const start = Date.now();
   return new Promise(resolve=>{
     clearInterval(farmProgressTimer);
@@ -4911,6 +5130,16 @@ document.getElementById("numbers-btn").addEventListener("click", async ()=>{
 });
 document.getElementById("numbers-close").addEventListener("click", ()=>{
   document.getElementById("numbers-overlay").classList.remove("active");
+});
+document.getElementById("numbers-close-bottom").addEventListener("click", ()=>{
+  document.getElementById("numbers-overlay").classList.remove("active");
+});
+document.getElementById("numbers-card").addEventListener("scroll", (e)=>{
+  const btn = document.getElementById("numbers-scroll-top");
+  btn.classList.toggle("visible", e.target.scrollTop > 300);
+});
+document.getElementById("numbers-scroll-top").addEventListener("click", ()=>{
+  document.getElementById("numbers-card").scrollTo({top:0, behavior:"smooth"});
 });
 document.getElementById("numbers-mode-switch").addEventListener("click", (e)=>{
   const btn = e.target.closest(".mode-switch-btn");

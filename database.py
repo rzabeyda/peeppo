@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS users (
     last_daily_bonus TEXT,
     streak_days   INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL,
-    last_seen_at  TEXT
+    last_seen_at  TEXT,
+    gem_mining_started_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS cards (
@@ -396,6 +397,10 @@ def init_db():
         # every time a player's client calls /api/auth, i.e. every time they open the app)
         if "last_seen_at" not in u_cols:
             conn.execute("ALTER TABLE users ADD COLUMN last_seen_at TEXT")
+        # migration for gem mining (see collect_gem_mining()) — a repeatable "press to
+        # start, wait 60 min, press again to collect + restart" passive gem timer.
+        if "gem_mining_started_at" not in u_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN gem_mining_started_at TEXT")
         # migration for purchasable player rank (see purchase_rank()/set_purchased_rank())
         # — a floor under the normal time-based rank, bought with Telegram Stars. 0 means
         # "nothing bought", so the time-based rank alone still applies.
@@ -713,9 +718,10 @@ def claim_daily_bonus(user_id: int) -> int:
 # match the real probabilities.
 # ---------------------------------------------------------------------------
 
-WHEEL_CHANCE_50 = 0.01   # 1% — win 50 gems
-WHEEL_CHANCE_25 = 0.10   # 10% — win 25 gems
-                          # (implicit ~89% chance of winning nothing)
+WHEEL_CHANCE_1000 = 0.01   # 1% — win 1000 gems (jackpot)
+WHEEL_CHANCE_100 = 0.02    # 2% — win 100 gems
+WHEEL_CHANCE_25 = 0.03     # 3% — win 25 gems
+                            # (implicit 94% chance of winning nothing)
 
 
 def wheel_available(user_id: int) -> bool:
@@ -729,17 +735,19 @@ def wheel_available(user_id: int) -> bool:
 def spin_fortune_wheel(user_id: int) -> dict:
     """Rolls today's spin (server-side only — the odds never leave this function),
     credits any winnings, and marks the spin used for today. Returns {'ok': True,
-    'amount': 0|25|50} normally, or {'ok': False} if this user already spun today
-    (a stale/duplicate client call)."""
+    'amount': 0|25|100|1000} normally, or {'ok': False} if this user already spun
+    today (a stale/duplicate client call)."""
     today = datetime.now(timezone.utc).date().isoformat()
     with get_conn() as conn:
         row = conn.execute("SELECT last_wheel_spin FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
         if row is None or row["last_wheel_spin"] == today:
             return {"ok": False, "amount": 0}
         roll = random.random()
-        if roll < WHEEL_CHANCE_50:
-            amount = 50
-        elif roll < WHEEL_CHANCE_50 + WHEEL_CHANCE_25:
+        if roll < WHEEL_CHANCE_1000:
+            amount = 1000
+        elif roll < WHEEL_CHANCE_1000 + WHEEL_CHANCE_100:
+            amount = 100
+        elif roll < WHEEL_CHANCE_1000 + WHEEL_CHANCE_100 + WHEEL_CHANCE_25:
             amount = 25
         else:
             amount = 0
@@ -752,6 +760,66 @@ def spin_fortune_wheel(user_id: int) -> dict:
         else:
             conn.execute("UPDATE users SET last_wheel_spin = ? WHERE telegram_id = ?", (today, user_id))
         return {"ok": True, "amount": amount}
+
+
+GEM_MINING_DURATION_SECONDS = 60 * 60  # 60 minutes per cycle
+GEM_MINING_REWARD_GEMS = 25
+
+
+def get_gem_mining_status(user_id: int) -> dict:
+    """Current state of the repeatable gem-mining timer, for the client to render the
+    button/countdown on load without needing to press anything. 'active' means a cycle
+    is running (started_at is set); 'ready' means that cycle's 60 minutes are up and
+    pressing the button will collect it. seconds_left is 0 once ready or if inactive."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT gem_mining_started_at FROM users WHERE telegram_id = ?", (user_id,)
+        ).fetchone()
+    if row is None or row["gem_mining_started_at"] is None:
+        return {"active": False, "ready": False, "seconds_left": 0}
+    started = _parse_utc(row["gem_mining_started_at"])
+    elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+    if elapsed >= GEM_MINING_DURATION_SECONDS:
+        return {"active": True, "ready": True, "seconds_left": 0}
+    return {"active": True, "ready": False, "seconds_left": int(GEM_MINING_DURATION_SECONDS - elapsed)}
+
+
+def collect_gem_mining(user_id: int) -> dict:
+    """The gem-mining button's one action, callable any time: if no cycle is running,
+    starts one (0 gems collected). If a cycle is running and its 60 minutes are up,
+    credits GEM_MINING_REWARD_GEMS and immediately starts the next cycle — so pressing
+    the button both collects and restarts in one tap, repeatable indefinitely. If a
+    cycle is running but not yet ready, this is a no-op (a well-behaved client keeps
+    the button disabled during the countdown) — returns the current status unchanged.
+    Returns {'claimed': 0|GEM_MINING_REWARD_GEMS, 'active', 'ready', 'seconds_left'}."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT gem_mining_started_at FROM users WHERE telegram_id = ?", (user_id,)
+        ).fetchone()
+        now = _now()
+        if row is None:
+            return {"claimed": 0, "active": False, "ready": False, "seconds_left": 0}
+        started_raw = row["gem_mining_started_at"]
+        if started_raw is None:
+            conn.execute(
+                "UPDATE users SET gem_mining_started_at = ? WHERE telegram_id = ?", (now, user_id)
+            )
+            return {"claimed": 0, "active": True, "ready": False, "seconds_left": GEM_MINING_DURATION_SECONDS}
+        elapsed = (datetime.now(timezone.utc) - _parse_utc(started_raw)).total_seconds()
+        if elapsed < GEM_MINING_DURATION_SECONDS:
+            return {
+                "claimed": 0, "active": True, "ready": False,
+                "seconds_left": int(GEM_MINING_DURATION_SECONDS - elapsed),
+            }
+        conn.execute(
+            "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ?, "
+            "gem_mining_started_at = ? WHERE telegram_id = ?",
+            (GEM_MINING_REWARD_GEMS, GEM_MINING_REWARD_GEMS, now, user_id),
+        )
+        return {
+            "claimed": GEM_MINING_REWARD_GEMS, "active": True, "ready": False,
+            "seconds_left": GEM_MINING_DURATION_SECONDS,
+        }
 
 
 def get_users_missing_daily_bonus() -> list[int]:
@@ -1357,7 +1425,13 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
 # ---------------------------------------------------------------------------
 
 NUMBER_MIN_BID_GEMS = 100
-NUMBER_AUCTION_WINDOW_SECONDS = 24 * 60 * 60  # each bid resets the timer to +24h
+# The FIRST bid on a number nobody has bid on yet (status still 'free') opens a
+# shorter 12h window — no point holding a still-uncontested number open for a full
+# day. Once someone else jumps in and it's a real fight (status already 'auction'),
+# every further bid keeps resetting the timer to the original longer +24h window —
+# an auction already in progress never gets cut short out from under an active bidder.
+NUMBER_AUCTION_WINDOW_SECONDS_NEW = 12 * 60 * 60  # first bid on a free number: +12h
+NUMBER_AUCTION_WINDOW_SECONDS = 24 * 60 * 60       # every bid after that: +24h
 
 
 class NumberNotAvailable(Exception):
@@ -1414,7 +1488,12 @@ def _finalize_expired_number_auctions(conn: sqlite3.Connection) -> None:
 # LOW number up to LOW_NUMBER_SEED_UP_TO (1..25) — both get proactively surfaced in
 # the marketplace the moment they are not held by any live card, instead of waiting
 # for someone to burn/evolve a card that happened to hold one.
-VANITY_NUMBERS = [11, 22, 33, 44, 55, 66, 67, 69, 77, 88, 99, 111, 222, 333, 444, 555, 666, 777, 888, 999]
+VANITY_NUMBERS = [
+    11, 22, 33, 44, 55, 66, 67, 69, 77, 88, 99,
+    100, 101,
+    111, 200, 222, 300, 333, 400, 444, 500, 555, 600, 666,
+    700, 777, 800, 888, 900, 999, 1000, 1001,
+]
 LOW_NUMBER_SEED_UP_TO = 25
 # The auction/free pool is intentionally curated, not "every number any card ever
 # held" — a card being burned/evolved still frees whatever number it had (via
@@ -1531,7 +1610,8 @@ def place_number_bid(user_id: int, number: int, amount_gems: int) -> dict:
                 (row["highest_bid"], row["highest_bidder_id"]),
             )
         conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (amount_gems, user_id))
-        expires_at = (datetime.now(timezone.utc) + timedelta(seconds=NUMBER_AUCTION_WINDOW_SECONDS)).isoformat()
+        window = NUMBER_AUCTION_WINDOW_SECONDS_NEW if row["status"] == "free" else NUMBER_AUCTION_WINDOW_SECONDS
+        expires_at = (datetime.now(timezone.utc) + timedelta(seconds=window)).isoformat()
         conn.execute(
             "UPDATE card_numbers SET status = 'auction', highest_bid = ?, highest_bidder_id = ?, "
             "bid_expires_at = ?, updated_at = ? WHERE number = ?",

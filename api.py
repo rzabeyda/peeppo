@@ -249,6 +249,9 @@ def auth(body: InitDataBody):
         # Whether today's (UTC) fortune-wheel spin is still unused — the frontend
         # shows the wheel overlay and calls /api/wheel/spin itself when this is true.
         "wheel_available": db.wheel_available(user["telegram_id"]),
+        # Gem-mining timer status (Farm tab) — so the client can render the
+        # button/countdown correctly on load without an extra round trip.
+        "gem_mining": db.get_gem_mining_status(user["telegram_id"]),
         # Days the bot has been running — shown as the "День: N" counter on Farm.
         "bot_day": db.get_bot_uptime_days(),
         # Player rank (time-played tier, not card rarity) — shown next to the name in
@@ -664,6 +667,14 @@ def wheel_spin(body: InitDataBody):
     if not result["ok"]:
         raise HTTPException(409, "already spun today")
     return {"amount": result["amount"]}
+
+
+@app.post("/api/gemmining/collect")
+def gem_mining_collect(body: InitDataBody):
+    user = _authenticate(body.initData)
+    result = db.collect_gem_mining(user["telegram_id"])
+    result["gems"] = db.get_gems(user["telegram_id"])
+    return result
 
 
 # ---------------------------------------------------------------------------
