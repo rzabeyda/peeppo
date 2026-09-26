@@ -651,7 +651,7 @@
     cursor:pointer; white-space:nowrap;
   }
   .market-filter-btn:active{transform:scale(.95);}
-  .market-filter-btn.active{background:rgba(139,92,246,.18); color:var(--accent); border-color:var(--accent);}
+  .market-filter-btn.active{background:rgba(255,45,149,.18); color:#ff2d95; border-color:#ff2d95;}
   .mode-switch{
     flex:1 1 auto;
     min-width:0;
@@ -708,6 +708,13 @@
     display:flex; align-items:center; gap:3px;
   }
   .market-price-tag img{width:10px; height:10px; border-radius:0;}
+  .market-number-tag{
+    position:absolute; bottom:6px; right:6px;
+    background:rgba(0,0,0,.75);
+    color:#fff;
+    font-size:10px; font-weight:800;
+    padding:3px 7px; border-radius:8px;
+  }
   .market-mine-badge{
     position:absolute; top:6px; right:6px;
     background:rgba(37,99,235,.9);
@@ -1883,7 +1890,7 @@
       <div class="market-subrow" id="market-filter-row">
         <button type="button" class="market-filter-btn active" data-sort="price_asc">Цена ↑</button>
         <button type="button" class="market-filter-btn" data-sort="price_desc">Цена ↓</button>
-        <button type="button" class="market-filter-btn" data-sort="new">Новое</button>
+        <button type="button" class="market-filter-btn" data-sort="number">#</button>
         <button type="button" class="market-filter-btn" data-sort="rarity_bronze">Bronze</button>
         <button type="button" class="market-filter-btn" data-sort="rarity_diamond">Diamond</button>
       </div>
@@ -2540,6 +2547,11 @@ document.addEventListener("click", (e)=>{
 }, true);
 
 const API_BASE = "/api";
+// Bumped whenever a card image file is replaced under the same filename (e.g. an
+// artwork swap) so browsers/Telegram's WebView don't keep serving a cached, stale
+// picture from before the swap -- every /static/cards/ URL below carries this as a
+// query string, which is enough to bust the cache without renaming any files.
+const CARD_IMG_VERSION = 2;
 const FARM_COST_GEMS = 25;
 // Mirrors database.py's MIN_LISTING_PRICE_BY_RARITY — client-side copy for the price
 // prompt + pre-check (server still enforces it for real via ListingPriceTooLow).
@@ -2903,7 +2915,7 @@ function renderGramPickerGrid(){
   }
   grid.innerHTML = eligible.map(c => `
     <div class="grid-item picker-item rarity-border-${c.rarity} ${gramPickerSelected.has(c.user_card_id) ? 'selected' : ''}" data-uc="${c.user_card_id}">
-      <img src="/static/cards/${c.filename}" alt="${c.name || ''}">
+      <img src="/static/cards/${c.filename}?v=${CARD_IMG_VERSION}" alt="${c.name || ''}">
       <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
       <div class="check">✓</div>
     </div>
@@ -2990,7 +3002,7 @@ async function loadMarket(){
   }
 }
 
-let marketSortMode = "price_asc"; // "price_asc" | "price_desc" | "new" | "old" | "number"
+let marketSortMode = "price_asc"; // "price_asc" | "price_desc" | "number" | "rarity_bronze" | "rarity_diamond"
 document.querySelectorAll("#market-filter-row .market-filter-btn").forEach(btn=>{
   btn.addEventListener("click", ()=>{
     marketSortMode = btn.dataset.sort;
@@ -3013,7 +3025,7 @@ function renderMarket(){
   const sorted = [...marketListings].sort((a, b) => {
     switch(sortMode){
       case "price_desc": return b.listed_price - a.listed_price;
-      case "new": return (b.listed_at || "").localeCompare(a.listed_at || "");
+      case "number": return a.card_id - b.card_id;
       case "rarity_bronze": return (RARITY_ORDER[b.rarity] ?? 4) - (RARITY_ORDER[a.rarity] ?? 4);
       case "rarity_diamond": return (RARITY_ORDER[a.rarity] ?? 4) - (RARITY_ORDER[b.rarity] ?? 4);
       case "price_asc":
@@ -3024,8 +3036,9 @@ function renderMarket(){
   list.className = "grid";
   list.innerHTML = sorted.map(l => `
       <div class="grid-item rarity-border-${l.rarity}" data-uc="${l.user_card_id}">
-        <img src="/static/cards/${l.filename}" alt="${l.name||''}">
+        <img src="/static/cards/${l.filename}?v=${CARD_IMG_VERSION}" alt="${l.name||''}">
         <div class="rarity-tag ${l.rarity}">${l.rarity}</div>
+        <div class="market-number-tag">#${l.card_id}</div>
         <div class="market-price-tag"><img src="/static/icons/diamond.png" alt="">${l.listed_price}</div>
         ${l.is_mine ? `<div class="market-mine-badge">Твой</div>` : ""}
       </div>
@@ -3140,7 +3153,7 @@ function renderMarketHistory(trades){
   }
   list.innerHTML = trades.map(t => `
     <div class="history-row market-history-row rarity-border-${t.rarity}">
-      <div class="thumbs"><img class="rarity-border-${t.rarity}" src="/static/cards/${t.filename}" alt=""></div>
+      <div class="thumbs"><img class="rarity-border-${t.rarity}" src="/static/cards/${t.filename}?v=${CARD_IMG_VERSION}" alt=""></div>
       <div class="info">
         <div class="line1">${t.name || "Без названия"}</div>
         <div class="line2">${fmtHistoryDate(t.completed_at)}</div>
@@ -3158,14 +3171,14 @@ function renderSwapHistory(trades){
   }
   list.innerHTML = trades.map(t => {
     const firstOffered = t.offered_cards[0];
-    const offeredThumb = firstOffered ? `<img class="rarity-border-${firstOffered.rarity}" src="/static/cards/${firstOffered.filename}" alt="">` : "";
+    const offeredThumb = firstOffered ? `<img class="rarity-border-${firstOffered.rarity}" src="/static/cards/${firstOffered.filename}?v=${CARD_IMG_VERSION}" alt="">` : "";
     const offeredNames = t.offered_cards.map(c=>c.name).filter(Boolean);
     const offeredLabel = offeredNames.length > 1
       ? `${offeredNames[0]} +${offeredNames.length - 1}`
       : (offeredNames[0] || "?");
     return `
       <div class="history-row rarity-border-${t.listed_card.rarity}">
-        <div class="thumbs"><img class="rarity-border-${t.listed_card.rarity}" src="/static/cards/${t.listed_card.filename}" alt="">${offeredThumb}</div>
+        <div class="thumbs"><img class="rarity-border-${t.listed_card.rarity}" src="/static/cards/${t.listed_card.filename}?v=${CARD_IMG_VERSION}" alt="">${offeredThumb}</div>
         <div class="info">
           <div class="line1">${t.listed_card.name || "Без названия"} ⇄ ${offeredLabel}</div>
           <div class="line2">${fmtHistoryDate(t.accepted_at)}</div>
@@ -3264,7 +3277,7 @@ function renderSwapListings(){
   list.className = "grid";
   list.innerHTML = swapListings.map(l => `
       <div class="grid-item rarity-border-${l.rarity}" data-uc="${l.user_card_id}">
-        <img src="/static/cards/${l.filename}" alt="${l.name||''}">
+        <img src="/static/cards/${l.filename}?v=${CARD_IMG_VERSION}" alt="${l.name||''}">
         <div class="rarity-tag ${l.rarity}">${l.rarity}</div>
         ${l.is_mine ? `<div class="market-mine-badge">Твой</div>` : ""}
       </div>
@@ -3293,9 +3306,9 @@ function openMarketItem(ucId, mode){
   marketItemUcId = ucId;
   marketItemMode = mode;
   const marketItemImgEl = document.getElementById("market-item-img");
-  marketItemImgEl.src = `/static/cards/${item.filename}`;
+  marketItemImgEl.src = `/static/cards/${item.filename}?v=${CARD_IMG_VERSION}`;
   setRarityBorder(marketItemImgEl, item.rarity);
-  document.getElementById("market-item-name").textContent = item.name || "Без названия";
+  document.getElementById("market-item-name").textContent = (item.name || "Без названия") + (item.drop_number != null ? ` #${item.drop_number}` : "");
   const priceRow = document.getElementById("market-item-price-row");
   const actions = document.getElementById("market-item-actions");
 
@@ -3419,7 +3432,7 @@ function renderSwapPickerGrid(){
   }
   grid.innerHTML = swapAvailable.map(c => `
     <div class="grid-item picker-item rarity-border-${c.rarity} ${swapPickerSelected.has(c.user_card_id) ? 'selected' : ''}" data-uc="${c.user_card_id}">
-      <img src="/static/cards/${c.filename}" alt="${c.name||''}">
+      <img src="/static/cards/${c.filename}?v=${CARD_IMG_VERSION}" alt="${c.name||''}">
       <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
       <div class="check">✓</div>
     </div>
@@ -3536,7 +3549,7 @@ function renderPvp(){
   const legendRows = segments.map(p=>{
     const name = p.username || p.first_name || "Игрок";
     const you = p.user_id === myTelegramId ? " you" : "";
-    const cards = p.cards.map(c=>`<img class="rarity-border-${c.rarity}" src="/static/cards/${c.filename}" alt="${c.name||''}" title="${c.name||''}">`).join("");
+    const cards = p.cards.map(c=>`<img class="rarity-border-${c.rarity}" src="/static/cards/${c.filename}?v=${CARD_IMG_VERSION}" alt="${c.name||''}" title="${c.name||''}">`).join("");
     return `
       <div class="pvp-participant">
         <div class="pvp-participant-head">
@@ -3910,7 +3923,7 @@ function renderPvpPickerGrid(){
   }
   grid.innerHTML = available.map(c => `
     <div class="grid-item picker-item rarity-border-${c.rarity} ${pvpPickerSelected.has(c.user_card_id) ? 'selected' : ''}" data-uc="${c.user_card_id}">
-      <img src="/static/cards/${c.filename}" alt="${c.name||''}">
+      <img src="/static/cards/${c.filename}?v=${CARD_IMG_VERSION}" alt="${c.name||''}">
       <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
       <div class="check">✓</div>
     </div>
@@ -3969,7 +3982,7 @@ function renderZoom(){
   const c = zoomList[zoomIndex];
   if(!c) return;
   const zoomImgEl = document.getElementById("zoom-img");
-  zoomImgEl.src = `/static/cards/${c.filename}`;
+  zoomImgEl.src = `/static/cards/${c.filename}?v=${CARD_IMG_VERSION}`;
   setRarityBorder(zoomImgEl, c.rarity);
   document.getElementById("zoom-name").textContent = c.name || "";
 }
@@ -4025,8 +4038,8 @@ function renderModelsGrid(){
   });
   const grid = document.getElementById("models-grid");
   grid.innerHTML = sorted.map(c => `
-    <div class="grid-item rarity-border-${c.rarity}" data-src="/static/cards/${c.filename}">
-      <img src="/static/cards/${c.filename}" alt="${c.name||''}">
+    <div class="grid-item rarity-border-${c.rarity}" data-src="/static/cards/${c.filename}?v=${CARD_IMG_VERSION}">
+      <img src="/static/cards/${c.filename}?v=${CARD_IMG_VERSION}" alt="${c.name||''}">
       <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
       <div class="model-name-tag">${c.name || ""}</div>
     </div>
@@ -4156,11 +4169,11 @@ function startFarmAnimation(cards, hintHTML){
   let cycleIdx = 0;
   clearInterval(farmCycleTimer);
   if(pool.length){
-    stage.innerHTML = `<img id="farm-cycle-img" src="/static/cards/${pool[0].filename}" alt="">`;
+    stage.innerHTML = `<img id="farm-cycle-img" src="/static/cards/${pool[0].filename}?v=${CARD_IMG_VERSION}" alt="">`;
     farmCycleTimer = setInterval(()=>{
       cycleIdx = (cycleIdx + 1) % pool.length;
       const img = document.getElementById("farm-cycle-img");
-      if(img) img.src = `/static/cards/${pool[cycleIdx].filename}`;
+      if(img) img.src = `/static/cards/${pool[cycleIdx].filename}?v=${CARD_IMG_VERSION}`;
     }, 180);
   }
 
@@ -4203,7 +4216,7 @@ document.getElementById("farm-btn").addEventListener("click", async ()=>{
     const card = await api("/farm");
     if(mySeq !== farmRequestSeq) return;
     const stage = document.getElementById("farm-stage");
-    stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}" alt="${card.name||''}">`;
+    stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}?v=${CARD_IMG_VERSION}" alt="${card.name||''}">`;
     const nameEl = document.getElementById("farm-result-name");
     nameEl.classList.remove("chance-hint");
     nameEl.textContent = card.name || "Новая картинка!";
@@ -4259,27 +4272,32 @@ async function loadProfile(){
   }
 }
 
-// ---------- Collection sort (by rarity) ----------
-let profileRarityAsc = false; // false = diamond -> silver, true = silver -> diamond
+// ---------- Collection sort (rank <-> number, cycling one button) ----------
+const PROFILE_SORT_STATES = ["rarity_desc", "rarity_asc", "number_asc", "number_desc"];
+const PROFILE_SORT_LABELS = {rarity_desc: "Ранг ↓", rarity_asc: "Ранг ↑", number_asc: "# ↑", number_desc: "# ↓"};
+let profileSortStateIndex = 0;
 
 document.getElementById("profile-rarity-sort-btn").addEventListener("click", ()=>{
-  profileRarityAsc = !profileRarityAsc;
+  profileSortStateIndex = (profileSortStateIndex + 1) % PROFILE_SORT_STATES.length;
   sortInventoryAndRender();
 });
 
 function sortInventoryAndRender(){
+  const state = PROFILE_SORT_STATES[profileSortStateIndex];
   inventory.sort((a, b) => {
+    if(state === "number_asc") return a.drop_number - b.drop_number;
+    if(state === "number_desc") return b.drop_number - a.drop_number;
     const ra = RARITY_ORDER[a.rarity] ?? 4, rb = RARITY_ORDER[b.rarity] ?? 4;
-    if(ra !== rb) return profileRarityAsc ? rb - ra : ra - rb;
+    if(ra !== rb) return state === "rarity_asc" ? rb - ra : ra - rb;
     return b.user_card_id - a.user_card_id;
   });
   // Стена: pinned cards float to the very top of the SAME grid, in the order they
-  // were pinned — everything else keeps the rarity sort right below them.
+  // were pinned — everything else keeps the active sort right below them.
   const pinned = inventory.filter(c => c.pinned_at)
     .sort((a, b) => (a.pinned_at < b.pinned_at ? -1 : a.pinned_at > b.pinned_at ? 1 : 0));
   const rest = inventory.filter(c => !c.pinned_at);
   inventory = [...pinned, ...rest];
-  document.getElementById("profile-rarity-sort-btn").textContent = profileRarityAsc ? "Ранг ↑" : "Ранг ↓";
+  document.getElementById("profile-rarity-sort-btn").textContent = PROFILE_SORT_LABELS[state];
   renderProfileGrid();
 }
 
@@ -4294,7 +4312,7 @@ function renderProfileGrid(){
   document.getElementById("empty-hint")?.remove();
   grid.innerHTML = inventory.map(c => `
     <div class="grid-item rarity-border-${c.rarity}${c.pinned_at ? " pinned" : ""}" data-uc="${c.user_card_id}">
-      <img src="/static/cards/${c.filename}" alt="${c.name||''}">
+      <img src="/static/cards/${c.filename}?v=${CARD_IMG_VERSION}" alt="${c.name||''}">
       <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
       <div class="drop-number">#${c.drop_number}</div>
       ${c.pinned_at ? `<div class="wall-pin-tag"><svg viewBox="0 0 24 24" width="9" height="9"><rect x="7" y="2" width="10" height="2.2" rx="1" fill="#fff"/><rect x="10.5" y="4" width="3" height="12" fill="#fff"/><polygon points="10.5,16 13.5,16 12,21" fill="#fff"/></svg></div>` : ""}
@@ -4330,7 +4348,7 @@ function renderWallModal(){
   }
   grid.innerHTML = inventory.map(c => `
     <div class="grid-item rarity-border-${c.rarity}${c.pinned_at ? " pinned" : ""}" data-uc="${c.user_card_id}">
-      <img src="/static/cards/${c.filename}" alt="${c.name||''}">
+      <img src="/static/cards/${c.filename}?v=${CARD_IMG_VERSION}" alt="${c.name||''}">
       <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
       <div class="drop-number">#${c.drop_number}</div>
       ${c.pinned_at ? `<div class="wall-pin-tag"><svg viewBox="0 0 24 24" width="9" height="9"><rect x="7" y="2" width="10" height="2.2" rx="1" fill="#fff"/><rect x="10.5" y="4" width="3" height="12" fill="#fff"/><polygon points="10.5,16 13.5,16 12,21" fill="#fff"/></svg></div>` : ""}
@@ -4391,7 +4409,7 @@ function openModalAt(index){
   selectedUserCardId = item.user_card_id;
   selectedItem = item;
   const modalImgEl = document.getElementById("modal-img");
-  modalImgEl.src = `/static/cards/${item.filename}`;
+  modalImgEl.src = `/static/cards/${item.filename}?v=${CARD_IMG_VERSION}`;
   setRarityBorder(modalImgEl, item.rarity);
   document.getElementById("modal-name").textContent = `${item.name || "Без названия"} #${item.drop_number}`;
   document.getElementById("modal-overlay").classList.add("active");
@@ -4912,7 +4930,7 @@ document.getElementById("modal-craft").addEventListener("click", async ()=>{
       setGemsDisplay(card.gems);
       tg?.HapticFeedback?.notificationOccurred("error");
     }else{
-      stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}" alt="${card.name||''}">`;
+      stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}?v=${CARD_IMG_VERSION}" alt="${card.name||''}">`;
       nameEl.textContent = card.name || "Новая картинка!";
       document.getElementById("farm-result-number").textContent = `№${card.drop_number}`;
       rarityEl.textContent = card.rarity || "";
@@ -4942,7 +4960,7 @@ const CASES = [
   {key:"capybara", name:"Капибара", price:200, image:"case/case_capybara.jpg",
    weights:{bronze:10, silver:15, gold:25, platinum:40, diamond:10}},
   {key:"pepe", name:"Пепе", price:500, image:"case/case_pep.jpg",
-   weights:{silver:5, gold:10, platinum:20, diamond:65}},
+   weights:{silver:9, gold:19, platinum:37, diamond:35}},
 ];
 
 function caseHintHTML(def){
@@ -5018,7 +5036,7 @@ async function openCase(caseKey){
     const card = await api("/case/open", { case_key: caseKey });
     if(mySeq !== farmRequestSeq) return;
     const stage = document.getElementById("farm-stage");
-    stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}" alt="${card.name||''}">`;
+    stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}?v=${CARD_IMG_VERSION}" alt="${card.name||''}">`;
     const nameEl = document.getElementById("farm-result-name");
     nameEl.classList.remove("chance-hint");
     nameEl.textContent = card.name || "Новая картинка!";
@@ -5214,7 +5232,7 @@ function openNumberCardPicker(title){
   }else{
     grid.innerHTML = eligible.map(c => `
       <div class="grid-item picker-item rarity-border-${c.rarity}" data-uc="${c.user_card_id}">
-        <img src="/static/cards/${c.filename}" alt="${c.name || ''}">
+        <img src="/static/cards/${c.filename}?v=${CARD_IMG_VERSION}" alt="${c.name || ''}">
         <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
         <div class="check">✓</div>
       </div>
@@ -5340,7 +5358,7 @@ function renderBurnPickerGrid(){
   }
   grid.innerHTML = eligible.map(c => `
     <div class="grid-item picker-item rarity-border-${c.rarity} ${burnPickerSelected.has(c.user_card_id) ? 'selected' : ''}" data-uc="${c.user_card_id}">
-      <img src="/static/cards/${c.filename}" alt="${c.name || ''}">
+      <img src="/static/cards/${c.filename}?v=${CARD_IMG_VERSION}" alt="${c.name || ''}">
       <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
       <div class="check">✓</div>
     </div>
@@ -5427,7 +5445,7 @@ async function runBurn(rarity, userCardIds){
 
     if(result.success && result.new_card){
       const card = result.new_card;
-      stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}" alt="${card.name || ''}">`;
+      stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}?v=${CARD_IMG_VERSION}" alt="${card.name || ''}">`;
       nameEl.textContent = card.name || "Новая карта!";
       rarityEl.textContent = card.rarity || "";
       rarityEl.className = card.rarity || "";

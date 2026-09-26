@@ -179,6 +179,11 @@ CREATE TABLE IF NOT EXISTS ref_race_announced (
     announced_at  TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS daily_command_broadcast (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    posted_date   TEXT NOT NULL UNIQUE  -- calendar date (Europe/Tallinn), YYYY-MM-DD
+);
+
 CREATE TABLE IF NOT EXISTS aviator_rounds (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id           INTEGER NOT NULL REFERENCES users(telegram_id),
@@ -475,6 +480,14 @@ def init_db():
         # reflected when an old card gets newly listed).
         if "listed_at" not in uc_cols:
             conn.execute("ALTER TABLE user_cards ADD COLUMN listed_at TEXT")
+        # migration for the Aviator game (/go in bot.py) — chat_id/message_id let a
+        # restart recovery pass (see refund_all_active_aviator_rounds()) edit a round's
+        # frozen message when it refunds an abandoned bet, not just credit the gems back.
+        av_cols = {row["name"] for row in conn.execute("PRAGMA table_info(aviator_rounds)")}
+        if "chat_id" not in av_cols:
+            conn.execute("ALTER TABLE aviator_rounds ADD COLUMN chat_id INTEGER")
+        if "message_id" not in av_cols:
+            conn.execute("ALTER TABLE aviator_rounds ADD COLUMN message_id INTEGER")
 
 
 DAILY_BONUS_GEMS = 25
@@ -942,6 +955,95 @@ def cashout_aviator(round_id: int, user_id: int, multiplier: float) -> dict:
         )
         new_gems = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()["gems"]
     return {"bet": row["bet"], "payout": payout, "gems": new_gems}
+
+
+def set_aviator_message(round_id: int, chat_id: int, message_id: int) -> None:
+    """Attaches the (chat_id, message_id) of the round's live message once it's been
+    sent — round_id has to exist BEFORE the message can be sent (its id goes into the
+    first cashout button's callback_data), so this is a small follow-up write, not
+    part of start_aviator() itself. Lets a later restart-recovery pass (see
+    refund_all_active_aviator_rounds()) edit the frozen message when it force-refunds
+    an abandoned round, instead of only silently crediting the gems back."""
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE aviator_rounds SET chat_id = ?, message_id = ? WHERE id = ?",
+            (chat_id, message_id, round_id),
+        )
+
+
+def has_daily_command_broadcast_posted(date_str: str) -> bool:
+    """date_str is a calendar date (YYYY-MM-DD) in whatever timezone the caller's
+    schedule uses (bot.py's daily_help_broadcast_scheduler uses Europe/Tallinn, same
+    convention as gem drops/daily bonus rollover). Used to make the once-a-day chat
+    command reminder idempotent against the scheduler's own polling granularity and
+    against a bot restart landing inside the same hour."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM daily_command_broadcast WHERE posted_date = ?", (date_str,)
+        ).fetchone()
+    return row is not None
+
+
+def mark_daily_command_broadcast_posted(date_str: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO daily_command_broadcast (posted_date) VALUES (?) ON CONFLICT(posted_date) DO NOTHING",
+            (date_str,),
+        )
+
+
+def get_stale_active_aviator_rounds(older_than_seconds: int = 0) -> list[dict]:
+    """Every aviator_rounds row still 'active' and older than older_than_seconds —
+    i.e. a round whose bet was taken but never resolved (won/lost/refunded). Used
+    both at bot startup (older_than_seconds=0 -- ANY leftover 'active' row is from a
+    prior process that died mid-round, since a live process always resolves its own
+    rounds) and by a periodic watchdog (a generous threshold, catching a round whose
+    in-process ticker died some other way without a restart)."""
+    cutoff = _now_minus_seconds(older_than_seconds) if older_than_seconds else None
+    with get_conn() as conn:
+        if cutoff is None:
+            rows = conn.execute("SELECT * FROM aviator_rounds WHERE status = 'active'").fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM aviator_rounds WHERE status = 'active' AND created_at <= ?", (cutoff,)
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _now_minus_seconds(seconds: int) -> str:
+    from datetime import timedelta
+    return (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat()
+
+
+def refund_aviator(round_id: int) -> dict | None:
+    """Force-resolves an abandoned round: flips it 'active' -> 'refunded' (atomic,
+    same race-safe pattern as cashout_aviator()/mark_aviator_crashed() -- a real
+    cashout or crash landing at the same instant simply wins the race and this
+    becomes a no-op) and gives the stake straight back (gems only, NOT gems_earned --
+    a refund is not a win). Returns {"user_id", "bet", "chat_id", "message_id", "gems":
+    new balance} so the caller can also try to edit the frozen message, or None if
+    the round no longer exists or was already resolved by something else."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT user_id, bet, chat_id, message_id, status FROM aviator_rounds WHERE id = ?", (round_id,)
+        ).fetchone()
+        if row is None or row["status"] != "active":
+            return None
+        cur = conn.execute(
+            "UPDATE aviator_rounds SET status = 'refunded' WHERE id = ? AND status = 'active'",
+            (round_id,),
+        )
+        if cur.rowcount == 0:
+            return None
+        conn.execute("UPDATE users SET gems = gems + ? WHERE telegram_id = ?", (row["bet"], row["user_id"]))
+        new_gems = conn.execute(
+            "SELECT gems FROM users WHERE telegram_id = ?", (row["user_id"],)
+        ).fetchone()["gems"]
+    return {
+        "user_id": row["user_id"], "bet": row["bet"],
+        "chat_id": row["chat_id"], "message_id": row["message_id"],
+        "gems": new_gems,
+    }
 
 
 GEM_MINING_DURATION_SECONDS = 60 * 60  # 60 minutes per cycle
@@ -2462,7 +2564,9 @@ def get_market_listings() -> list[dict]:
         rows = conn.execute(
             """
             SELECT uc.id AS user_card_id, uc.listed_price, uc.listed_at, uc.user_id AS seller_id,
-                   c.id AS card_id, c.filename, c.name, c.rarity, u.username, u.first_name
+                   c.id AS card_id, c.filename, c.name, c.rarity, u.username, u.first_name,
+                   COALESCE(uc.number_override,
+                       (SELECT COUNT(*) FROM user_cards uc2 WHERE uc2.obtained_at <= uc.obtained_at)) AS drop_number
             FROM user_cards uc
             JOIN cards c ON c.id = uc.card_id
             JOIN users u ON u.telegram_id = uc.user_id
@@ -2663,7 +2767,9 @@ def get_swap_listings() -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT uc.id AS user_card_id, uc.user_id AS seller_id, c.id AS card_id, c.filename, c.name, c.rarity
+            SELECT uc.id AS user_card_id, uc.user_id AS seller_id, c.id AS card_id, c.filename, c.name, c.rarity,
+                   COALESCE(uc.number_override,
+                       (SELECT COUNT(*) FROM user_cards uc2 WHERE uc2.obtained_at <= uc.obtained_at)) AS drop_number
             FROM user_cards uc
             JOIN cards c ON c.id = uc.card_id
             WHERE uc.swap_listed = 1

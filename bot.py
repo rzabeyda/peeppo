@@ -26,7 +26,10 @@ from zoneinfo import ZoneInfo
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (
+    ReplyKeyboardRemove,
+    BotCommand,
     CallbackQuery,
+    ForceReply,
     FSInputFile,
     InlineQuery,
     InlineQueryResultPhoto,
@@ -44,6 +47,11 @@ load_dotenv()
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 WEBAPP_URL = os.environ.get("WEBAPP_URL", "https://peeppo.memstroy.app")
+
+# Telegram/its WebView caches the mini-app HTML by exact URL, same as it cached card
+# images earlier -- bump this on every real webapp/index.html deploy so the "Open app"
+# button forces a fresh fetch instead of reusing a stale cached page.
+WEBAPP_VERSION = "3"
 _split = urlsplit(WEBAPP_URL)
 WEBAPP_ORIGIN = f"{_split.scheme}://{_split.netloc}"  # WEBAPP_URL minus any ?query — safe to append /static/... to
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "Peeppobot")  # no leading @
@@ -64,7 +72,7 @@ dp = Dispatcher()
 
 def _open_button():
     kb = InlineKeyboardBuilder()
-    kb.button(text="Фармить", web_app=WebAppInfo(url=WEBAPP_URL))
+    kb.button(text="Фармить", web_app=WebAppInfo(url=f"{WEBAPP_URL}?v={WEBAPP_VERSION}"))
     kb.button(text="Чат", url="https://t.me/peeppo_chat")
     kb.button(text="Канал", url="https://t.me/peeppo_channel")
     kb.adjust(1, 2)  # "Фармить" on its own row, "Чат"/"Канал" side by side below it
@@ -1082,6 +1090,111 @@ async def handle_ref_command(message: Message):
     await message.answer(format_ref_leaderboard(rows))
 
 
+GEMS_PER_STAR = 10  # keep in sync with api.py's GEMS_PER_STAR
+
+
+async def _send_gems_invoice(chat_id: int, user_id: int, gems: int) -> str | None:
+    """Validates gems and posts the Stars invoice into chat_id. Returns an error
+    string to show the player if the amount is invalid, None on success."""
+    if gems <= 0 or gems % GEMS_PER_STAR != 0:
+        return f"Гемы должны быть положительным числом, кратным {GEMS_PER_STAR} (Stars не бывают дробными)"
+    stars = gems // GEMS_PER_STAR
+    await bot.send_invoice(
+        chat_id=chat_id,
+        title="Гемы Peeppo",
+        description=f"{gems} \U0001F48E гемов — трать их на рынке картинок",
+        payload=f"gems:{user_id}:{gems}",
+        provider_token="",  # empty provider_token is required for Telegram Stars
+        currency="XTR",
+        prices=[LabeledPrice(label=f"{gems} гемов", amount=stars)],
+    )
+    return None
+
+
+@dp.message(Command("buy"), F.chat.type.in_({"group", "supergroup"}))  # только в групповом чате -- в личке с ботом покупка гемов идёт через сам webapp, а не /buy
+async def handle_buy_command(message: Message):
+    """/buy [гемы] -- posts a native Telegram Stars invoice right in this chat, same
+    pricing/payload convention as the webapp's buy-gems flow (api.py's GEMS_PER_STAR,
+    kept in sync by hand since bot.py can't import api.py -- api.py already imports
+    bot.py, so the reverse would be circular). handle_successful_payment() below
+    credits the gems the same way no matter which flow created the invoice.
+
+    Requires the amount up front (no ForceReply follow-up step -- ForceReply leaves
+    the chat's compose box permanently pinned to "reply to this" until the user
+    explicitly dismisses it, which read as the bot randomly popping up a message every
+    time the chat was reopened). reply_markup=ReplyKeyboardRemove() on the usage
+    message also clears any ForceReply prompt still stuck from before this fix."""
+    db.get_or_create_user(
+        telegram_id=message.from_user.id,
+        username=message.from_user.username,
+        first_name=message.from_user.first_name,
+        ref_by=None,
+    )
+    parts = (message.text or "").split()
+    if len(parts) < 2:
+        await message.answer(
+            f"Формат: /buy [гемы], например /buy 1000 (кратно {GEMS_PER_STAR}, {GEMS_PER_STAR} гемов = 1 Star)",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+    try:
+        gems = int(parts[1])
+    except ValueError:
+        await message.answer(f"Формат: /buy [гемы], например /buy 1000 (кратно {GEMS_PER_STAR}, {GEMS_PER_STAR} гемов = 1 Star)")
+        return
+    error = await _send_gems_invoice(message.chat.id, message.from_user.id, gems)
+    if error:
+        await message.answer(error)
+
+
+def _help_text() -> str:
+    """Shared with handle_help_command() (/help, on demand) and
+    daily_help_broadcast_scheduler() (the same list, posted to PUBLIC_CHAT once a day)
+    -- one place to update whenever a chat command is added/changed."""
+    return (
+        "\U0001F4CB <b>Команды в чате</b>\n\n"
+        "\U0001F48E /bank — проверить баланс гемов\n\n"
+        "\U0001F534\U000026AB /redblack [ставка] (или /rb)\n"
+        "\U0001F680 /go [ставка] — игры ракетка\n\n"
+        "\U0001F4B3 /buy [гемы] — купить гемы за TS"
+    )
+
+
+@dp.message(Command("help"))
+async def handle_help_command(message: Message):
+    """/help -- lists the chat-only commands (works in PUBLIC_CHAT and in a private DM
+    alike, same as the commands it lists)."""
+    await message.answer(_help_text(), parse_mode="HTML")
+
+
+HELP_BROADCAST_TZ = ZoneInfo("Europe/Tallinn")  # same convention as gem drops/daily bonus rollover
+HELP_BROADCAST_HOUR = 18
+
+
+async def daily_help_broadcast_scheduler():
+    """Background loop living for the lifetime of the bot process: once a day, during
+    the HELP_BROADCAST_HOUR:00 Tallinn hour, posts the /help command list into
+    PUBLIC_CHAT as a reminder. Idempotent via db.daily_command_broadcast (one row per
+    calendar date already posted) so the loop's own 10-minute polling granularity, or
+    a restart landing inside that same hour, can never double-post."""
+    logger.info("daily help broadcast scheduler started (%02d:00 Europe/Tallinn)", HELP_BROADCAST_HOUR)
+    while True:
+        try:
+            now_local = datetime.now(HELP_BROADCAST_TZ)
+            if now_local.hour == HELP_BROADCAST_HOUR:
+                today_str = now_local.date().isoformat()
+                if not db.has_daily_command_broadcast_posted(today_str):
+                    try:
+                        await bot.send_message(PUBLIC_CHAT, _help_text(), parse_mode="HTML")
+                        db.mark_daily_command_broadcast_posted(today_str)
+                        logger.info("posted daily command list to %s", PUBLIC_CHAT)
+                    except Exception:
+                        logger.warning("could not post daily command list to %s", PUBLIC_CHAT)
+        except Exception:
+            logger.exception("daily help broadcast scheduler iteration failed")
+        await asyncio.sleep(600)  # check every 10 min -- plenty of margin inside the 1h window
+
+
 @dp.message(Command("bank"))
 async def handle_bank_command(message: Message):
     """/bank — check your own gem balance. Same no-chat-type-filter deal as /ref:
@@ -1192,6 +1305,13 @@ async def handle_redblack_choice(call: CallbackQuery):
         logger.warning("could not edit redblack result message for user %s", call.from_user.id)
 
 
+def _player_label(username: str | None, first_name: str | None, telegram_id: int) -> str:
+    """Display name for the Aviator chat messages -- username WITHOUT the @ prefix
+    (unlike notify_admin_new_user's "@username" DM style) so it's readable as plain
+    text in a group chat, falling back to first_name then the bare id."""
+    return username or first_name or str(telegram_id)
+
+
 @dp.message(Command("go"))
 async def handle_aviator_command(message: Message):
     """/go [ставка] -- starts an Aviator round (default AVIATOR_DEFAULT_BET gems if no
@@ -1232,24 +1352,28 @@ async def handle_aviator_command(message: Message):
 
     round_id = started["round_id"]
     first_tick = db.AVIATOR_TICKS[0]
+    player_label = _player_label(message.from_user.username, message.from_user.first_name, message.from_user.id)
     kb = InlineKeyboardBuilder()
     kb.button(text=f"\U0001F48E Забрать {first_tick:.2f}x", callback_data=f"aviator:{round_id}:{message.from_user.id}:{first_tick}")
     sent = await message.answer(
-        f"\U0001F680 Полетели! Ставка: {bet} гемов\n\n<b>{first_tick:.2f}x</b>",
+        f"\U0001F680 Полетели! Игрок: {player_label}, ставка {bet} гемов\n\n<b>{first_tick:.2f}x</b>",
         parse_mode="HTML",
         reply_markup=kb.as_markup(),
     )
-    asyncio.create_task(run_aviator_round(round_id, message.from_user.id, bet, sent))
+    db.set_aviator_message(round_id, sent.chat.id, sent.message_id)
+    asyncio.create_task(run_aviator_round(round_id, message.from_user.id, bet, sent, player_label))
 
 
-async def run_aviator_round(round_id: int, user_id: int, bet: int, sent_message: Message):
+async def run_aviator_round(round_id: int, user_id: int, bet: int, sent_message: Message, player_label: str):
     """Background ticker for one /go round: walks AVIATOR_TICKS (past the first, which
     handle_aviator_command already displayed), editing sent_message with a fresh
     multiplier + a fresh "Забрать" button (baked with THAT tick's own multiplier) each
     step. Re-checks db.peek_aviator_crash() every step rather than trusting a value
     captured once at round start, so a cashout that lands mid-loop (resolved
     independently/atomically by handle_aviator_cashout) is noticed and this loop backs
-    off immediately without clobbering the win message."""
+    off immediately without clobbering the win message. player_label is only for
+    display -- who this round's message belongs to, in a group chat where several
+    people can have a /go running at once."""
     try:
         for m in db.AVIATOR_TICKS[1:]:
             await asyncio.sleep(1.0)
@@ -1260,7 +1384,7 @@ async def run_aviator_round(round_id: int, user_id: int, bet: int, sent_message:
                 if db.mark_aviator_crashed(round_id):
                     try:
                         await sent_message.edit_text(
-                            f"\U0001F4A5 Улетела на <b>{crash_point:.2f}x</b>\n\nСтавка {bet} гемов сгорела",
+                            f"\U0001F4A5 {player_label}: улетела на <b>{crash_point:.2f}x</b>\n\nСтавка {bet} гемов сгорела",
                             parse_mode="HTML",
                             reply_markup=InlineKeyboardBuilder().as_markup(),
                         )
@@ -1271,7 +1395,8 @@ async def run_aviator_round(round_id: int, user_id: int, bet: int, sent_message:
             kb.button(text=f"\U0001F48E Забрать {m:.2f}x", callback_data=f"aviator:{round_id}:{user_id}:{m}")
             try:
                 await sent_message.edit_text(
-                    f"\U0001F680 Летит...\n\n<b>{m:.2f}x</b>", parse_mode="HTML", reply_markup=kb.as_markup()
+                    f"\U0001F680 Летит... Игрок: {player_label}\n\n<b>{m:.2f}x</b>",
+                    parse_mode="HTML", reply_markup=kb.as_markup()
                 )
             except Exception:
                 pass
@@ -1286,7 +1411,7 @@ async def run_aviator_round(round_id: int, user_id: int, bet: int, sent_message:
             return  # a last-instant tap already resolved it first
         try:
             await sent_message.edit_text(
-                f"\U0001F680 Потолок {cap:.2f}x -- забрали автоматически!\n\n"
+                f"\U0001F680 {player_label}: потолок {cap:.2f}x -- забрали автоматически!\n\n"
                 f"\U0001F389 Выигрыш {result['payout']} гемов (баланс: {result['gems']})",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardBuilder().as_markup(),
@@ -1294,7 +1419,83 @@ async def run_aviator_round(round_id: int, user_id: int, bet: int, sent_message:
         except Exception:
             pass
     except Exception:
-        logger.exception("aviator round %s ticker crashed", round_id)
+        # Something in the loop itself blew up (db hiccup, unexpected error, etc) --
+        # the round is still 'active' and the player's bet is still stuck, so refund
+        # it here rather than silently leaving them with a frozen message and a gone
+        # bet. refund_all_active_aviator_rounds() (startup recovery) and
+        # aviator_watchdog() (periodic safety net) cover the OTHER way a round can go
+        # stale -- the whole bot process dying mid-round, which kills this task
+        # without ever reaching this except at all.
+        logger.exception("aviator round %s ticker crashed, refunding", round_id)
+        try:
+            await refund_and_notify_aviator_round(round_id)
+        except Exception:
+            logger.exception("aviator round %s refund-after-crash also failed", round_id)
+
+
+async def refund_and_notify_aviator_round(round_id: int) -> bool:
+    """Shared refund step used by the ticker's own except-block, the startup recovery
+    pass, and the periodic watchdog: force-refunds one round via db.refund_aviator()
+    (a no-op if it's already resolved -- e.g. the player cashed out in the same
+    instant) and, if it's still resolvable, best-effort edits its message so the
+    player sees "прервана, ставка вернулась" instead of a rocket frozen forever mid-
+    flight. Returns True if this call is what refunded it, False if there was nothing
+    to refund (already resolved by something else, or the round doesn't exist)."""
+    result = db.refund_aviator(round_id)
+    if result is None:
+        return False
+    if result["chat_id"] and result["message_id"]:
+        try:
+            await bot.edit_message_text(
+                chat_id=result["chat_id"],
+                message_id=result["message_id"],
+                text=(
+                    f"\U0001F6E0 Игра прервана — ставка {result['bet']} гемов вернулась "
+                    f"(баланс: {result['gems']})"
+                ),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardBuilder().as_markup(),
+            )
+        except Exception:
+            pass
+    return True
+
+
+async def refund_all_active_aviator_rounds():
+    """Startup recovery: any aviator_rounds row still 'active' when the bot process
+    starts can only be leftover from a PREVIOUS process -- a live process always
+    resolves its own rounds (win/loss/refund), so it can never see its own round still
+    'active' at its own startup. A restart kills each round's in-process ticker task
+    outright (it's a plain asyncio.create_task, nothing persists it across a
+    process), which is exactly the "ракетка зависла" symptom: message frozen mid-
+    flight, bet already taken, nothing left running to ever resolve it. Refund every
+    one of them once, right before polling starts."""
+    stale = db.get_stale_active_aviator_rounds(0)
+    if not stale:
+        return
+    logger.info("refunding %d aviator round(s) left active from a previous run", len(stale))
+    for row in stale:
+        try:
+            await refund_and_notify_aviator_round(row["id"])
+        except Exception:
+            logger.exception("could not refund leftover aviator round %s", row["id"])
+
+
+async def aviator_watchdog():
+    """Periodic safety net living for the bot process's lifetime: refunds any
+    aviator_rounds row that's been 'active' for longer than a round could ever
+    legitimately take (AVIATOR_TICKS' ~14 real ticks at 1s each, so 60s is a generous
+    multiple of that) — covering any OTHER way a round's ticker task could die
+    without a bot restart (an unhandled edge case, the task getting silently
+    cancelled, etc), on top of the startup recovery for restarts and the ticker's own
+    except-block for in-loop errors."""
+    while True:
+        await asyncio.sleep(20)
+        try:
+            for row in db.get_stale_active_aviator_rounds(60):
+                await refund_and_notify_aviator_round(row["id"])
+        except Exception:
+            logger.exception("aviator watchdog iteration failed")
 
 
 @dp.callback_query(F.data.startswith("aviator:"))
@@ -1352,10 +1553,31 @@ async def ref_race_scheduler():
 async def main():
     db.init_db()
     logger.info("Peeppo bot starting (polling)...")
+    # Registers our command menu with Telegram (setMyCommands) -- without this, a
+    # group chat with more than one bot has NOTHING to disambiguate "/help" against,
+    # so the client's autocomplete silently resolves it to whichever OTHER bot in the
+    # chat has its own commands registered (e.g. "/help@SpamProtectionBot") instead of
+    # ours, even though our code handles /help fine -- the message never reaches us.
+    try:
+        await bot.set_my_commands([
+            BotCommand(command="start", description="Открыть Peeppo"),
+            BotCommand(command="help", description="Список команд в чате"),
+            BotCommand(command="bank", description="Баланс гемов"),
+            BotCommand(command="buy", description="Купить гемов за Telegram Stars"),
+            BotCommand(command="go", description="Авиатор/ракетка"),
+            BotCommand(command="redblack", description="Красное/чёрное"),
+            BotCommand(command="rb", description="Красное/чёрное (короткая команда)"),
+            BotCommand(command="ref", description="Своя реферальная ссылка"),
+        ])
+    except Exception:
+        logger.exception("could not register bot command menu")
     await check_hundred_club()  # in case we already had 100+ users before this deploy
+    await refund_all_active_aviator_rounds()  # clean up any /go left frozen by the restart that's happening right now
     asyncio.create_task(gem_drop_scheduler())
     asyncio.create_task(giveaway_scheduler())
     asyncio.create_task(ref_race_scheduler())
+    asyncio.create_task(aviator_watchdog())
+    asyncio.create_task(daily_help_broadcast_scheduler())
     await dp.start_polling(bot)
 
 
