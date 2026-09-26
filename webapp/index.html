@@ -612,6 +612,14 @@
     text-transform:uppercase; letter-spacing:.2px;
     padding:2px 5px; border-radius:7px;
   }
+  .grid-item .profile-giveaway-tag{
+    position:absolute; bottom:6px; right:6px;
+    background:linear-gradient(135deg,#f59e0b,#facc15);
+    color:#1a1400;
+    font-size:8px; font-weight:800;
+    text-transform:uppercase; letter-spacing:.2px;
+    padding:2px 5px; border-radius:7px;
+  }
   .empty-state{
     text-align:center; color:#666; font-size:13px;
     padding:60px 20px;
@@ -1111,6 +1119,29 @@
   #mining-action-btn.ready{
     background:linear-gradient(135deg,#facc15,#fbbf24); color:#1a1400;
     animation:fortuneGlow 2.4s ease-in-out infinite;
+  }
+  #mining-quick-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.55);
+    display:none;
+    align-items:center; justify-content:center;
+    z-index:85; padding:24px;
+    pointer-events:none;
+  }
+  #mining-quick-overlay.active{display:flex; pointer-events:auto;}
+  #mining-quick-card{
+    width:100%; max-width:260px;
+    background:linear-gradient(180deg, #2a0a1f, var(--card-bg) 45%);
+    border:1px solid rgba(236,72,153,.4); border-radius:20px;
+    padding:22px 18px; box-sizing:border-box; text-align:center;
+    opacity:0; transform:scale(.9);
+    animation:miningQuickPop .25s ease forwards;
+  }
+  #mining-quick-icon{font-size:32px; margin-bottom:10px; animation:miningPickSwing 1s ease-in-out infinite;}
+  #mining-quick-text{font-size:13.5px; font-weight:700; color:#fff; line-height:1.4; white-space:pre-line;}
+  @keyframes miningQuickPop{
+    from{opacity:0; transform:scale(.9);}
+    to{opacity:1; transform:scale(1);}
   }
   #numbers-mode-switch{margin-bottom:10px;}
   #numbers-mode-switch .mode-switch-btn[data-mode="auction"].active{background:rgba(59,130,246,.18); color:#3b82f6;}
@@ -1999,6 +2030,34 @@
           </div>
         </div>
         <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(244,114,182,.18); color:#f472b6;">⛏️</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#f472b6;">Гемить</div>
+            <div class="info-feature-desc">Жми кнопку «Гемить» на вкладке Фарм — раз в час бесплатно получай 50 <img src="/static/icons/diamond.png" alt=""></div>
+          </div>
+        </div>
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(59,130,246,.18); color:#3b82f6;">#</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#3b82f6;">Номера</div>
+            <div class="info-feature-desc">У каждой карты есть свой номер — покупай, продавай и участвуй в аукционах на понравившиеся, а красивые номера ставь на любую свою карту</div>
+          </div>
+        </div>
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(236,72,153,.18); color:#ec4899;">📌</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#ec4899;">Стена</div>
+            <div class="info-feature-desc">Закрепляй лучшие карты в профиле, чтобы они всегда были сверху и первыми бросались в глаза</div>
+          </div>
+        </div>
+        <div class="info-feature-row">
+          <div class="info-feature-icon" style="background:rgba(250,204,21,.18); color:#facc15;">🎡</div>
+          <div class="info-feature-body">
+            <div class="info-feature-title" style="color:#facc15;">Колесо фортуны</div>
+            <div class="info-feature-desc">Иногда открывается бесплатно — крути и выигрывай гемы, а по чуть-чуть шансов есть и джекпот 1000</div>
+          </div>
+        </div>
+        <div class="info-feature-row">
           <div class="info-feature-icon" style="background:rgba(52,211,153,.18); color:#34d399;">🏦</div>
           <div class="info-feature-body">
             <div class="info-feature-title" style="color:#34d399;">Стейкинг</div>
@@ -2227,7 +2286,7 @@
     <div id="gems-choice-card">
       <div id="gems-choice-title"><img src="/static/icons/diamond.png" alt="">Гемы</div>
       <button id="gems-choice-buy">Купить Гемы за Звёзды</button>
-      <button id="gems-choice-sell">Продать DIAMOND за GRAM</button>
+      <button id="gems-choice-sell">Продать за Stars</button>
       <button id="gems-choice-cancel">Закрыть</button>
     </div>
   </div>
@@ -2266,7 +2325,7 @@
 
   <div id="gram-picker-overlay">
     <div id="gram-picker-card">
-      <div id="gram-picker-title">Выбери Diamond карты для вывода</div>
+      <div id="gram-picker-title">Выбери Diamond карты для обмена на Stars</div>
       <div id="gram-picker-sub">Выбрано: 0 — нужно кратно 10</div>
       <div class="grid" id="gram-picker-grid"></div>
       <div id="input-actions">
@@ -2310,6 +2369,13 @@
       <div id="mining-status">Жми, чтобы начать добычу</div>
       <div id="mining-progress-wrap"><div id="mining-progress-bar"></div></div>
       <button id="mining-action-btn">Начать добычу</button>
+    </div>
+  </div>
+
+  <div id="mining-quick-overlay">
+    <div id="mining-quick-card">
+      <div id="mining-quick-icon">⛏️</div>
+      <div id="mining-quick-text">Фарминг запущен!</div>
     </div>
   </div>
 
@@ -2797,7 +2863,7 @@ document.getElementById("gems-choice-sell").addEventListener("click", async ()=>
   try{
     const status = await api("/crypto/status");
     if(status.pending){
-      showAlert(`У тебя уже есть заявка на вывод ${status.pending.gram_amount} GRAM — она на рассмотрении. Дождись решения, прежде чем создавать новую.`);
+      showAlert(`У тебя уже есть заявка на вывод ${status.pending.gram_amount} Stars — она на рассмотрении. Дождись решения, прежде чем создавать новую.`);
       return;
     }
   }catch(e){
@@ -2816,7 +2882,7 @@ function gramPickerUpdateSub(){
   const sub = document.getElementById("gram-picker-sub");
   const ready = n > 0 && n % GRAM_CARDS_PER_UNIT === 0;
   sub.textContent = ready
-    ? `Выбрано: ${n} → получишь ${n / GRAM_CARDS_PER_UNIT} GRAM`
+    ? `Выбрано: ${n} → получишь ${n / GRAM_CARDS_PER_UNIT} Stars`
     : `Выбрано: ${n} — нужно кратно ${GRAM_CARDS_PER_UNIT} (10, 20, 30…)`;
   sub.classList.toggle("ready", ready);
 }
@@ -2830,7 +2896,7 @@ function openGramPicker(){
 
 function renderGramPickerGrid(){
   const grid = document.getElementById("gram-picker-grid");
-  const eligible = inventory.filter(c => c.rarity === "diamond" && !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at);
+  const eligible = inventory.filter(c => c.rarity === "diamond" && !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.in_giveaway);
   if(eligible.length === 0){
     grid.innerHTML = `<div class="empty-state">Нет свободных Diamond карт</div>`;
     return;
@@ -2868,25 +2934,16 @@ document.getElementById("gram-picker-confirm").addEventListener("click", async (
     return;
   }
   const ids = [...gramPickerSelected];
-  const gramAmount = n / GRAM_CARDS_PER_UNIT;
   document.getElementById("gram-picker-overlay").classList.remove("active");
 
-  const wallet = await promptText("Введи адрес кошелька GRAM", "Адрес кошелька");
-  if(!wallet){ return; }
-
-  const confirmed = await confirmAction(
-    `Обменять ${n} Diamond карт(ы) на ${gramAmount} GRAM?\n\nКошелёк: ${wallet}\n\nКарты будут удержаны до подтверждения выплаты. Продолжить?`
-  );
-  if(!confirmed) return;
-
   try{
-    const res = await api("/crypto/withdraw", { user_card_ids: ids, wallet_address: wallet });
+    const res = await api("/crypto/withdraw", { user_card_ids: ids, wallet_address: "" });
     try{
       const data = await api("/profile");
       inventory = data.inventory;
       sortInventoryAndRender();
     }catch(e){ /* non-critical — next profile visit will pick it up anyway */ }
-    showAlert(`Заявка на ${res.gram_amount} GRAM отправлена! Ожидай подтверждения.`);
+    showAlert("Ожидай, заявка обрабатывается ⏳");
   }catch(e){
     toast("Не удалось отправить заявку: " + e.message);
   }
@@ -3355,7 +3412,7 @@ function renderSwapPickerGrid(){
     grid.innerHTML = `<div class="empty-state">Нечего предложить — иди фармить 🌱</div>`;
     return;
   }
-  const swapAvailable = inventory.filter(c => !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at);
+  const swapAvailable = inventory.filter(c => !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.in_giveaway);
   if(swapAvailable.length === 0){
     grid.innerHTML = `<div class="empty-state">Нет свободных карт — сними с продажи/обмена/PvP-банка или иди фармить 🌱</div>`;
     return;
@@ -3699,6 +3756,18 @@ document.getElementById("fortune-close").addEventListener("click", ()=>{
 // /api/gemmining/collect is always the source of truth for whether a claim is ready).
 let miningTimer = null;
 let miningBusy = false;
+let lastMiningActive = false;
+let miningQuickTimer = null;
+
+function showMiningQuickModal(text){
+  clearTimeout(miningQuickTimer);
+  document.getElementById("mining-quick-text").textContent = text;
+  const overlay = document.getElementById("mining-quick-overlay");
+  overlay.classList.add("active");
+  miningQuickTimer = setTimeout(()=>{
+    overlay.classList.remove("active");
+  }, 2000);
+}
 
 function formatMMSS(totalSeconds){
   const s = Math.max(0, Math.floor(totalSeconds));
@@ -3709,6 +3778,7 @@ function formatMMSS(totalSeconds){
 
 function renderMining(status){
   clearInterval(miningTimer);
+  lastMiningActive = !!status.active;
   const label = document.getElementById("mining-status");
   const btn = document.getElementById("mining-action-btn");
   const openBtn = document.getElementById("mining-open-btn");
@@ -3721,7 +3791,7 @@ function renderMining(status){
     btn.classList.remove("ready");
     btn.disabled = false;
     btn.textContent = "Начать добычу";
-    label.textContent = "Жми, чтобы начать — через час заберёшь 25 гемов";
+    label.textContent = "Жми, чтобы начать — через час заберёшь 50 гемов";
     openBtn.classList.remove("ready", "mining");
     openBtn.textContent = "⛏️ Гемить";
     return;
@@ -3731,7 +3801,7 @@ function renderMining(status){
     progressWrap.classList.remove("active");
     btn.classList.add("ready");
     btn.disabled = false;
-    btn.textContent = "Забрать 25 💎";
+    btn.textContent = "Забрать 50 💎";
     label.textContent = "Готово! Жми, чтобы забрать и начать заново";
     openBtn.classList.remove("mining");
     openBtn.classList.add("ready");
@@ -3766,17 +3836,34 @@ function renderMining(status){
 }
 
 document.getElementById("mining-open-btn").addEventListener("click", async ()=>{
-  document.getElementById("mining-overlay").classList.add("active");
+  if(miningBusy) return;
+  miningBusy = true;
+  const wasActive = lastMiningActive;
   try{
-    const auth = await api("/auth");
-    renderMining(auth.gem_mining || { active:false, ready:false, seconds_left:0 });
+    const result = await api("/gemmining/collect");
+    if(result.claimed > 0){
+      setGemsDisplay(result.gems);
+      tg?.HapticFeedback?.notificationOccurred("success");
+      showMiningQuickModal(`+${result.claimed} 💎 добыто!\nНовый цикл начался ⛏️`);
+    }else if(!wasActive){
+      showMiningQuickModal("Фарминг запущен! ⛏️\nЗагляни через час");
+    }else{
+      showMiningQuickModal(`Уже фармится...\nОсталось ${formatMMSS(result.seconds_left)}`);
+    }
+    renderMining(result);
   }catch(e){
-    toast("Ошибка загрузки: " + e.message);
+    toast("Не получилось: " + e.message);
+  }finally{
+    miningBusy = false;
   }
 });
 document.getElementById("mining-close").addEventListener("click", ()=>{
   document.getElementById("mining-overlay").classList.remove("active");
   clearInterval(miningTimer);
+});
+document.getElementById("mining-quick-overlay").addEventListener("click", ()=>{
+  clearTimeout(miningQuickTimer);
+  document.getElementById("mining-quick-overlay").classList.remove("active");
 });
 
 document.getElementById("mining-action-btn").addEventListener("click", async ()=>{
@@ -3813,7 +3900,7 @@ function openPvpPicker(){
 function renderPvpPickerGrid(){
   const grid = document.getElementById("pvp-picker-grid");
   const available = inventory
-    .filter(c => !c.listed_price && !c.swap_listed && !c.staked_at && !c.pvp_round_id && !c.pinned_at)
+    .filter(c => !c.listed_price && !c.swap_listed && !c.staked_at && !c.pvp_round_id && !c.pinned_at && !c.in_giveaway)
     // Bronze always first (same "worst first" ordering as the market's Bronze filter) —
     // makes it easy to stake your least valuable cards without hunting for them.
     .sort((a, b) => (RARITY_ORDER[b.rarity] ?? 4) - (RARITY_ORDER[a.rarity] ?? 4));
@@ -4215,6 +4302,7 @@ function renderProfileGrid(){
       ${c.swap_listed ? `<div class="profile-swap-tag">Обмен</div>` : ""}
       ${c.staked_at ? `<div class="profile-stake-tag">${formatStakedDuration(c.staked_at)}</div>` : ""}
       ${c.pvp_round_id ? `<div class="profile-pvp-tag">PvP</div>` : ""}
+      ${c.in_giveaway ? `<div class="profile-giveaway-tag">🎁 Розыгрыш</div>` : ""}
     </div>
   `).join("");
 
@@ -4397,11 +4485,11 @@ document.getElementById("rank-info-overlay").addEventListener("click", (e)=>{
 
 function updateCraftButton(item){
   const btn = document.getElementById("modal-craft");
-  const busy = !!(item.staked_at || item.listed_price || item.swap_listed || item.pvp_round_id || item.pinned_at);
+  const busy = !!(item.staked_at || item.listed_price || item.swap_listed || item.pvp_round_id || item.pinned_at || item.in_giveaway);
   btn.disabled = busy;
   btn.classList.toggle("disabled", busy);
   if(busy){
-    btn.textContent = "Недоступно";
+    btn.textContent = item.in_giveaway ? "Разыгрывается в чате" : "Недоступно";
   }else{
     btn.textContent = "Крафт";
   }
@@ -4411,6 +4499,11 @@ function updateSellButton(item){
   const btn = document.getElementById("modal-sell");
   btn.classList.remove("active", "listed");
   btn.disabled = false;
+  if(item.in_giveaway){
+    btn.textContent = "Разыгрывается в чате";
+    btn.disabled = true;
+    return;
+  }
   if(item.pinned_at){
     btn.textContent = "Закреплено на Стене";
     btn.disabled = true;
@@ -4438,6 +4531,11 @@ function updateSwapButton(item){
   const btn = document.getElementById("modal-swap");
   btn.classList.remove("active", "listed");
   btn.disabled = false;
+  if(item.in_giveaway){
+    btn.textContent = "Разыгрывается в чате";
+    btn.disabled = true;
+    return;
+  }
   if(item.pinned_at){
     btn.textContent = "Закреплено на Стене";
     btn.disabled = true;
@@ -4465,6 +4563,11 @@ function updateStakeButton(item){
   const btn = document.getElementById("modal-stake");
   btn.classList.remove("active", "staked");
   btn.disabled = false;
+  if(item.in_giveaway){
+    btn.textContent = "Разыгрывается в чате";
+    btn.disabled = true;
+    return;
+  }
   if(item.pvp_round_id){
     btn.textContent = "В игре (PvP)";
     btn.disabled = true;
@@ -4579,6 +4682,10 @@ document.getElementById("modal-give").addEventListener("click", async ()=>{
 
 document.getElementById("modal-sell").addEventListener("click", async ()=>{
   if(!selectedItem) return;
+  if(selectedItem.in_giveaway){
+    toast("Карта сейчас разыгрывается в чате");
+    return;
+  }
   if(selectedItem.pvp_round_id){
     toast("Карта сейчас участвует в PvP игре");
     return;
@@ -4624,6 +4731,10 @@ document.getElementById("modal-sell").addEventListener("click", async ()=>{
 
 document.getElementById("modal-swap").addEventListener("click", async ()=>{
   if(!selectedItem) return;
+  if(selectedItem.in_giveaway){
+    toast("Карта сейчас разыгрывается в чате");
+    return;
+  }
   if(selectedItem.pvp_round_id){
     toast("Карта сейчас участвует в PvP игре");
     return;
@@ -4663,6 +4774,10 @@ const STAKE_MAX_DAYS = 20;
 const STAKE_MAX_CARDS = 5;
 document.getElementById("modal-stake").addEventListener("click", async ()=>{
   if(!selectedItem) return;
+  if(selectedItem.in_giveaway && !selectedItem.staked_at){
+    toast("Карта сейчас разыгрывается в чате");
+    return;
+  }
   if(selectedItem.pvp_round_id && !selectedItem.staked_at){
     toast("Карта сейчас участвует в PvP игре");
     return;
@@ -4741,6 +4856,10 @@ function craftHintHTML(rarity){
 document.getElementById("modal-craft").addEventListener("click", async ()=>{
   if(document.getElementById("modal-craft").disabled) return;
   if(!selectedItem) return;
+  if(selectedItem.in_giveaway){
+    toast("Карта сейчас разыгрывается в чате");
+    return;
+  }
   if(selectedItem.staked_at || selectedItem.listed_price || selectedItem.swap_listed){
     toast("Сначала снимите карту с продажи/обмена/стейкинга");
     return;
@@ -5089,7 +5208,7 @@ let numberCardPickerResolve = null;
 function openNumberCardPicker(title){
   document.getElementById("number-card-picker-title").textContent = title;
   const grid = document.getElementById("number-card-picker-grid");
-  const eligible = inventory.filter(c => !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at);
+  const eligible = inventory.filter(c => !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.in_giveaway);
   if(!eligible.length){
     grid.innerHTML = `<div class="empty-state">Нет свободных карт</div>`;
   }else{
@@ -5163,7 +5282,7 @@ const RARITY_LABEL = {bronze:"Bronze", silver:"Silver", gold:"Gold", platinum:"P
 const RARITY_COLOR = {bronze:"#cd7f32", silver:"#9ca3af", gold:"#facc15", platinum:"#a78bfa", diamond:"#ff2fb0"};
 
 function countEligibleCards(rarity){
-  return inventory.filter(c => c.rarity === rarity && !c.staked_at && !c.listed_price && !c.swap_listed && !c.pvp_round_id).length;
+  return inventory.filter(c => c.rarity === rarity && !c.staked_at && !c.listed_price && !c.swap_listed && !c.pvp_round_id && !c.in_giveaway).length;
 }
 
 function renderBurnGrid(){
@@ -5214,7 +5333,7 @@ function openBurnPicker(recipe){
 
 function renderBurnPickerGrid(){
   const grid = document.getElementById("burn-picker-grid");
-  const eligible = inventory.filter(c => c.rarity === burnPickerRarity && !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.pinned_at);
+  const eligible = inventory.filter(c => c.rarity === burnPickerRarity && !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.pinned_at && !c.in_giveaway);
   if(eligible.length === 0){
     grid.innerHTML = `<div class="empty-state">Нет подходящих карт</div>`;
     return;

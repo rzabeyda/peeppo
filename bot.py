@@ -121,7 +121,8 @@ async def handle_start(message: Message):
         photo=FSInputFile(STATIC_CARDS_DIR / "black_pepe.jpg"),
         caption=(
             "Добро Пожаловать в <b>Peeppo</b>!\n\n"
-            "Жми Фарм — собирай карточки, показывай друзьям, меняйся и продавай на рынке."
+            "Жми Фарм — собирай карточки, играй в PvP, крафти, обменивайся или продавай "
+            "на рынке. Обменивай Diamond карты на Telegram Stars."
         ),
         reply_markup=_open_button(),
         parse_mode="HTML",
@@ -255,7 +256,7 @@ async def handle_admin_find_user(message: Message):
     )
 
 
-GEM_DROP_AMOUNT = 100
+GEM_DROP_AMOUNT = 50
 
 # Auto-scheduler: fires roughly once every hour, only between 06:00 and 00:00
 # (midnight) Tallinn local time. GEM_DROP_MIN_GAP_SECONDS guards against firing a
@@ -444,6 +445,16 @@ async def handle_admin_card_giveaway(message: Message):
     await message.answer(f"Готово — {result['total_distributed']} карт разыграно среди {len(result['winners'])} игроков, результат опубликован в {PUBLIC_CHAT}.")
 
 
+def _number_giveaway_text(number: int, name: str, rarity: str, hours: float, entry_count: int) -> str:
+    hours_label = f"{int(hours)}ч" if float(hours).is_integer() else f"{hours:g}ч"
+    return (
+        f"🎉 Розыгрыш карты №{number}!\n\n"
+        f"«{name or rarity}» ({rarity.upper()})\n"
+        f"Жми «Участвовать» — итоги через {hours_label}\n"
+        f"Участники: {entry_count}"
+    )
+
+
 @dp.message(Command("numbergiveaway"))
 async def handle_admin_number_giveaway(message: Message):
     """Admin-only: /numbergiveaway номер [часов] — posts a "Розыгрыш" of the ONE of
@@ -474,11 +485,7 @@ async def handle_admin_number_giveaway(message: Message):
     card = result["card"]
     kb = InlineKeyboardBuilder()
     kb.button(text="Участвовать", callback_data=f"numgiveaway_join:{result['id']}")
-    text = (
-        f"🎉 Розыгрыш карты №{card['number']}!\n\n"
-        f"«{card['name'] or card['rarity']}» ({card['rarity'].upper()}) достанется одному случайному участнику.\n"
-        f"Жми «Участвовать» — итоги подведём тут же через {_format_hours(hours)}."
-    )
+    text = _number_giveaway_text(card["number"], card["name"], card["rarity"], hours, 0)
     try:
         sent = await bot.send_message(PUBLIC_CHAT, text, reply_markup=kb.as_markup())
     except Exception:
@@ -501,6 +508,24 @@ async def handle_number_giveaway_join(call: CallbackQuery):
     status = db.join_number_giveaway(giveaway_id, call.from_user.id)
     if status == "joined":
         await call.answer("Ты участвуешь! Удачи 🍀", show_alert=True)
+        giveaway = db.get_number_giveaway(giveaway_id)
+        if giveaway and giveaway.get("message_id"):
+            try:
+                created = datetime.fromisoformat(giveaway["created_at"])
+                draw_at = datetime.fromisoformat(giveaway["draw_at"])
+                hours = (draw_at - created).total_seconds() / 3600
+                count = db.count_number_giveaway_entries(giveaway_id)
+                text = _number_giveaway_text(
+                    giveaway["number"], giveaway["card_name"], giveaway["card_rarity"], hours, count
+                )
+                kb = InlineKeyboardBuilder()
+                kb.button(text="Участвовать", callback_data=f"numgiveaway_join:{giveaway_id}")
+                await bot.edit_message_text(
+                    chat_id=PUBLIC_CHAT, message_id=giveaway["message_id"], text=text,
+                    reply_markup=kb.as_markup(),
+                )
+            except Exception:
+                logger.warning("could not update participant count on number giveaway %s post", giveaway_id)
     elif status == "already_joined":
         await call.answer("Ты уже участвуешь", show_alert=True)
     elif status == "is_admin":
@@ -873,22 +898,22 @@ async def send_share_message(user_id: int, photo_path: str, card_name: str | Non
 
 
 # ---------------------------------------------------------------------------
-# Crypto withdrawal — "Продать Diamond карты за GRAM" (repurposes the old
-# "Продать Гемы за Звёзды" button in the gems-choice overlay). See database.py's
+# Diamond-for-Stars withdrawal — "Продать за Stars" (repurposes the old GRAM/crypto
+# withdrawal plumbing; wallet_address is now unused/legacy — Stars go straight to the
+# player's own Telegram account, nothing to collect from them). See database.py's
 # request_crypto_withdrawal()/admin_pay_withdrawal()/admin_cancel_withdrawal() for
 # the mechanics — the selected cards are held (voided) the instant a request is
 # submitted, so they can't be double-spent while it's pending. Only ADMIN_ID can
-# act on the request; the admin sends the GRAM manually outside this system and
-# then taps "Оплатить", or taps "Отменить" to give the cards back.
+# act on the request; the admin sends the Stars manually to the player outside this
+# system and then taps "Оплатить", or taps "Отменить" to give the cards back.
 # ---------------------------------------------------------------------------
 
 def _withdrawal_text(withdrawal_id: int, card_count: int, gram_amount: int, wallet_address: str,
                       status_line: str = "") -> str:
     text = (
-        f"💰 <b>Заявка на вывод GRAM</b> #{withdrawal_id}\n\n"
+        f"⭐ <b>Заявка на вывод Stars</b> #{withdrawal_id}\n\n"
         f"Карт Diamond: <b>{card_count}</b>\n"
-        f"К выплате: <b>{gram_amount} GRAM</b>\n"
-        f"Кошелёк: <code>{wallet_address}</code>"
+        f"К выплате: <b>{gram_amount} Stars</b>"
     )
     if status_line:
         text += f"\n\n{status_line}"
@@ -907,7 +932,7 @@ async def notify_admin_withdrawal_request(withdrawal_id: int, user_id: int, disp
     text = (
         f"Игрок: {display_name} (id {user_id})\n\n" +
         _withdrawal_text(withdrawal_id, card_count, gram_amount, wallet_address) +
-        "\n\nОтправь GRAM вручную на этот адрес, затем нажми «Оплатить»."
+        "\n\nОтправь Stars игроку вручную, затем нажми «Оплатить»."
     )
     try:
         await bot.send_message(int(ADMIN_ID), text, parse_mode="HTML", reply_markup=kb.as_markup())
@@ -937,7 +962,7 @@ async def handle_crypto_pay(call: CallbackQuery):
     try:
         await bot.send_message(
             result["user_id"],
-            f"💰 Твоя заявка на вывод {result['gram_amount']} GRAM оплачена! Спасибо, что играешь в Peeppo 🎉",
+            f"⭐ Твоя заявка на вывод {result['gram_amount']} Stars оплачена! Спасибо, что играешь в Peeppo 🎉",
         )
     except Exception:
         logger.warning("could not notify user %s of paid withdrawal", result["user_id"])
@@ -965,7 +990,7 @@ async def handle_crypto_cancel(call: CallbackQuery):
     try:
         await bot.send_message(
             result["user_id"],
-            f"❌ Твоя заявка на вывод {result['gram_amount']} GRAM отменена, карты вернулись в профиль.",
+            f"❌ Твоя заявка на вывод {result['gram_amount']} Stars отменена, карты вернулись в профиль.",
         )
     except Exception:
         logger.warning("could not notify user %s of cancelled withdrawal", result["user_id"])
@@ -1055,6 +1080,251 @@ async def handle_ref_command(message: Message):
     await sync_referral_chat_verification()
     rows = db.get_ref_leaderboard(5, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)
     await message.answer(format_ref_leaderboard(rows))
+
+
+@dp.message(Command("bank"))
+async def handle_bank_command(message: Message):
+    """/bank — check your own gem balance. Same no-chat-type-filter deal as /ref:
+    works in PUBLIC_CHAT and in a private DM with the bot alike."""
+    db.get_or_create_user(
+        telegram_id=message.from_user.id,
+        username=message.from_user.username,
+        first_name=message.from_user.first_name,
+        ref_by=None,
+    )
+    gems = db.get_gems(message.from_user.id)
+    await message.answer(f"💎 Баланс: {gems} гемов")
+
+
+@dp.message(Command("redblack", "rb"))
+async def handle_redblack_command(message: Message):
+    """/redblack [ставка] — starts a round of red/black (default REDBLACK_DEFAULT_BET
+    gems if no amount given). Posts a Red/Black picker; the actual bet only gets
+    placed once a button is tapped (handle_redblack_choice), so this command itself
+    never touches the balance — it just checks it's enough and shows the buttons."""
+    db.get_or_create_user(
+        telegram_id=message.from_user.id,
+        username=message.from_user.username,
+        first_name=message.from_user.first_name,
+        ref_by=None,
+    )
+    parts = (message.text or "").split()
+    if len(parts) > 1:
+        try:
+            bet = int(parts[1])
+        except ValueError:
+            await message.answer("Формат: /redblack [ставка] (или /rb), например /rb 100")
+            return
+        if bet < db.REDBLACK_MIN_BET:
+            await message.answer("Ставка должна быть положительным числом")
+            return
+    else:
+        bet = db.REDBLACK_DEFAULT_BET
+
+    gems = db.get_gems(message.from_user.id)
+    if gems < bet:
+        await message.answer(f"Не хватает гемов на ставку {bet} — на балансе {gems}. Проверь /bank")
+        return
+
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🔴 Red", callback_data=f"redblack:{message.from_user.id}:{bet}:red")
+    kb.button(text="⚫ Black", callback_data=f"redblack:{message.from_user.id}:{bet}:black")
+    kb.adjust(2)
+    await message.answer(
+        f"🔴⚫ <b>Красное/чёрное</b> — ставка {bet} гемов\nВыбирай: Red или Black?",
+        parse_mode="HTML",
+        reply_markup=kb.as_markup(),
+    )
+
+
+@dp.callback_query(F.data.startswith("redblack:"))
+async def handle_redblack_choice(call: CallbackQuery):
+    try:
+        _, owner_id_s, bet_s, choice = call.data.split(":")
+        owner_id = int(owner_id_s)
+        bet = int(bet_s)
+    except ValueError:
+        await call.answer("Битая кнопка, начни заново через /redblack", show_alert=True)
+        return
+    if call.from_user.id != owner_id:
+        await call.answer("Это не твоя игра — сделай свою ставку через /redblack", show_alert=True)
+        return
+    try:
+        result = db.play_redblack(call.from_user.id, bet, choice)
+    except db.InsufficientGems:
+        await call.answer("Не хватает гемов на балансе", show_alert=True)
+        return
+    except db.RedBlackError as e:
+        await call.answer(f"Ошибка: {e}", show_alert=True)
+        return
+
+    # The outcome above is already final and fair (computed the instant they tapped) —
+    # this is purely a ~2s cosmetic reveal animation, never a delay on the actual RNG.
+    await call.answer("🎲 Крутим...")
+    picked_label = "🔴 Red" if choice == "red" else "⚫ Black"
+    spin_frames = ["🔴⚫🔴⚫", "⚫🔴⚫🔴", "🔴⚫🔴⚫"]
+    for frame in spin_frames:
+        try:
+            await call.message.edit_text(f"{frame}\n\nСтавка: {picked_label}, {bet} гемов\nКрутим...")
+        except Exception:
+            pass
+        await asyncio.sleep(0.65)
+
+    color_emoji = "🔴" if result["result"] == "red" else "⚫"
+    if result["won"]:
+        text = (
+            f"{color_emoji} Выпало: <b>{result['result'].upper()}</b>!\n\n"
+            f"🎉 Угадал! Выигрыш {result['payout']} гемов (баланс: {result['gems']})"
+        )
+    else:
+        text = (
+            f"{color_emoji} Выпало: <b>{result['result'].upper()}</b>\n\n"
+            f"😔 Не повезло — потерял {bet} гемов (баланс: {result['gems']})"
+        )
+
+    # Clear the Red/Black buttons so this exact bet can't be replayed by tapping again —
+    # an empty InlineKeyboardBuilder still needs to be sent explicitly (Telegram only
+    # removes an existing keyboard when reply_markup is an EXPLICIT empty one, not when
+    # the parameter is simply omitted).
+    try:
+        await call.message.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardBuilder().as_markup())
+    except Exception:
+        logger.warning("could not edit redblack result message for user %s", call.from_user.id)
+
+
+@dp.message(Command("go"))
+async def handle_aviator_command(message: Message):
+    """/go [ставка] -- starts an Aviator round (default AVIATOR_DEFAULT_BET gems if no
+    amount given). The bet is placed and the (hidden) crash point drawn immediately by
+    db.start_aviator() -- everything after that (the climbing multiplier + the
+    "Забрать" button on each tick) is just a live cosmetic reveal of that already-
+    decided outcome, same "decided the instant the bet is placed" philosophy as
+    /redblack's coin flip. Works in PUBLIC_CHAT and in a private DM alike, same as
+    /bank and /redblack."""
+    db.get_or_create_user(
+        telegram_id=message.from_user.id,
+        username=message.from_user.username,
+        first_name=message.from_user.first_name,
+        ref_by=None,
+    )
+    parts = (message.text or "").split()
+    if len(parts) > 1:
+        try:
+            bet = int(parts[1])
+        except ValueError:
+            await message.answer("Формат: /go [ставка], например /go 85")
+            return
+        if bet < db.AVIATOR_MIN_BET:
+            await message.answer("Ставка должна быть положительным числом")
+            return
+    else:
+        bet = db.AVIATOR_DEFAULT_BET
+
+    try:
+        started = db.start_aviator(message.from_user.id, bet)
+    except db.InsufficientGems:
+        gems = db.get_gems(message.from_user.id)
+        await message.answer(f"Не хватает гемов на ставку {bet} -- на балансе {gems}. Проверь /bank")
+        return
+    except db.AviatorError as e:
+        await message.answer(f"Ошибка: {e}")
+        return
+
+    round_id = started["round_id"]
+    first_tick = db.AVIATOR_TICKS[0]
+    kb = InlineKeyboardBuilder()
+    kb.button(text=f"\U0001F48E Забрать {first_tick:.2f}x", callback_data=f"aviator:{round_id}:{message.from_user.id}:{first_tick}")
+    sent = await message.answer(
+        f"\U0001F680 Полетели! Ставка: {bet} гемов\n\n<b>{first_tick:.2f}x</b>",
+        parse_mode="HTML",
+        reply_markup=kb.as_markup(),
+    )
+    asyncio.create_task(run_aviator_round(round_id, message.from_user.id, bet, sent))
+
+
+async def run_aviator_round(round_id: int, user_id: int, bet: int, sent_message: Message):
+    """Background ticker for one /go round: walks AVIATOR_TICKS (past the first, which
+    handle_aviator_command already displayed), editing sent_message with a fresh
+    multiplier + a fresh "Забрать" button (baked with THAT tick's own multiplier) each
+    step. Re-checks db.peek_aviator_crash() every step rather than trusting a value
+    captured once at round start, so a cashout that lands mid-loop (resolved
+    independently/atomically by handle_aviator_cashout) is noticed and this loop backs
+    off immediately without clobbering the win message."""
+    try:
+        for m in db.AVIATOR_TICKS[1:]:
+            await asyncio.sleep(1.0)
+            crash_point = db.peek_aviator_crash(round_id)
+            if crash_point is None:
+                return  # already resolved (cashed out) by the callback handler
+            if crash_point <= m:
+                if db.mark_aviator_crashed(round_id):
+                    try:
+                        await sent_message.edit_text(
+                            f"\U0001F4A5 Улетела на <b>{crash_point:.2f}x</b>\n\nСтавка {bet} гемов сгорела",
+                            parse_mode="HTML",
+                            reply_markup=InlineKeyboardBuilder().as_markup(),
+                        )
+                    except Exception:
+                        pass
+                return
+            kb = InlineKeyboardBuilder()
+            kb.button(text=f"\U0001F48E Забрать {m:.2f}x", callback_data=f"aviator:{round_id}:{user_id}:{m}")
+            try:
+                await sent_message.edit_text(
+                    f"\U0001F680 Летит...\n\n<b>{m:.2f}x</b>", parse_mode="HTML", reply_markup=kb.as_markup()
+                )
+            except Exception:
+                pass
+        # Reached the top of AVIATOR_TICKS without cashing out or crashing -- a chat
+        # message can't animate forever, so the rocket is capped there: force the
+        # player's cashout at the highest tick instead. This can only ever help them
+        # (a forced WIN at the max multiplier shown), never hurt them.
+        cap = db.AVIATOR_TICKS[-1]
+        try:
+            result = db.cashout_aviator(round_id, user_id, cap)
+        except db.AviatorError:
+            return  # a last-instant tap already resolved it first
+        try:
+            await sent_message.edit_text(
+                f"\U0001F680 Потолок {cap:.2f}x -- забрали автоматически!\n\n"
+                f"\U0001F389 Выигрыш {result['payout']} гемов (баланс: {result['gems']})",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardBuilder().as_markup(),
+            )
+        except Exception:
+            pass
+    except Exception:
+        logger.exception("aviator round %s ticker crashed", round_id)
+
+
+@dp.callback_query(F.data.startswith("aviator:"))
+async def handle_aviator_cashout(call: CallbackQuery):
+    try:
+        _, round_id_s, owner_id_s, multiplier_s = call.data.split(":")
+        round_id = int(round_id_s)
+        owner_id = int(owner_id_s)
+        multiplier = float(multiplier_s)
+    except ValueError:
+        await call.answer("Битая кнопка, начни заново через /go", show_alert=True)
+        return
+    if call.from_user.id != owner_id:
+        await call.answer("Это не твоя игра -- начни свою через /go", show_alert=True)
+        return
+    try:
+        result = db.cashout_aviator(round_id, call.from_user.id, multiplier)
+    except db.AviatorError as e:
+        await call.answer("Раунд уже завершён" if "завершён" in str(e) else f"Ошибка: {e}", show_alert=True)
+        return
+
+    await call.answer("\U0001F48E Забрал!")
+    try:
+        await call.message.edit_text(
+            f"\U0001F389 Забрал на <b>{multiplier:.2f}x</b>!\n\nВыигрыш {result['payout']} гемов (баланс: {result['gems']})",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardBuilder().as_markup(),
+        )
+    except Exception:
+        logger.warning("could not edit aviator result message for user %s", call.from_user.id)
 
 
 async def ref_race_scheduler():

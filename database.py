@@ -13,6 +13,7 @@ Design notes (per project decisions):
   - All game state lives here (server-side) — Telegram WebApp has no localStorage.
 """
 
+import os
 import sqlite3
 import random
 import json
@@ -20,6 +21,11 @@ from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from pathlib import Path
+
+# Admin's own telegram_id — same pattern as bot.py/api.py. Used to keep the admin's
+# own testing (case opens, crafts, evolutions, farmed cards) out of the /admin panel's
+# player-usage stats. Not set -> nothing is excluded (behaves exactly as before).
+ADMIN_ID = os.environ.get("ADMIN_ID")
 
 DB_PATH = Path(__file__).parent / "peeppo.db"
 
@@ -171,6 +177,16 @@ CREATE TABLE IF NOT EXISTS hundred_club (
 CREATE TABLE IF NOT EXISTS ref_race_announced (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     announced_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS aviator_rounds (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id           INTEGER NOT NULL REFERENCES users(telegram_id),
+    bet               INTEGER NOT NULL,
+    crash_point       REAL NOT NULL,
+    status            TEXT NOT NULL DEFAULT 'active',  -- active | won | lost
+    cashout_multiplier REAL,
+    created_at        TEXT NOT NULL
 );
 
 -- Simple lifetime action counters for the /admin panel (cases bought, cards crafted,
@@ -762,8 +778,174 @@ def spin_fortune_wheel(user_id: int) -> dict:
         return {"ok": True, "amount": amount}
 
 
+# ---------------------------------------------------------------------------
+# Red/Black — a simple double-or-nothing chat game (/redblack in bot.py). One round:
+# player stakes `bet` gems and picks "red" or "black"; a fair coin flip either doubles
+# their stake (net +bet) or loses it outright (net -bet). No house edge, no third
+# outcome (no "green zero") — deliberately simpler than real roulette.
+# ---------------------------------------------------------------------------
+
+REDBLACK_DEFAULT_BET = 25
+REDBLACK_MIN_BET = 1
+
+
+class RedBlackError(Exception):
+    """Raised by play_redblack() for a malformed bet/choice (not a balance problem —
+    that's InsufficientGems, same exception every other gem-spending action uses)."""
+
+
+def play_redblack(user_id: int, bet: int, choice: str) -> dict:
+    """The whole /redblack round in one atomic step: validates the bet/choice and
+    balance, flips a fair 50/50 red/black result, and settles it — on a win the stake
+    stays with the player plus an equal amount on top (net +bet, credited to both gems
+    and gems_earned); on a loss the stake is simply removed (net -bet, gems_earned
+    untouched — same convention as every other spend). Raises InsufficientGems if the
+    balance can't cover the bet, RedBlackError for a bad bet amount or choice. Returns
+    {"result": "red"|"black", "won": bool, "bet": int, "payout": 0 or 2*bet,
+    "gems": new balance}."""
+    if choice not in ("red", "black"):
+        raise RedBlackError("choice must be 'red' or 'black'")
+    if not isinstance(bet, int) or bet < REDBLACK_MIN_BET:
+        raise RedBlackError(f"bet must be a whole number >= {REDBLACK_MIN_BET}")
+    with get_conn() as conn:
+        row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        if row is None or row["gems"] < bet:
+            raise InsufficientGems()
+        result = random.choice(("red", "black"))
+        won = result == choice
+        if won:
+            conn.execute(
+                "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
+                (bet, bet, user_id),
+            )
+        else:
+            conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (bet, user_id))
+        new_gems = conn.execute(
+            "SELECT gems FROM users WHERE telegram_id = ?", (user_id,)
+        ).fetchone()["gems"]
+    return {"result": result, "won": won, "bet": bet, "payout": bet * 2 if won else 0, "gems": new_gems}
+
+
+# ---------------------------------------------------------------------------
+# Aviator — a crash-style chat game (/go in bot.py). Player stakes `bet` gems; a
+# rocket's multiplier climbs through AVIATOR_TICKS (1.00x, 1.15x, 1.30x, ...) and the
+# player can tap "Забрать" at any tick to cash out bet*multiplier gems, or lose the
+# stake outright if the rocket crashes before they tap. The crash point is drawn ONCE,
+# atomically, the instant the round starts (start_aviator()) — hidden from the player,
+# stored server-side in aviator_rounds — and never recomputed later, same "decided the
+# instant the bet is placed" philosophy as play_redblack()'s coin flip; the tick-by-tick
+# climb in bot.py is a purely cosmetic multi-second reveal, never a delay on the RNG.
+#
+# crash_point = (1 - house_edge) / (1 - r) for a uniform r in [0, 1) (with an instant
+# 1.00x bust when r < house_edge) is the standard crash-game formula: it makes
+# E[payout] for cashing out at ANY fixed multiplier m work out to exactly bet * (1 -
+# house_edge), i.e. RTP = 1 - house_edge, whichever tick the player chooses to cash out
+# at — same 95% RTP flavor as a real offline casino.
+#
+# Race-safety needs no in-memory game state at all: every tick's "Забрать" button gets
+# a FRESH callback_data baked with that tick's own multiplier, and cashout_aviator()/
+# mark_aviator_crashed() both resolve via a single atomic "... WHERE status = 'active'"
+# UPDATE — whichever happens first (a tap, or the loop finding the next tick
+# unreachable) wins the race and the other one no-ops. A tick is only ever shown once
+# peek_aviator_crash() has already confirmed the round survives past it, so any button
+# still on screen is always safely payable — even a stale one left over from a bot
+# restart that killed the ticking loop mid-flight.
+# ---------------------------------------------------------------------------
+
+AVIATOR_DEFAULT_BET = 25
+AVIATOR_MIN_BET = 1
+AVIATOR_HOUSE_EDGE = 0.05  # RTP 95%
+AVIATOR_TICKS = [1.00, 1.15, 1.30, 1.50, 1.75, 2.00, 2.50, 3.00, 4.00, 5.00, 7.00, 10.00, 15.00, 20.00]
+
+
+class AviatorError(Exception):
+    """Raised by start_aviator()/cashout_aviator() for a malformed bet, or a round
+    that's missing/not this player's/already resolved — not a balance problem (that's
+    InsufficientGems, same convention as play_redblack())."""
+
+
+def start_aviator(user_id: int, bet: int) -> dict:
+    """Atomically deducts the bet and draws a private crash point, then opens a new
+    aviator_rounds row ('active'). Raises InsufficientGems if the balance can't cover
+    the bet, AviatorError for a bad bet amount. Returns {"round_id": int, "crash_point":
+    float} — crash_point is SERVER-SIDE ONLY, never send it to the client/message text."""
+    if not isinstance(bet, int) or bet < AVIATOR_MIN_BET:
+        raise AviatorError(f"bet must be a whole number >= {AVIATOR_MIN_BET}")
+    r = random.random()
+    if r < AVIATOR_HOUSE_EDGE:
+        crash_point = 1.00
+    else:
+        crash_point = int(((1 - AVIATOR_HOUSE_EDGE) / (1 - r)) * 100) / 100
+    with get_conn() as conn:
+        row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        if row is None or row["gems"] < bet:
+            raise InsufficientGems()
+        conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (bet, user_id))
+        cur = conn.execute(
+            "INSERT INTO aviator_rounds (user_id, bet, crash_point, status, created_at) "
+            "VALUES (?, ?, ?, 'active', ?)",
+            (user_id, bet, crash_point, _now()),
+        )
+        round_id = cur.lastrowid
+    return {"round_id": round_id, "crash_point": crash_point}
+
+
+def peek_aviator_crash(round_id: int) -> float | None:
+    """Server-side-only lookup of a round's (still hidden) crash point, used by the
+    bot's tick loop to decide whether the NEXT multiplier is still reachable. Never
+    exposed to the player. None if the round doesn't exist or isn't 'active' anymore."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT crash_point, status FROM aviator_rounds WHERE id = ?", (round_id,)).fetchone()
+    if row is None or row["status"] != "active":
+        return None
+    return row["crash_point"]
+
+
+def mark_aviator_crashed(round_id: int) -> bool:
+    """Called by the tick loop the instant it finds the next tick unreachable
+    (crash_point <= that tick). Flips the round to 'lost' ONLY if it's still 'active'
+    (atomic, race-safe against a cashout that landed a split second earlier) — the
+    stake was already taken in start_aviator(), nothing more to deduct. Returns True
+    if THIS call is what resolved it (caller should show the crash), False if a
+    cashout already resolved this round first (caller should do nothing)."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE aviator_rounds SET status = 'lost' WHERE id = ? AND status = 'active'",
+            (round_id,),
+        )
+        return cur.rowcount > 0
+
+
+def cashout_aviator(round_id: int, user_id: int, multiplier: float) -> dict:
+    """Pays out bet*multiplier gems the instant the player taps a tick's 'Забрать'
+    button — multiplier comes from that exact button (baked into its callback_data
+    when the tick was drawn), never recomputed here. Atomic + race-safe: only pays
+    out if the round is still 'active' and belongs to user_id; raises AviatorError if
+    it's already resolved (crashed, or cashed out from another tap) or isn't this
+    player's round. Returns {"bet": int, "payout": int, "gems": new balance}."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT user_id, bet, status FROM aviator_rounds WHERE id = ?", (round_id,)).fetchone()
+        if row is None:
+            raise AviatorError("раунд не найден")
+        if row["user_id"] != user_id:
+            raise AviatorError("это не твоя игра")
+        payout = int(round(row["bet"] * multiplier))
+        cur = conn.execute(
+            "UPDATE aviator_rounds SET status = 'won', cashout_multiplier = ? WHERE id = ? AND status = 'active'",
+            (multiplier, round_id),
+        )
+        if cur.rowcount == 0:
+            raise AviatorError("раунд уже завершён")
+        conn.execute(
+            "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
+            (payout, payout, user_id),
+        )
+        new_gems = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()["gems"]
+    return {"bet": row["bet"], "payout": payout, "gems": new_gems}
+
+
 GEM_MINING_DURATION_SECONDS = 60 * 60  # 60 minutes per cycle
-GEM_MINING_REWARD_GEMS = 25
+GEM_MINING_REWARD_GEMS = 50
 
 
 def get_gem_mining_status(user_id: int) -> dict:
@@ -901,7 +1083,10 @@ CASE_DEFS = {
     "capybara": {"name": "Капибара", "price": 200, "image": "case/case_capybara.jpg",  # best for Platinum
                  "weights": {"bronze": 10, "silver": 15, "gold": 25, "platinum": 40, "diamond": 10}},
     "pepe": {"name": "Пепе", "price": 500, "image": "case/case_pep.jpg",  # best for Diamond
-             "weights": {"silver": 5, "gold": 10, "platinum": 20, "diamond": 65}},
+             # Diamond chance cut from 65 to 35 — case was too generous ("слишком жирный").
+             # Freed weight redistributed proportionally across the other tiers so this
+             # still sums to 100 and keeps its "best for Diamond" identity, just weaker.
+             "weights": {"silver": 9, "gold": 19, "platinum": 37, "diamond": 35}},
 }
 
 
@@ -930,7 +1115,8 @@ def open_case(user_id: int, case_key: str) -> dict:
         )
         user_card_id = cur.lastrowid
         drop_number = conn.execute("SELECT COUNT(*) FROM user_cards").fetchone()[0]
-        _bump_counter(conn, "case_open")
+        if not (ADMIN_ID and str(user_id) == str(ADMIN_ID)):
+            _bump_counter(conn, "case_open")
     return {
         "user_card_id": user_card_id,
         "card_id": card["id"],
@@ -964,7 +1150,8 @@ def create_card_giveaway(admin_id: int, rarity: str, total_cards: int,
             "SELECT uc.id FROM user_cards uc JOIN cards c ON c.id = uc.card_id "
             "WHERE uc.user_id = ? AND c.rarity = ? "
             "AND uc.listed_price IS NULL AND uc.swap_listed = 0 "
-            "AND uc.staked_at IS NULL AND uc.pvp_round_id IS NULL",
+            "AND uc.staked_at IS NULL AND uc.pvp_round_id IS NULL "
+            "AND NOT EXISTS (SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = uc.id AND ng.drawn_at IS NULL)",
             (admin_id, rarity),
         ).fetchall()
         pool_ids = [r["id"] for r in pool_rows]
@@ -1088,7 +1275,8 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
             f"WHERE uc.id IN ({placeholders}) AND uc.user_id = ? AND c.rarity = ? "
             f"AND uc.listed_price IS NULL AND uc.swap_listed = 0 "
             f"AND uc.staked_at IS NULL AND uc.pvp_round_id IS NULL AND uc.voided = 0 "
-            f"AND uc.pinned_at IS NULL",
+            f"AND uc.pinned_at IS NULL "
+            f"AND NOT EXISTS (SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = uc.id AND ng.drawn_at IS NULL)",
             (*user_card_ids, user_id, rarity),
         ).fetchall()
         if len(rows) != count:
@@ -1113,7 +1301,8 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
             )
             new_user_card_id = recipient_id
             remaining_ids = burn_ids[1:]
-            _bump_counter(conn, "evolve")
+            if not (ADMIN_ID and str(user_id) == str(ADMIN_ID)):
+                _bump_counter(conn, "evolve")
         else:
             remaining_ids = burn_ids
 
@@ -1347,14 +1536,15 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
     gem balance is too low, CraftNotOwned if user_card_id isn't this user's."""
     with get_conn() as conn:
         owned = conn.execute(
-            "SELECT uc.id, uc.obtained_at, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, uc.pinned_at, c.rarity "
+            "SELECT uc.id, uc.obtained_at, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, uc.pinned_at, c.rarity, "
+            "(SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = uc.id AND ng.drawn_at IS NULL) AS in_giveaway "
             "FROM user_cards uc JOIN cards c ON c.id = uc.card_id "
             "WHERE uc.id = ? AND uc.user_id = ?",
             (user_card_id, user_id),
         ).fetchone()
         if owned is None:
             raise CraftNotOwned()
-        if owned["listed_price"] is not None or owned["swap_listed"] or owned["staked_at"] is not None or owned["pvp_round_id"] is not None or owned["pinned_at"] is not None:
+        if owned["listed_price"] is not None or owned["swap_listed"] or owned["staked_at"] is not None or owned["pvp_round_id"] is not None or owned["pinned_at"] is not None or owned["in_giveaway"]:
             raise CraftNotOwned()
         cost = get_craft_cost(owned["rarity"])
         gems_row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
@@ -1389,7 +1579,8 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
                 "SELECT COUNT(*) FROM user_cards WHERE obtained_at <= ?",
                 (owned["obtained_at"],),
             ).fetchone()[0]
-            _bump_counter(conn, "craft")
+            if not (ADMIN_ID and str(user_id) == str(ADMIN_ID)):
+                _bump_counter(conn, "craft")
         else:
             # Diamond craft failure — card destroyed outright. Same "voided" soft-destroy
             # trick as burn_cards(): never DELETE (would hit the same FK constraint), just
@@ -1456,7 +1647,8 @@ class NumberBidTooLow(Exception):
 def _usable_owned_card(conn: sqlite3.Connection, user_id: int, user_card_id: int) -> sqlite3.Row | None:
     return conn.execute(
         "SELECT id, obtained_at FROM user_cards WHERE id = ? AND user_id = ? AND voided = 0 "
-        "AND listed_price IS NULL AND swap_listed = 0 AND staked_at IS NULL AND pvp_round_id IS NULL",
+        "AND listed_price IS NULL AND swap_listed = 0 AND staked_at IS NULL AND pvp_round_id IS NULL "
+        "AND NOT EXISTS (SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = user_cards.id AND ng.drawn_at IS NULL)",
         (user_card_id, user_id),
     ).fetchone()
 
@@ -1785,7 +1977,8 @@ def get_inventory(user_id: int) -> list[dict]:
             SELECT uc.id AS user_card_id, c.id AS card_id, c.filename, c.name, c.rarity,
                    uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, uc.pinned_at,
                    COALESCE(uc.number_override,
-                       (SELECT COUNT(*) FROM user_cards uc2 WHERE uc2.obtained_at <= uc.obtained_at)) AS drop_number
+                       (SELECT COUNT(*) FROM user_cards uc2 WHERE uc2.obtained_at <= uc.obtained_at)) AS drop_number,
+                   (SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = uc.id AND ng.drawn_at IS NULL) AS in_giveaway
             FROM user_cards uc
             JOIN cards c ON c.id = uc.card_id
             WHERE uc.user_id = ? AND uc.voided = 0
@@ -2101,6 +2294,19 @@ def join_number_giveaway(giveaway_id: int, user_id: int) -> str:
         return "joined"
 
 
+def get_number_giveaway(giveaway_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM number_giveaways WHERE id = ?", (giveaway_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def count_number_giveaway_entries(giveaway_id: int) -> int:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM number_giveaway_entries WHERE number_giveaway_id = ?", (giveaway_id,)
+        ).fetchone()[0]
+
+
 def get_due_number_giveaways() -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
@@ -2217,13 +2423,14 @@ def list_card(user_card_id: int, seller_id: int, price_gems: int) -> bool:
     get_min_listing_price())."""
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT uc.user_id, uc.swap_listed, uc.staked_at, uc.pvp_round_id, uc.pinned_at, c.rarity "
+            "SELECT uc.user_id, uc.swap_listed, uc.staked_at, uc.pvp_round_id, uc.pinned_at, c.rarity, "
+            "(SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = uc.id AND ng.drawn_at IS NULL) AS in_giveaway "
             "FROM user_cards uc JOIN cards c ON c.id = uc.card_id WHERE uc.id = ?",
             (user_card_id,),
         ).fetchone()
         if row is None or row["user_id"] != seller_id:
             return False
-        if row["swap_listed"] or row["staked_at"] is not None or row["pvp_round_id"] is not None or row["pinned_at"] is not None:
+        if row["swap_listed"] or row["staked_at"] is not None or row["pvp_round_id"] is not None or row["pinned_at"] is not None or row["in_giveaway"]:
             return False
         min_price = get_min_listing_price(row["rarity"])
         if price_gems < min_price:
@@ -2427,11 +2634,13 @@ def list_for_swap(user_card_id: int, seller_id: int) -> bool:
     Also blocked while the copy is staked — it has to be pulled out of staking first."""
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT user_id, listed_price, swap_listed, staked_at, pvp_round_id, pinned_at FROM user_cards WHERE id = ?", (user_card_id,)
+            "SELECT user_id, listed_price, swap_listed, staked_at, pvp_round_id, pinned_at, "
+            "(SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = user_cards.id AND ng.drawn_at IS NULL) AS in_giveaway "
+            "FROM user_cards WHERE id = ?", (user_card_id,)
         ).fetchone()
         if row is None or row["user_id"] != seller_id:
             return False
-        if row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None or row["pvp_round_id"] is not None or row["pinned_at"] is not None:
+        if row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None or row["pvp_round_id"] is not None or row["pinned_at"] is not None or row["in_giveaway"]:
             return False
         conn.execute("UPDATE user_cards SET swap_listed = 1 WHERE id = ?", (user_card_id,))
         return True
@@ -2538,13 +2747,14 @@ def stake_card(user_card_id: int, owner_id: int) -> bool:
     can't be covered, StakeLimitReached if the player already has MAX_STAKED_CARDS staked."""
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT uc.user_id, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, c.rarity "
+            "SELECT uc.user_id, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, c.rarity, "
+            "(SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = uc.id AND ng.drawn_at IS NULL) AS in_giveaway "
             "FROM user_cards uc JOIN cards c ON c.id = uc.card_id WHERE uc.id = ?",
             (user_card_id,),
         ).fetchone()
         if row is None or row["user_id"] != owner_id:
             return False
-        if row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None or row["pvp_round_id"] is not None:
+        if row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None or row["pvp_round_id"] is not None or row["in_giveaway"]:
             return False
         staked_count = conn.execute(
             "SELECT COUNT(*) AS n FROM user_cards WHERE user_id = ? AND staked_at IS NOT NULL",
@@ -2737,7 +2947,8 @@ def transfer_card_to(user_card_id: int, from_user_id: int, to_user_id: int) -> d
     with get_conn() as conn:
         row = conn.execute(
             """
-            SELECT uc.user_id, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, c.filename, c.name
+            SELECT uc.user_id, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, c.filename, c.name,
+                   (SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = uc.id AND ng.drawn_at IS NULL) AS in_giveaway
             FROM user_cards uc JOIN cards c ON c.id = uc.card_id
             WHERE uc.id = ?
             """,
@@ -2745,7 +2956,7 @@ def transfer_card_to(user_card_id: int, from_user_id: int, to_user_id: int) -> d
         ).fetchone()
         if row is None or row["user_id"] != from_user_id:
             return None
-        if row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None or row["pvp_round_id"] is not None:
+        if row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None or row["pvp_round_id"] is not None or row["in_giveaway"]:
             return None
         gems_row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (from_user_id,)).fetchone()
         if gems_row is None or gems_row["gems"] < TRANSFER_FEE_GEMS:
@@ -2862,12 +3073,22 @@ def get_and_clear_referral_notice(user_id: int) -> dict | None:
         return None
 
 
-def get_total_farmed() -> int:
+def get_total_farmed(exclude_id: int | None = None) -> int:
     """Global count of every farm drop ever, across all users, MINUS anything since
     burned away (voided=1) — this is the "Всего" figure shown in the app, and it can go
-    DOWN now that burn_cards() exists."""
+    DOWN now that burn_cards() exists.
+
+    exclude_id: when given, cards owned by that user are left out of the count. Used
+    by get_admin_stats() to pass ADMIN_ID so /admin's "Карты" figure reflects real
+    player usage only — every other caller leaves this unset and is unaffected."""
     with get_conn() as conn:
-        row = conn.execute("SELECT COUNT(*) AS n FROM user_cards WHERE voided = 0").fetchone()
+        if exclude_id is not None:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM user_cards WHERE voided = 0 AND user_id != ?",
+                (exclude_id,),
+            ).fetchone()
+        else:
+            row = conn.execute("SELECT COUNT(*) AS n FROM user_cards WHERE voided = 0").fetchone()
         return row["n"]
 
 
@@ -3045,14 +3266,15 @@ def join_pvp_round(user_id: int, user_card_ids: list[int]) -> dict:
 
         for ucid in user_card_ids:
             row = conn.execute(
-                "SELECT user_id, listed_price, swap_listed, staked_at, pvp_round_id, pinned_at, card_id "
+                "SELECT user_id, listed_price, swap_listed, staked_at, pvp_round_id, pinned_at, card_id, "
+                "(SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = user_cards.id AND ng.drawn_at IS NULL) AS in_giveaway "
                 "FROM user_cards WHERE id = ?",
                 (ucid,),
             ).fetchone()
             if row is None or row["user_id"] != user_id:
                 raise PvpCardNotOwned()
             if (row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None
-                    or row["pvp_round_id"] is not None or row["pinned_at"] is not None):
+                    or row["pvp_round_id"] is not None or row["pinned_at"] is not None or row["in_giveaway"]):
                 raise PvpCardNotOwned()
             card_row = conn.execute("SELECT rarity FROM cards WHERE id = ?", (row["card_id"],)).fetchone()
             rarity = (card_row["rarity"] if card_row else None) or "bronze"
@@ -3374,7 +3596,7 @@ def get_admin_stats() -> dict:
     # used to forget the "WHERE voided = 0" filter that burn_cards()/craft_card() rely on,
     # so /admin showed a higher, stale card count than the in-app "Карты" figure once any
     # burning/evolution had happened. Sharing the one function keeps them from drifting again.
-    total_farmed = get_total_farmed()
+    total_farmed = get_total_farmed(exclude_id=int(ADMIN_ID) if ADMIN_ID else None)
     stats = {
         "users": users, "cards": cards, "gems_total": gems_total,
         "total_farmed": total_farmed, "active_today": active_today,
@@ -3427,10 +3649,12 @@ def get_pending_withdrawal(user_id: int) -> dict | None:
     return dict(row) if row else None
 
 
-def request_crypto_withdrawal(user_id: int, user_card_ids: list[int], wallet_address: str) -> dict:
+def request_crypto_withdrawal(user_id: int, user_card_ids: list[int], wallet_address: str = "") -> dict:
+    # wallet_address is now optional/unused for real — this used to be a crypto (GRAM)
+    # payout requiring an external wallet; it now pays out in Telegram Stars straight to
+    # the user's own account, so there's nothing to collect from them here. Kept as a
+    # column/param for backward compatibility with existing pending/history rows.
     wallet_address = (wallet_address or "").strip()
-    if not wallet_address:
-        raise CryptoWithdrawalError("wallet address is required")
 
     count = len(user_card_ids)
     if count == 0 or count % GRAM_CARDS_PER_UNIT != 0 or len(set(user_card_ids)) != count:
@@ -3445,7 +3669,8 @@ def request_crypto_withdrawal(user_id: int, user_card_ids: list[int], wallet_add
             f"SELECT uc.id FROM user_cards uc JOIN cards c ON c.id = uc.card_id "
             f"WHERE uc.id IN ({placeholders}) AND uc.user_id = ? AND c.rarity = 'diamond' "
             f"AND uc.listed_price IS NULL AND uc.swap_listed = 0 "
-            f"AND uc.staked_at IS NULL AND uc.pvp_round_id IS NULL AND uc.voided = 0",
+            f"AND uc.staked_at IS NULL AND uc.pvp_round_id IS NULL AND uc.voided = 0 "
+            f"AND NOT EXISTS (SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = uc.id AND ng.drawn_at IS NULL)",
             (*user_card_ids, user_id),
         ).fetchall()
         if len(rows) != count:

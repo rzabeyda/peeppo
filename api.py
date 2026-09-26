@@ -184,7 +184,7 @@ class PvpJoinBody(InitDataBody):
 
 class CryptoWithdrawBody(InitDataBody):
     user_card_ids: list[int]
-    wallet_address: str
+    wallet_address: str = ""
 
 
 class NumberBidBody(InitDataBody):
