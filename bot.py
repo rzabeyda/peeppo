@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
+from aiogram.exceptions import TelegramRetryAfter
 from aiogram.types import (
     ReplyKeyboardRemove,
     BotCommand,
@@ -52,6 +53,17 @@ WEBAPP_URL = os.environ.get("WEBAPP_URL", "https://peeppo.memstroy.app")
 # images earlier -- bump this on every real webapp/index.html deploy so the "Open app"
 # button forces a fresh fetch instead of reusing a stale cached page.
 WEBAPP_VERSION = "3"
+
+AVIATOR_MAX_CONCURRENT_PER_CHAT = 5  # see database.count_active_aviator_rounds_in_chat -- caps how many /go tickers can hammer edit_text in the same chat at once
+
+# asyncio.create_task() only holds a WEAK reference in the event loop -- a task with
+# no other strong reference anywhere can get garbage-collected mid-flight at any time,
+# silently killing it with no exception and no log line. This is very likely the REAL
+# cause of "ракетка зависает" (confirmed happening even with exactly one solo player
+# and zero other chat activity, which rules out flood control as the only cause):
+# keep every in-flight aviator ticker task referenced here until it finishes, per the
+# standard asyncio guidance (https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task).
+_active_aviator_tasks: set[asyncio.Task] = set()
 _split = urlsplit(WEBAPP_URL)
 WEBAPP_ORIGIN = f"{_split.scheme}://{_split.netloc}"  # WEBAPP_URL minus any ?query — safe to append /static/... to
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "Peeppobot")  # no leading @
@@ -191,7 +203,8 @@ async def handle_admin_panel(message: Message):
         "<b>Команды:</b>\n"
         "/addgem id_или_@username кол-во — начислить гемы\n"
         "/cardgiveaway [редкость] [кол-во] [мин] [макс] — мгновенный розыгрыш ТВОИХ карт среди всех юзеров бота\n"
-        "/numbergiveaway номер [часов] — розыгрыш ТВОЕЙ карты с этим номером живьём в чате (кнопка «Участвовать», по умолчанию 1 час)",
+        "/numbergiveaway номер [часов] — розыгрыш ТВОЕЙ карты с этим номером живьём в чате (кнопка «Участвовать», по умолчанию 1 час)\n"
+        "/cardsgiveaway [часов] — розыгрыш ВСЕХ твоих карт кроме diamond сразу, живьём в чате (кнопка «Участвовать», карты раздаются случайно между всеми, кто нажал)",
         parse_mode="HTML",
     )
 
@@ -266,13 +279,13 @@ async def handle_admin_find_user(message: Message):
 
 GEM_DROP_AMOUNT = 50
 
-# Auto-scheduler: fires roughly once every hour, only between 06:00 and 00:00
-# (midnight) Tallinn local time. GEM_DROP_MIN_GAP_SECONDS guards against firing a
-# second drop too soon if the bot process restarts a few times in a row (e.g. during
-# a deploy) — kept a bit below GEM_DROP_INTERVAL_SECONDS so the +/-180s jitter on the
-# sleep below never causes a legitimate hourly drop to be skipped.
+# Auto-scheduler: fires roughly once every hour, round the clock (24/7 — used to be
+# limited to 06:00-00:00 Tallinn time, now runs all 24 hours). GEM_DROP_MIN_GAP_SECONDS
+# guards against firing a second drop too soon if the bot process restarts a few times
+# in a row (e.g. during a deploy) — kept a bit below GEM_DROP_INTERVAL_SECONDS so the
+# +/-180s jitter on the sleep below never causes a legitimate hourly drop to be skipped.
 GEM_DROP_TZ = ZoneInfo("Europe/Tallinn")
-GEM_DROP_START_HOUR = 6
+GEM_DROP_START_HOUR = 0
 GEM_DROP_END_HOUR = 24
 GEM_DROP_INTERVAL_SECONDS = 3600
 GEM_DROP_MIN_GAP_SECONDS = 3000
@@ -310,9 +323,9 @@ async def handle_admin_gem_drop(message: Message):
 
 async def gem_drop_scheduler():
     """Background loop living for the lifetime of the bot process: roughly once every
-    hour, checks whether it's currently 06:00-00:00 in Tallinn and — if no drop went
-    out too recently — posts an automatic GEM_DROP_AMOUNT-gem drop into PUBLIC_CHAT."""
-    logger.info("gem drop scheduler started (06:00-00:00 Europe/Tallinn, ~every 1h, %d gems)", GEM_DROP_AMOUNT)
+    hour, round the clock — if no drop went out too recently — posts an automatic
+    GEM_DROP_AMOUNT-gem drop into PUBLIC_CHAT."""
+    logger.info("gem drop scheduler started (24/7, ~every 1h, %d gems)", GEM_DROP_AMOUNT)
     while True:
         try:
             now_local = datetime.now(GEM_DROP_TZ)
@@ -544,6 +557,142 @@ async def handle_number_giveaway_join(call: CallbackQuery):
         await call.answer("Розыгрыш не найден", show_alert=True)
 
 
+def _card_batch_giveaway_text(total_cards: int, hours: float, entry_count: int) -> str:
+    hours_label = f"{int(hours)}ч" if float(hours).is_integer() else f"{hours:g}ч"
+    return (
+        f"\U0001F389 Розыгрыш {total_cards} карт!\n\n"
+        f"Разыгрываются между всеми участниками\n"
+        f"Жми «Участвовать» -- итоги через {hours_label}\n"
+        f"Участники: {entry_count}"
+    )
+
+
+def _giveaway_reminder_when(kind: str) -> str:
+    return "остался 1 час" if kind == "1h" else "осталось 5 минут"
+
+
+def _number_giveaway_reminder_text(number: int, name: str, rarity: str, kind: str) -> str:
+    return (
+        f"\u23F0 До розыгрыша карты №{number} «{name or rarity}» ({rarity.upper()}) "
+        f"{_giveaway_reminder_when(kind)}!\n"
+        f"Успей нажать «Участвовать» под постом розыгрыша выше \U0001F446"
+    )
+
+
+def _card_batch_giveaway_reminder_text(total_cards: int, kind: str) -> str:
+    return (
+        f"\u23F0 До розыгрыша {total_cards} карт {_giveaway_reminder_when(kind)}!\n"
+        f"Успей нажать «Участвовать» под постом розыгрыша выше \U0001F446"
+    )
+
+
+@dp.message(Command("cardsgiveaway"))
+async def handle_admin_cards_giveaway(message: Message):
+    """Admin-only: /cardsgiveaway [часов] -- snapshots EVERY non-diamond card the
+    admin currently owns (that isn't already busy) and posts one shared \"Участвовать\"
+    giveaway into PUBLIC_CHAT for the given duration (default 1 hour). At draw time
+    each card independently goes to a random participant -- same person can win
+    several cards, or none; see create_card_batch_giveaway/draw_card_batch_giveaway
+    in database.py for exactly how the locking and the draw work."""
+    if not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    try:
+        hours = float(parts[1]) if len(parts) > 1 else 1.0
+    except ValueError:
+        await message.answer("Формат: /cardsgiveaway [часов], например /cardsgiveaway 3")
+        return
+
+    try:
+        result = db.create_card_batch_giveaway(message.from_user.id, hours)
+    except db.CardBatchGiveawayError as e:
+        await message.answer(f"Не удалось разыграть: {e}")
+        return
+
+    batch_id = result["batch_id"]
+    total_cards = len(result["cards"])
+    kb = InlineKeyboardBuilder()
+    kb.button(text="Участвовать", callback_data=f"cardsgiveaway_join:{batch_id}")
+    text = _card_batch_giveaway_text(total_cards, hours, 0)
+    try:
+        sent = await bot.send_message(PUBLIC_CHAT, text, reply_markup=kb.as_markup())
+    except Exception:
+        await message.answer(f"Не удалось опубликовать в {PUBLIC_CHAT} -- бот точно там состоит?")
+        return
+    db.set_card_batch_giveaway_message(batch_id, sent.chat.id, sent.message_id)
+    await message.answer(
+        f"Розыгрыш {total_cards} карт (все кроме diamond) опубликован в {PUBLIC_CHAT}. Итоги через {_format_hours(hours)}."
+    )
+
+
+@dp.callback_query(F.data.startswith("cardsgiveaway_join:"))
+async def handle_card_batch_giveaway_join(call: CallbackQuery):
+    batch_id = int(call.data.split(":")[1])
+    db.get_or_create_user(
+        telegram_id=call.from_user.id,
+        username=call.from_user.username,
+        first_name=call.from_user.first_name,
+        ref_by=None,
+    )
+    status = db.join_card_batch_giveaway(batch_id, call.from_user.id)
+    if status == "joined":
+        await call.answer("Ты участвуешь! Удачи \U0001F340", show_alert=True)
+        giveaway = db.get_card_batch_giveaway(batch_id)
+        if giveaway and giveaway.get("message_id"):
+            try:
+                created = datetime.fromisoformat(giveaway["created_at"])
+                draw_at = datetime.fromisoformat(giveaway["draw_at"])
+                hours = (draw_at - created).total_seconds() / 3600
+                count = db.count_card_batch_giveaway_entries(batch_id)
+                text = _card_batch_giveaway_text(giveaway["total_cards"], hours, count)
+                kb = InlineKeyboardBuilder()
+                kb.button(text="Участвовать", callback_data=f"cardsgiveaway_join:{batch_id}")
+                await bot.edit_message_text(
+                    chat_id=giveaway["chat_id"], message_id=giveaway["message_id"], text=text,
+                    reply_markup=kb.as_markup(),
+                )
+            except Exception:
+                logger.warning("could not update participant count on card batch giveaway %s post", batch_id)
+    elif status == "already_joined":
+        await call.answer("Ты уже участвуешь", show_alert=True)
+    elif status == "is_admin":
+        await call.answer("Нельзя участвовать в своём же розыгрыше", show_alert=True)
+    elif status == "drawn":
+        await call.answer("Розыгрыш уже завершён", show_alert=True)
+    else:
+        await call.answer("Розыгрыш не найден", show_alert=True)
+
+
+async def _announce_card_batch_giveaway_result(giveaway: dict, result: dict):
+    results = result["results"]
+    lines = []
+    for r in results:
+        card = r["card"]
+        if r["winner"] and r["transferred"]:
+            w = r["winner"]
+            who = f"@{w['username']}" if w["username"] else (w["first_name"] or str(w["telegram_id"]))
+            lines.append(f"«{card['name'] or card['rarity']}» ({card['rarity'].upper()}) -- {who}")
+        elif r["winner"] and not r["transferred"]:
+            lines.append(f"«{card['name'] or card['rarity']}» -- не выдана: {r['reason']}")
+    if lines:
+        text = (
+            f"\U0001F389 Розыгрыш {len(results)} карт завершён!\n\n"
+            f"Участников: {result['total_entries']}\n\n" + "\n".join(lines)
+        )
+    else:
+        text = f"\U0001F389 Розыгрыш {len(results)} карт завершён -- участников не набралось, увы."
+    chat_id = giveaway.get("chat_id") or PUBLIC_CHAT
+    if giveaway.get("message_id"):
+        try:
+            await bot.edit_message_text(chat_id=chat_id, message_id=giveaway["message_id"], text=text)
+        except Exception:
+            logger.warning("could not edit original card batch giveaway %s post", giveaway["id"])
+    try:
+        await bot.send_message(chat_id, text)
+    except Exception:
+        logger.warning("could not announce card batch giveaway %s result", giveaway["id"])
+
+
 async def _announce_number_giveaway_result(giveaway: dict, result: dict):
     card = result["card"]
     if result["winner"] and result["transferred"]:
@@ -612,9 +761,49 @@ async def giveaway_scheduler():
             for giveaway in db.get_due_number_giveaways():
                 result = db.draw_number_giveaway(giveaway["id"])
                 await _announce_number_giveaway_result(giveaway, result)
+            for giveaway in db.get_due_card_batch_giveaways():
+                result = db.draw_card_batch_giveaway(giveaway["id"])
+                await _announce_card_batch_giveaway_result(giveaway, result)
         except Exception:
             logger.exception("giveaway scheduler iteration failed")
         await asyncio.sleep(300)
+
+
+async def giveaway_reminder_scheduler():
+    """Background loop living for the lifetime of the bot process: every 60s, posts a
+    "1 hour left" / "5 minutes left" ping into PUBLIC_CHAT (or the batch's own chat_id)
+    for every still-open chat card giveaway -- /numbergiveaway and /cardsgiveaway --
+    that just crossed that threshold. Each reminder fires exactly once per giveaway
+    (see database.py's reminder_1h_sent/reminder_5m_sent + get_*_needing_reminder()).
+    Polls far more often than the main giveaway_scheduler() (300s) specifically so the
+    5-minute mark doesn't get skipped over between checks. A failed send is NOT marked
+    as sent, so it's retried on the next poll instead of silently going missing."""
+    logger.info("giveaway reminder scheduler started (~every 60s)")
+    while True:
+        try:
+            for kind in ("1h", "5m"):
+                for giveaway in db.get_number_giveaways_needing_reminder(kind):
+                    text = _number_giveaway_reminder_text(
+                        giveaway["number"], giveaway["card_name"], giveaway["card_rarity"], kind
+                    )
+                    try:
+                        await bot.send_message(PUBLIC_CHAT, text)
+                    except Exception:
+                        logger.warning("could not send %s reminder for number giveaway %s", kind, giveaway["id"])
+                        continue
+                    db.mark_number_giveaway_reminder_sent(giveaway["id"], kind)
+                for giveaway in db.get_card_batch_giveaways_needing_reminder(kind):
+                    text = _card_batch_giveaway_reminder_text(giveaway["total_cards"], kind)
+                    chat_id = giveaway.get("chat_id") or PUBLIC_CHAT
+                    try:
+                        await bot.send_message(chat_id, text)
+                    except Exception:
+                        logger.warning("could not send %s reminder for card batch giveaway %s", kind, giveaway["id"])
+                        continue
+                    db.mark_card_batch_giveaway_reminder_sent(giveaway["id"], kind)
+        except Exception:
+            logger.exception("giveaway reminder scheduler iteration failed")
+        await asyncio.sleep(60)
 
 
 async def check_hundred_club():
@@ -716,18 +905,34 @@ async def handle_pre_checkout(pre_checkout_q: PreCheckoutQuery):
     await bot.answer_pre_checkout_query(pre_checkout_q.id, ok=True)
 
 
+async def notify_admin_payment(tg_user, stars: int, description: str):
+    """Best-effort ping to you (ADMIN_ID in .env) whenever anyone spends Telegram
+    Stars in the bot -- gems or a rank, chat command or webapp, same as the existing
+    new-user/withdrawal admin pings."""
+    if not ADMIN_ID:
+        return
+    who = f"@{tg_user.username}" if tg_user.username else (tg_user.first_name or str(tg_user.id))
+    try:
+        await bot.send_message(int(ADMIN_ID), f"💰 {who} купил(а) {description} за {stars} ⭐")
+    except Exception:
+        logger.warning("could not notify admin of payment from %s", tg_user.id)
+
+
 @dp.message(F.successful_payment)
 async def handle_successful_payment(message: Message):
     payload = message.successful_payment.invoice_payload
+    stars = message.successful_payment.total_amount  # XTR has no cent multiplier -- this IS the Star count
     if payload.startswith("gems:"):
         _, uid_str, gems_str = payload.split(":")
         gems = int(gems_str)
         new_balance = db.add_gems(int(uid_str), gems)
         await message.answer(f"Зачислено {gems} 💎! Баланс: {new_balance} 💎")
+        await notify_admin_payment(message.from_user, stars, f"{gems} гемов")
     elif payload.startswith("rank:"):
         _, uid_str, rank = payload.split(":")
         new_rank = db.set_purchased_rank(int(uid_str), rank)
         await message.answer(f"Ранг {new_rank.upper()} куплен! 🏆")
+        await notify_admin_payment(message.from_user, stars, f"ранг {new_rank.upper()}")
 
 
 # ---------------------------------------------------------------------------
@@ -1229,7 +1434,7 @@ async def handle_redblack_command(message: Message):
             await message.answer("Формат: /redblack [ставка] (или /rb), например /rb 100")
             return
         if bet < db.REDBLACK_MIN_BET:
-            await message.answer("Ставка должна быть положительным числом")
+            await message.answer(f"Минимальная ставка -- {db.REDBLACK_MIN_BET} гемов")
             return
     else:
         bet = db.REDBLACK_DEFAULT_BET
@@ -1335,10 +1540,18 @@ async def handle_aviator_command(message: Message):
             await message.answer("Формат: /go [ставка], например /go 85")
             return
         if bet < db.AVIATOR_MIN_BET:
-            await message.answer("Ставка должна быть положительным числом")
+            await message.answer(f"Минимальная ставка -- {db.AVIATOR_MIN_BET} гемов")
             return
     else:
         bet = db.AVIATOR_DEFAULT_BET
+
+    active_in_chat = db.count_active_aviator_rounds_in_chat(message.chat.id)
+    if active_in_chat >= AVIATOR_MAX_CONCURRENT_PER_CHAT:
+        await message.answer(
+            f"Сейчас в этом чате уже {active_in_chat} игр(ы) в ракетку одновременно -- "
+            f"подожди немного, пока кто-то заберёт или улетит, и попробуй снова"
+        )
+        return
 
     try:
         started = db.start_aviator(message.from_user.id, bet)
@@ -1361,7 +1574,9 @@ async def handle_aviator_command(message: Message):
         reply_markup=kb.as_markup(),
     )
     db.set_aviator_message(round_id, sent.chat.id, sent.message_id)
-    asyncio.create_task(run_aviator_round(round_id, message.from_user.id, bet, sent, player_label))
+    _aviator_task = asyncio.create_task(run_aviator_round(round_id, message.from_user.id, bet, sent, player_label))
+    _active_aviator_tasks.add(_aviator_task)
+    _aviator_task.add_done_callback(_active_aviator_tasks.discard)
 
 
 async def run_aviator_round(round_id: int, user_id: int, bet: int, sent_message: Message, player_label: str):
@@ -1376,7 +1591,7 @@ async def run_aviator_round(round_id: int, user_id: int, bet: int, sent_message:
     people can have a /go running at once."""
     try:
         for m in db.AVIATOR_TICKS[1:]:
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(1.5)  # slower tick = fewer edit_text calls/sec -- less chance of hitting Telegram flood control when several /go games run at once in the same chat
             crash_point = db.peek_aviator_crash(round_id)
             if crash_point is None:
                 return  # already resolved (cashed out) by the callback handler
@@ -1398,8 +1613,14 @@ async def run_aviator_round(round_id: int, user_id: int, bet: int, sent_message:
                     f"\U0001F680 Летит... Игрок: {player_label}\n\n<b>{m:.2f}x</b>",
                     parse_mode="HTML", reply_markup=kb.as_markup()
                 )
-            except Exception:
-                pass
+            except TelegramRetryAfter as e:
+                await asyncio.sleep(e.retry_after)
+            except Exception as e:
+                # Previously a silent pass -- meant a stuck/frozen animation left
+                # ZERO trace in the logs, so every past freeze report was pure
+                # guesswork. Now at least the exact reason (bad request, network
+                # blip, message deleted, whatever) shows up for the next one.
+                logger.warning("aviator tick edit failed for round %s at %.2fx: %r", round_id, m, e)
         # Reached the top of AVIATOR_TICKS without cashing out or crashing -- a chat
         # message can't animate forever, so the rocket is capped there: force the
         # player's cashout at the highest tick instead. This can only ever help them
@@ -1550,6 +1771,21 @@ async def ref_race_scheduler():
         await asyncio.sleep(300)
 
 
+async def referral_chat_verification_scheduler():
+    """Background loop living for the lifetime of the bot process: periodically runs
+    sync_referral_chat_verification() so a referral's queued gems pay out the moment
+    their friend joins PUBLIC_CHAT, without anyone having to run /ref for it to happen
+    (gems now require BOTH a first farm AND joining the chat -- see database.py's
+    farm()/mark_chat_verified())."""
+    logger.info("referral chat verification scheduler started (~every 2min)")
+    while True:
+        try:
+            await sync_referral_chat_verification()
+        except Exception:
+            logger.exception("referral chat verification scheduler iteration failed")
+        await asyncio.sleep(120)
+
+
 async def main():
     db.init_db()
     logger.info("Peeppo bot starting (polling)...")
@@ -1576,6 +1812,8 @@ async def main():
     asyncio.create_task(gem_drop_scheduler())
     asyncio.create_task(giveaway_scheduler())
     asyncio.create_task(ref_race_scheduler())
+    asyncio.create_task(referral_chat_verification_scheduler())
+    asyncio.create_task(giveaway_reminder_scheduler())
     asyncio.create_task(aviator_watchdog())
     asyncio.create_task(daily_help_broadcast_scheduler())
     await dp.start_polling(bot)

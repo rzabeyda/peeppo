@@ -182,6 +182,19 @@ class PvpJoinBody(InitDataBody):
     user_card_ids: list[int]
 
 
+class RedBlackPlayBody(InitDataBody):
+    bet: int
+    choice: str
+
+
+class AviatorStartBody(InitDataBody):
+    bet: int
+
+
+class AviatorRoundBody(InitDataBody):
+    round_id: int
+
+
 class CryptoWithdrawBody(InitDataBody):
     user_card_ids: list[int]
     wallet_address: str = ""
@@ -194,6 +207,10 @@ class NumberBidBody(InitDataBody):
 
 class NumberAttachBody(InitDataBody):
     number: int
+    user_card_id: int
+
+
+class NumberExtractBody(InitDataBody):
     user_card_id: int
 
 
@@ -660,6 +677,61 @@ def pvp_leaderboard(body: InitDataBody):
     return {"leaderboard": db.get_pvp_win_leaderboard(10, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)}
 
 
+@app.post("/api/redblack/play")
+def redblack_play(body: RedBlackPlayBody):
+    """In-app Red&Black -- fully independent from the chat /redblack game (no shared
+    state, no chat_id at all: play_redblack() is already chat-agnostic)."""
+    user = _authenticate(body.initData)
+    try:
+        return db.play_redblack(user["telegram_id"], body.bet, body.choice)
+    except db.RedBlackError as e:
+        raise HTTPException(400, str(e))
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
+
+
+@app.post("/api/aviator/start")
+def aviator_start(body: AviatorStartBody):
+    """In-app Aviator -- fully independent from the chat /go game (chat_id IS NULL on
+    the round it creates, see count_active_aviator_rounds_for_user()). One flying
+    round at a time per player, same as the chat version's one-active-round-per-chat
+    rule, just scoped to the player instead of a chat."""
+    user = _authenticate(body.initData)
+    if db.count_active_aviator_rounds_for_user(user["telegram_id"]) > 0:
+        raise HTTPException(409, "already have an active round -- cash out or wait for it to crash first")
+    try:
+        result = db.start_aviator(user["telegram_id"], body.bet)
+    except db.AviatorError as e:
+        raise HTTPException(400, str(e))
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
+    return {"round_id": result["round_id"]}  # crash_point is server-side only, never sent to the client
+
+
+@app.post("/api/aviator/state")
+def aviator_state(body: AviatorRoundBody):
+    """Polled by the client every tick interval while a round is flying -- computes
+    the current multiplier from elapsed wall-clock time server-side (see
+    _aviator_tick_state()), so there's no background ticker to keep alive for an
+    in-app round."""
+    user = _authenticate(body.initData)
+    try:
+        return db.get_aviator_state(body.round_id, user["telegram_id"])
+    except db.AviatorError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.post("/api/aviator/cashout")
+def aviator_cashout(body: AviatorRoundBody):
+    """Cashes out at whatever multiplier the server independently computes from
+    elapsed time RIGHT NOW -- the client can never claim its own multiplier."""
+    user = _authenticate(body.initData)
+    try:
+        return db.cashout_aviator_now(body.round_id, user["telegram_id"])
+    except db.AviatorError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.post("/api/wheel/spin")
 def wheel_spin(body: InitDataBody):
     user = _authenticate(body.initData)
@@ -754,6 +826,20 @@ def numbers_attach(body: NumberAttachBody):
         raise HTTPException(404, "you don't own this number")
     except db.NumberCardNotUsable:
         raise HTTPException(404, "card not found in your inventory, or it's busy (listed/staked/swapped/in a PvP round)")
+    return result
+
+
+@app.post("/api/numbers/extract")
+def numbers_extract(body: NumberExtractBody):
+    user = _authenticate(body.initData)
+    try:
+        result = db.extract_card_number(user["telegram_id"], body.user_card_id)
+    except db.NumberNotRare:
+        raise HTTPException(400, "this card's number isn't rare enough to extract")
+    except db.NumberCardNotUsable:
+        raise HTTPException(404, "card not found in your inventory, or it's busy (listed/staked/swapped/in a PvP round/giveaway)")
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
     return result
 
 

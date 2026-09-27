@@ -72,6 +72,7 @@
     color:var(--accent2);
   }
   #gems-pill img{width:16px; height:16px; object-fit:contain;}
+  .gem-icon-inline{width:13px; height:13px; vertical-align:-2px; margin:0 2px; object-fit:contain;}
   #gems-pill span{font-size:12px; font-weight:800;}
   #gems-pill:active{transform:scale(.94);}
   #invite-btn{
@@ -615,10 +616,9 @@
   .grid-item .profile-giveaway-tag{
     position:absolute; bottom:6px; right:6px;
     background:linear-gradient(135deg,#f59e0b,#facc15);
-    color:#1a1400;
-    font-size:8px; font-weight:800;
-    text-transform:uppercase; letter-spacing:.2px;
-    padding:2px 5px; border-radius:7px;
+    width:18px; height:18px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:11px; line-height:1;
   }
   .empty-state{
     text-align:center; color:#666; font-size:13px;
@@ -700,7 +700,7 @@
   .btn-propose{background:rgba(139,92,246,.18); color:var(--accent); border:1px solid rgba(139,92,246,.35) !important;}
   .market-mine-tag{font-size:10px; color:#666; text-transform:uppercase; letter-spacing:.4px;}
   .market-price-tag{
-    position:absolute; bottom:6px; left:6px;
+    position:absolute; bottom:6px; right:6px;
     background:rgba(0,0,0,.75);
     color:var(--accent2);
     font-size:10px; font-weight:800;
@@ -709,11 +709,12 @@
   }
   .market-price-tag img{width:10px; height:10px; border-radius:0;}
   .market-number-tag{
-    position:absolute; bottom:6px; right:6px;
-    background:rgba(0,0,0,.75);
-    color:#fff;
-    font-size:10px; font-weight:800;
-    padding:3px 7px; border-radius:8px;
+    position:absolute; bottom:6px; left:6px;
+    background:rgba(0,0,0,.7);
+    color:var(--accent2);
+    font-size:8.5px; font-weight:700;
+    padding:2px 5px; border-radius:7px;
+    max-width:44%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
   .market-mine-badge{
     position:absolute; top:6px; right:6px;
@@ -1154,6 +1155,96 @@
   #numbers-mode-switch .mode-switch-btn[data-mode="auction"].active{background:rgba(59,130,246,.18); color:#3b82f6;}
   #numbers-mode-switch .mode-switch-btn[data-mode="listings"].active{background:rgba(250,204,21,.18); color:#facc15;}
   #numbers-mode-switch .mode-switch-btn[data-mode="mine"].active{background:rgba(34,197,94,.18); color:#22c55e;}
+  #pvp-mode-switch{margin-bottom:10px;}
+  #pvp-mode-switch .mode-switch-btn[data-mode="cards"].active{background:rgba(236,20,144,.18); color:#ec1490;}
+  #pvp-mode-switch .mode-switch-btn[data-mode="redblack"].active{background:rgba(239,68,68,.18); color:#ef4444;}
+  #pvp-mode-switch .mode-switch-btn[data-mode="aviator"].active{background:rgba(250,204,21,.18); color:#facc15;}
+
+  .rb-card{
+    background:linear-gradient(180deg, #1a1a1a, #0d0d0d);
+    border:1px solid var(--card-border); border-radius:18px;
+    padding:18px 16px; display:flex; flex-direction:column; align-items:stretch; gap:12px;
+  }
+  .rb-title{font-weight:800; font-size:16px;}
+  .rb-sub{font-size:12px; color:#888; line-height:1.4; margin-top:-6px;}
+  .rb-bet-row{display:flex; align-items:center; gap:8px; background:#161616; border:1px solid var(--card-border); border-radius:12px; padding:10px 12px;}
+  .rb-bet-label{color:#888; font-size:13px;}
+  .rb-bet-value{font-weight:800; font-size:16px; margin-left:auto;}
+  .rb-bet-unit{font-size:13px;}
+  .rb-bet-edit{
+    background:#1f1f1f; color:#fff; border:none; border-radius:8px; padding:6px 10px; font-size:12px; font-weight:700; cursor:pointer;
+  }
+  .rb-presets{display:flex; gap:6px;}
+  .rb-presets button{
+    flex:1; background:#161616; border:1px solid var(--card-border); color:#aaa; border-radius:10px;
+    padding:8px 0; font-weight:700; font-size:13px; cursor:pointer;
+  }
+  .rb-presets button.active{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .rb-choice-row{display:flex; gap:10px;}
+  .rb-choice{flex:1; padding:16px 0; border-radius:14px; border:none; font-weight:800; font-size:15px; cursor:pointer;}
+  .rb-choice:disabled{opacity:.5; cursor:not-allowed;}
+  .rb-red{background:#ef4444; color:#fff;}
+  .rb-black{background:#1f1f1f; color:#fff; border:1px solid #333;}
+  .rb-result{min-height:20px; text-align:center; font-weight:700; font-size:14px;}
+  .rb-result .rb-win{color:#22c55e;}
+  .rb-result .rb-lose{color:#ef4444;}
+  .rb-result.rb-pulse{animation:rbPulse .3s ease;}
+  @keyframes rbPulse{0%{transform:scale(1.06);}100%{transform:scale(1);}}
+  .rb-history{display:flex; flex-wrap:wrap; gap:6px;}
+  .rb-history-row{
+    font-size:12px; font-weight:700; padding:4px 8px; border-radius:8px; background:#161616; border:1px solid var(--card-border);
+  }
+  .rb-history-row.win{color:#22c55e;}
+  .rb-history-row.lose{color:#ef4444;}
+
+  .av-card{
+    background:linear-gradient(180deg, #1a1a1a, #0d0d0d);
+    border:1px solid var(--card-border); border-radius:18px;
+    padding:18px 16px; display:flex; flex-direction:column; align-items:stretch; gap:12px;
+  }
+  .av-title{font-weight:800; font-size:16px;}
+  .av-sub{font-size:12px; color:#888; line-height:1.4; margin-top:-6px;}
+  .av-idle{display:flex; flex-direction:column; gap:12px;}
+  .av-bet-row{display:flex; align-items:center; gap:8px; background:#161616; border:1px solid var(--card-border); border-radius:12px; padding:10px 12px;}
+  .av-bet-label{color:#888; font-size:13px;}
+  .av-bet-value{font-weight:800; font-size:16px; margin-left:auto;}
+  .av-bet-unit{font-size:13px;}
+  .av-bet-edit{
+    background:#1f1f1f; color:#fff; border:none; border-radius:8px; padding:6px 10px; font-size:12px; font-weight:700; cursor:pointer;
+  }
+  .av-presets{display:flex; gap:6px;}
+  .av-presets button{
+    flex:1; background:#161616; border:1px solid var(--card-border); color:#aaa; border-radius:10px;
+    padding:8px 0; font-weight:700; font-size:13px; cursor:pointer;
+  }
+  .av-presets button.active{background:#facc15; color:#1a1400; border-color:#facc15;}
+  .av-start-btn{
+    padding:16px 0; border-radius:14px; border:none; font-weight:800; font-size:15px; cursor:pointer;
+    background:#facc15; color:#1a1400;
+  }
+  .av-start-btn:disabled{opacity:.5; cursor:not-allowed;}
+  .av-flying{display:flex; flex-direction:column; align-items:center; gap:14px; padding:10px 0;}
+  .av-multiplier{
+    font-size:42px; font-weight:900; color:#facc15; font-variant-numeric:tabular-nums;
+    transition:transform .15s ease;
+  }
+  .av-multiplier.av-capped{color:#22c55e;}
+  .av-cashout-btn{
+    width:100%; padding:18px 0; border-radius:14px; border:none; font-weight:800; font-size:16px; cursor:pointer;
+    background:#22c55e; color:#04220f;
+    animation:avCashoutPulse 1.1s ease-in-out infinite;
+  }
+  .av-cashout-btn:disabled{opacity:.5; cursor:not-allowed; animation:none;}
+  @keyframes avCashoutPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.03);}}
+  .av-result{min-height:20px; text-align:center; font-weight:700; font-size:14px;}
+  .av-result .av-win{color:#22c55e;}
+  .av-result .av-lose{color:#ef4444;}
+  .av-history{display:flex; flex-wrap:wrap; gap:6px;}
+  .av-history-row{
+    font-size:12px; font-weight:700; padding:4px 8px; border-radius:8px; background:#161616; border:1px solid var(--card-border);
+  }
+  .av-history-row.win{color:#22c55e;}
+  .av-history-row.lose{color:#ef4444;}
   #numbers-sub{font-size:11.5px; color:#888; line-height:1.5; margin-bottom:12px;}
   #numbers-list{display:flex; flex-direction:column; gap:8px;}
   .number-row{
@@ -1176,6 +1267,12 @@
   .number-row .act.sell{background:#8b5cf6;}
   .number-row .act.cancel{background:#ef4444;}
   .number-row .act:active{transform:scale(.95);}
+  .number-row-mine{flex-direction:column; align-items:stretch; gap:8px;}
+  .number-row-mine .row-top{display:flex; align-items:center; gap:10px; min-width:0;}
+  .number-row-mine .row-top .info{min-width:0;}
+  .number-row-mine .row-top .info .val{white-space:normal; word-break:break-word;}
+  .number-row-mine .row-actions{display:flex; gap:8px;}
+  .number-row-mine .row-actions .act{flex:1; min-width:0;}
 
   #number-card-picker-overlay{
     position:absolute; inset:0;
@@ -1512,7 +1609,25 @@
     padding:18px;
     text-align:center;
   }
-  #modal-card img{width:100%; border-radius:14px; margin-bottom:16px; aspect-ratio:1/1; object-fit:cover; touch-action:pan-y;}
+  #modal-card img{width:100%; border-radius:14px; aspect-ratio:1/1; object-fit:cover; touch-action:pan-y; display:block;}
+  #modal-img-wrap{position:relative; margin-bottom:16px;}
+  #modal-img-wrap .modal-rarity-tag{
+    position:absolute; top:10px; left:10px;
+    font-size:11px; font-weight:800;
+    padding:4px 9px; border-radius:8px;
+    text-transform:uppercase; letter-spacing:.3px;
+  }
+  #modal-img-wrap .modal-rarity-tag.bronze{background:linear-gradient(135deg,#8c5a2b,#cd7f32); color:#fff8ee; box-shadow:0 0 8px rgba(140,90,43,.5);}
+  #modal-img-wrap .modal-rarity-tag.silver{background:linear-gradient(135deg,#8e97a3,#e5e7eb); color:#1f2530; box-shadow:0 0 8px rgba(156,163,175,.5);}
+  #modal-img-wrap .modal-rarity-tag.gold{background:linear-gradient(135deg,#d4a017,#fde68a); color:#4a3500; box-shadow:0 0 8px rgba(250,204,21,.5);}
+  #modal-img-wrap .modal-rarity-tag.platinum{background:linear-gradient(135deg,#7c3aed,#c4b5fd); color:#fff; box-shadow:0 0 8px rgba(139,92,246,.5);}
+  #modal-img-wrap .modal-rarity-tag.diamond{background:linear-gradient(135deg,#ff2fb0,#ffb3ec); color:#3a0022; box-shadow:0 0 8px rgba(255,47,176,.55);}
+  #modal-img-wrap .modal-drop-number{
+    position:absolute; bottom:10px; left:10px;
+    background:rgba(0,0,0,.75); color:var(--accent2);
+    font-size:12px; font-weight:700;
+    padding:4px 9px; border-radius:8px;
+  }
   #modal-card .modal-name{font-weight:700; margin-bottom:16px;}
   .modal-actions{display:flex; flex-direction:column; gap:10px;}
   .modal-actions-row{display:flex; gap:10px;}
@@ -1544,6 +1659,7 @@
   .btn-stake.staked{background:rgba(239,68,68,.15); color:var(--danger); cursor:pointer;}
   .btn-craft{background:#8c5a2b; color:#fff8ee; cursor:pointer;}
   .btn-craft.disabled{background:#3a3a3a; color:#888; cursor:not-allowed;}
+  .btn-share.number-mode{background:var(--accent2); color:#1a1400;}
   .nav-pulse-dot{
     position:absolute; top:2px; right:calc(50% - 22px);
     width:10px; height:10px; border-radius:50%;
@@ -1871,12 +1987,78 @@
     <!-- MARKET -->
     <!-- PVP -->
     <section id="pvp-screen" class="screen">
-      <div class="market-header-row">
-        <button type="button" id="pvp-rules-btn" class="history-btn">Правила</button>
-        <button type="button" id="pvp-top-btn" class="history-btn">Топ 10</button>
-        <button type="button" id="pvp-history-btn" class="history-btn">История</button>
+      <div class="mode-switch" id="pvp-mode-switch">
+        <button class="mode-switch-btn active" data-mode="cards">PvP</button>
+        <button class="mode-switch-btn" data-mode="aviator">Ракетка</button>
+        <button class="mode-switch-btn" data-mode="redblack">Red&amp;Black</button>
       </div>
-      <div id="pvp-list"></div>
+
+      <div id="pvp-cards-block">
+        <div class="market-header-row">
+          <button type="button" id="pvp-rules-btn" class="history-btn">Правила</button>
+          <button type="button" id="pvp-top-btn" class="history-btn">Топ 10</button>
+          <button type="button" id="pvp-history-btn" class="history-btn">История</button>
+        </div>
+        <div id="pvp-list"></div>
+      </div>
+
+      <div id="pvp-aviator-block" style="display:none">
+        <div class="av-card">
+          <div class="av-title">Ракетка</div>
+          <div class="av-sub">Ставь гемы — множитель растёт. Жми "Забрать" пока не улетела — не успел, ставка сгорает.</div>
+
+          <div id="av-idle" class="av-idle">
+            <div class="av-bet-row">
+              <span class="av-bet-label">Ставка:</span>
+              <span class="av-bet-value" id="av-bet-value">25</span>
+              <span class="av-bet-unit"><img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></span>
+              <button class="av-bet-edit" id="av-bet-edit">Изменить</button>
+            </div>
+            <div class="av-presets" id="av-presets">
+              <button data-bet="25" class="active">25</button>
+              <button data-bet="50">50</button>
+              <button data-bet="100">100</button>
+              <button data-bet="250">250</button>
+              <button data-bet="500">500</button>
+            </div>
+            <button class="av-start-btn" id="av-start-btn">🚀 Старт</button>
+          </div>
+
+          <div id="av-flying" class="av-flying" style="display:none">
+            <div class="av-multiplier" id="av-multiplier">1.00x</div>
+            <button class="av-cashout-btn" id="av-cashout-btn">Забрать <span id="av-cashout-amount"></span> <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></button>
+          </div>
+
+          <div class="av-result" id="av-result"></div>
+          <div class="av-history" id="av-history"></div>
+        </div>
+      </div>
+
+      <div id="pvp-redblack-block" style="display:none">
+        <div class="rb-card">
+          <div class="rb-title">Red&amp;Black</div>
+          <div class="rb-sub">Ставь гемы и угадай цвет. Угадал — забираешь x2, не угадал — ставка сгорает.</div>
+          <div class="rb-bet-row">
+            <span class="rb-bet-label">Ставка:</span>
+            <span class="rb-bet-value" id="rb-bet-value">25</span>
+            <span class="rb-bet-unit"><img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></span>
+            <button class="rb-bet-edit" id="rb-bet-edit">Изменить</button>
+          </div>
+          <div class="rb-presets" id="rb-presets">
+            <button data-bet="25" class="active">25</button>
+            <button data-bet="50">50</button>
+            <button data-bet="100">100</button>
+            <button data-bet="250">250</button>
+            <button data-bet="500">500</button>
+          </div>
+          <div class="rb-choice-row">
+            <button class="rb-choice rb-red" id="rb-pick-red">🔴 Красное</button>
+            <button class="rb-choice rb-black" id="rb-pick-black">⚫ Чёрное</button>
+          </div>
+          <div class="rb-result" id="rb-result"></div>
+          <div class="rb-history" id="rb-history"></div>
+        </div>
+      </div>
     </section>
 
     <section id="market-screen" class="screen">
@@ -1945,7 +2127,7 @@
 
   <nav>
     <button class="nav-btn" data-screen="farm-screen"><img class="icon-img" src="/static/icons/farm.png" alt="">Фарм</button>
-    <button class="nav-btn" data-screen="pvp-screen" style="position:relative;"><img class="icon-img" src="/static/icons/swords.png" alt="">PvP<span class="nav-pulse-dot" id="pvp-nav-pulse"></span></button>
+    <button class="nav-btn" data-screen="pvp-screen" style="position:relative;"><img class="icon-img" src="/static/icons/swords.png" alt="">Игры<span class="nav-pulse-dot" id="pvp-nav-pulse"></span></button>
     <button class="nav-btn" data-screen="market-screen"><img class="icon-img" src="/static/icons/cage.png" alt="">Рынок</button>
     <button class="nav-btn active" data-screen="profile-screen"><img class="icon-img" src="/static/icons/profile_red.png" alt="">Профиль</button>
   </nav>
@@ -1967,7 +2149,7 @@
           <div class="info-feature-icon" style="background:rgba(250,204,21,.18); color:#facc15;">🎁</div>
           <div class="info-feature-body">
             <div class="info-feature-title" style="color:#facc15;">Награда</div>
-            <div class="info-feature-desc">Друг просто заходит по твоей ссылке и делает первый фарм — ты получаешь гемы сразу. Чем больше друзей позовёшь, тем больше награда за каждого следующего:</div>
+            <div class="info-feature-desc">Друг заходит по твоей ссылке, делает первый фарм и вступает в наш чат — после этого тебе начисляются гемы. Награда растёт с каждым другом — вплоть до 20-го:</div>
           </div>
         </div>
       </div>
@@ -1982,8 +2164,18 @@
         <div class="streak-info-row"><span class="m">8-й реферал</span><span class="amt">+550 <img src="/static/icons/diamond.png" alt=""></span></div>
         <div class="streak-info-row"><span class="m">9-й реферал</span><span class="amt">+600 <img src="/static/icons/diamond.png" alt=""></span></div>
         <div class="streak-info-row"><span class="m">10-й реферал</span><span class="amt">+650 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">11-й реферал</span><span class="amt">+700 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">12-й реферал</span><span class="amt">+750 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">13-й реферал</span><span class="amt">+800 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">14-й реферал</span><span class="amt">+850 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">15-й реферал</span><span class="amt">+900 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">16-й реферал</span><span class="amt">+950 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">17-й реферал</span><span class="amt">+1000 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">18-й реферал</span><span class="amt">+1050 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">19-й реферал</span><span class="amt">+1100 <img src="/static/icons/diamond.png" alt=""></span></div>
+        <div class="streak-info-row"><span class="m">20-й реферал</span><span class="amt">+1150 <img src="/static/icons/diamond.png" alt=""></span></div>
       </div>
-      <div id="referral-footnote">После 10-го друга гемы за новых рефералов не платятся — но сами приглашения продолжают считаться.</div>
+      <div id="referral-footnote">После 20-го друга гемы за новых рефералов не платятся — но сами приглашения продолжают считаться.</div>
       <button id="referral-share-btn">Поделиться</button>
     </div>
   </div>
@@ -2089,7 +2281,7 @@
           <div class="info-feature-icon" style="background:rgba(244,114,182,.18); color:#f472b6;">👥</div>
           <div class="info-feature-body">
             <div class="info-feature-title" style="color:#f472b6;">Рефералы</div>
-            <div class="info-feature-desc">Приглашай друзей — получай 25 <img src="/static/icons/diamond.png" alt=""> за каждого</div>
+            <div class="info-feature-desc">Приглашай друзей — получай гемы за каждого из первых 20 (друг должен зайти по ссылке, зафармить карту и вступить в чат), награда растёт с каждым новым другом</div>
           </div>
         </div>
       </div>
@@ -2260,7 +2452,11 @@
   <div id="modal-overlay">
     <div id="modal-card">
       <button class="btn-close" id="modal-close">✕</button>
-      <img id="modal-img" src="" alt="">
+      <div id="modal-img-wrap">
+        <img id="modal-img" src="" alt="">
+        <div class="modal-rarity-tag" id="modal-rarity-tag"></div>
+        <div class="modal-drop-number" id="modal-drop-number"></div>
+      </div>
       <div class="modal-name" id="modal-name"></div>
       <div class="modal-actions">
         <div class="modal-actions-row">
@@ -3025,7 +3221,7 @@ function renderMarket(){
   const sorted = [...marketListings].sort((a, b) => {
     switch(sortMode){
       case "price_desc": return b.listed_price - a.listed_price;
-      case "number": return a.card_id - b.card_id;
+      case "number": return a.drop_number - b.drop_number;
       case "rarity_bronze": return (RARITY_ORDER[b.rarity] ?? 4) - (RARITY_ORDER[a.rarity] ?? 4);
       case "rarity_diamond": return (RARITY_ORDER[a.rarity] ?? 4) - (RARITY_ORDER[b.rarity] ?? 4);
       case "price_asc":
@@ -3038,7 +3234,7 @@ function renderMarket(){
       <div class="grid-item rarity-border-${l.rarity}" data-uc="${l.user_card_id}">
         <img src="/static/cards/${l.filename}?v=${CARD_IMG_VERSION}" alt="${l.name||''}">
         <div class="rarity-tag ${l.rarity}">${l.rarity}</div>
-        <div class="market-number-tag">#${l.card_id}</div>
+        <div class="market-number-tag">#${l.drop_number}</div>
         <div class="market-price-tag"><img src="/static/icons/diamond.png" alt="">${l.listed_price}</div>
         ${l.is_mine ? `<div class="market-mine-badge">Твой</div>` : ""}
       </div>
@@ -3514,6 +3710,244 @@ async function loadPvpState(){
   }
 }
 
+// ---------- PvP sub-tab switch (cards / Red&Black / [Ракетка later]) ----------
+let pvpMode = "cards";
+document.getElementById("pvp-mode-switch").addEventListener("click", (e)=>{
+  const btn = e.target.closest(".mode-switch-btn");
+  if(!btn) return;
+  pvpMode = btn.dataset.mode;
+  document.querySelectorAll("#pvp-mode-switch .mode-switch-btn").forEach(b=>b.classList.remove("active"));
+  btn.classList.add("active");
+  document.getElementById("pvp-cards-block").style.display = pvpMode === "cards" ? "" : "none";
+  document.getElementById("pvp-aviator-block").style.display = pvpMode === "aviator" ? "" : "none";
+  document.getElementById("pvp-redblack-block").style.display = pvpMode === "redblack" ? "" : "none";
+});
+
+// ---------- Red&Black (in-app, fully independent from the chat /redblack game) ----------
+const REDBLACK_MIN_BET = 25; // mirrors database.py's REDBLACK_MIN_BET -- client-side pre-check only, server enforces for real
+let rbBet = 25;
+let rbBusy = false;
+let rbHistoryLog = [];
+
+function renderRedBlackBet(){
+  document.getElementById("rb-bet-value").textContent = rbBet;
+  document.querySelectorAll("#rb-presets button").forEach(b=>{
+    b.classList.toggle("active", parseInt(b.dataset.bet, 10) === rbBet);
+  });
+}
+
+document.getElementById("rb-presets").addEventListener("click", (e)=>{
+  const btn = e.target.closest("button[data-bet]");
+  if(!btn) return;
+  rbBet = parseInt(btn.dataset.bet, 10);
+  renderRedBlackBet();
+});
+
+document.getElementById("rb-bet-edit").addEventListener("click", async ()=>{
+  const val = await promptNumber("Ставка (гемов, минимум " + REDBLACK_MIN_BET + ")");
+  if(val && val >= REDBLACK_MIN_BET){
+    rbBet = val;
+    renderRedBlackBet();
+  }else if(val){
+    toast("Минимальная ставка " + REDBLACK_MIN_BET + " гемов");
+  }
+});
+
+function prependRbHistory(res){
+  rbHistoryLog.unshift(res);
+  rbHistoryLog = rbHistoryLog.slice(0, 12);
+  document.getElementById("rb-history").innerHTML = rbHistoryLog.map(r=>{
+    const emoji = r.result === "red" ? "🔴" : "⚫";
+    const sign = r.won ? ("+" + (r.payout - r.bet)) : ("-" + r.bet);
+    return `<div class="rb-history-row ${r.won ? "win" : "lose"}">${emoji} ${sign}</div>`;
+  }).join("");
+}
+
+async function playRedBlack(choice){
+  if(rbBusy) return;
+  if(rbBet < REDBLACK_MIN_BET){ toast("Минимальная ставка " + REDBLACK_MIN_BET + " гемов"); return; }
+  if(rbBet > gemsBalance && !isAdminUser){ toast("Не хватает гемов"); return; }
+  rbBusy = true;
+  const btnRed = document.getElementById("rb-pick-red");
+  const btnBlack = document.getElementById("rb-pick-black");
+  btnRed.disabled = true; btnBlack.disabled = true;
+  try{
+    const res = await api("/redblack/play", { bet: rbBet, choice });
+    setGemsDisplay(res.gems);
+    const resultEl = document.getElementById("rb-result");
+    const colorName = res.result === "red" ? "красное" : "чёрное";
+    const colorEmoji = res.result === "red" ? "🔴" : "⚫";
+    if(res.won){
+      resultEl.innerHTML = `<span class="rb-win">${colorEmoji} Выпало ${colorName} — выигрыш +${res.payout - res.bet} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></span>`;
+      tg?.HapticFeedback?.notificationOccurred("success");
+    }else{
+      resultEl.innerHTML = `<span class="rb-lose">${colorEmoji} Выпало ${colorName} — проигрыш -${res.bet} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></span>`;
+      tg?.HapticFeedback?.notificationOccurred("error");
+    }
+    resultEl.classList.remove("rb-pulse");
+    void resultEl.offsetWidth;
+    resultEl.classList.add("rb-pulse");
+    prependRbHistory(res);
+  }catch(e){
+    toast("Ошибка: " + e.message);
+  }finally{
+    btnRed.disabled = false; btnBlack.disabled = false;
+    rbBusy = false;
+  }
+}
+document.getElementById("rb-pick-red").addEventListener("click", ()=>playRedBlack("red"));
+document.getElementById("rb-pick-black").addEventListener("click", ()=>playRedBlack("black"));
+
+// ---------- Aviator (in-app, fully independent from the chat /go game) ----------
+const AVIATOR_MIN_BET = 25; // mirrors database.py's AVIATOR_MIN_BET -- client-side pre-check only, server enforces for real
+const AVIATOR_POLL_MS = 600; // faster than the 1.5s tick cadence for a snappier-feeling cashout button, not for accuracy
+let avBet = 25;
+let avRoundId = null;
+let avPollTimer = null;
+let avBusy = false;
+let avHistoryLog = [];
+
+function renderAviatorBet(){
+  document.getElementById("av-bet-value").textContent = avBet;
+  document.querySelectorAll("#av-presets button").forEach(b=>{
+    b.classList.toggle("active", parseInt(b.dataset.bet, 10) === avBet);
+  });
+}
+document.getElementById("av-presets").addEventListener("click", (e)=>{
+  const btn = e.target.closest("button[data-bet]");
+  if(!btn) return;
+  avBet = parseInt(btn.dataset.bet, 10);
+  renderAviatorBet();
+});
+document.getElementById("av-bet-edit").addEventListener("click", async ()=>{
+  const val = await promptNumber("Ставка (гемов, минимум " + AVIATOR_MIN_BET + ")");
+  if(val && val >= AVIATOR_MIN_BET){
+    avBet = val;
+    renderAviatorBet();
+  }else if(val){
+    toast("Минимальная ставка " + AVIATOR_MIN_BET + " гемов");
+  }
+});
+
+function showAviatorIdle(){
+  document.getElementById("av-idle").style.display = "";
+  document.getElementById("av-flying").style.display = "none";
+}
+function showAviatorFlying(){
+  document.getElementById("av-idle").style.display = "none";
+  document.getElementById("av-flying").style.display = "";
+}
+
+function updateAviatorMultiplier(m, capped){
+  const mEl = document.getElementById("av-multiplier");
+  mEl.textContent = m.toFixed(2) + "x";
+  mEl.classList.toggle("av-capped", !!capped);
+  document.getElementById("av-cashout-amount").textContent = Math.round(avBet * m);
+}
+
+function prependAvHistory(entry){
+  avHistoryLog.unshift(entry);
+  avHistoryLog = avHistoryLog.slice(0, 12);
+  document.getElementById("av-history").innerHTML = avHistoryLog.map(r=>{
+    const label = (r.multiplier || 0).toFixed(2) + "x";
+    return `<div class="av-history-row ${r.won ? "win" : "lose"}">${label}</div>`;
+  }).join("");
+}
+
+async function startAviator(){
+  if(avBusy) return;
+  if(avBet < AVIATOR_MIN_BET){ toast("Минимальная ставка " + AVIATOR_MIN_BET + " гемов"); return; }
+  if(avBet > gemsBalance && !isAdminUser){ toast("Не хватает гемов"); return; }
+  avBusy = true;
+  document.getElementById("av-start-btn").disabled = true;
+  try{
+    const res = await api("/aviator/start", { bet: avBet });
+    avRoundId = res.round_id;
+    if(!isAdminUser) setGemsDisplay(gemsBalance - avBet); // start_aviator already deducted the bet server-side
+    document.getElementById("av-result").innerHTML = "";
+    showAviatorFlying();
+    updateAviatorMultiplier(1.00, false);
+    stopAviatorPolling();
+    avPollTimer = setInterval(pollAviator, AVIATOR_POLL_MS);
+  }catch(e){
+    toast("Ошибка: " + e.message);
+  }finally{
+    avBusy = false;
+    document.getElementById("av-start-btn").disabled = false;
+  }
+}
+document.getElementById("av-start-btn").addEventListener("click", startAviator);
+
+function stopAviatorPolling(){
+  if(avPollTimer){ clearInterval(avPollTimer); avPollTimer = null; }
+}
+
+function onAviatorCrashed(st){
+  const crash = st.crash_point ?? st.multiplier ?? 0;
+  document.getElementById("av-result").innerHTML =
+    `<span class="av-lose">💥 Улетела на ${crash.toFixed(2)}x — проигрыш -${st.bet} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></span>`;
+  tg?.HapticFeedback?.notificationOccurred("error");
+  prependAvHistory({ won: false, multiplier: crash });
+  avRoundId = null;
+  showAviatorIdle();
+}
+
+function onAviatorCashedOut(res){
+  const multiplier = res.multiplier ?? (avBet > 0 ? res.payout / avBet : 0);
+  const profit = res.payout - res.bet;
+  document.getElementById("av-result").innerHTML =
+    `<span class="av-win">✅ Забрал на ${multiplier.toFixed(2)}x — выигрыш +${profit} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></span>`;
+  tg?.HapticFeedback?.notificationOccurred("success");
+  prependAvHistory({ won: true, multiplier });
+  avRoundId = null;
+  if(typeof res.gems === "number") setGemsDisplay(res.gems);
+  showAviatorIdle();
+}
+
+async function pollAviator(){
+  if(!avRoundId) return;
+  try{
+    const st = await api("/aviator/state", { round_id: avRoundId });
+    if(st.status === "flying"){
+      updateAviatorMultiplier(st.multiplier, st.capped);
+    }else if(st.status === "lost"){
+      stopAviatorPolling();
+      onAviatorCrashed(st);
+    }else if(st.status === "won"){
+      stopAviatorPolling();
+      onAviatorCashedOut(st);
+    }
+  }catch(e){
+    // transient network hiccup -- next poll retries, no need to spam a toast every 600ms
+  }
+}
+
+document.getElementById("av-cashout-btn").addEventListener("click", async ()=>{
+  if(avBusy || !avRoundId) return;
+  avBusy = true;
+  const btn = document.getElementById("av-cashout-btn");
+  btn.disabled = true;
+  stopAviatorPolling();
+  try{
+    const res = await api("/aviator/cashout", { round_id: avRoundId });
+    onAviatorCashedOut(res);
+  }catch(e){
+    // most likely: it crashed a split-second before this landed server-side -- re-poll
+    // once to learn the real outcome instead of guessing.
+    try{
+      const st = await api("/aviator/state", { round_id: avRoundId });
+      if(st.status === "lost") onAviatorCrashed(st);
+      else if(st.status === "won") onAviatorCashedOut(st);
+      else{ toast("Ошибка: " + e.message); avPollTimer = setInterval(pollAviator, AVIATOR_POLL_MS); }
+    }catch(e2){
+      toast("Ошибка: " + e.message);
+    }
+  }finally{
+    avBusy = false;
+    btn.disabled = false;
+  }
+});
+
 function renderPvp(){
   const list = document.getElementById("pvp-list");
   if(!pvpState){ list.innerHTML = ""; return; }
@@ -3592,6 +4026,15 @@ function renderPvp(){
   // now drives an actual spin-the-wheel animation instead of a plain text alert.
   if(unseen_result){
     openPvpReveal(unseen_result);
+    // A round just resolved -- if the round was won, the winning cards are already
+    // transferred server-side, but the client's local `inventory` array is stale
+    // until the next full profile load. Without this, a just-won card silently
+    // doesn't show up in the PvP picker (or Profile) until something else happens
+    // to reload it -- refresh it right away so it can be staked again immediately.
+    api("/profile").then(data => {
+      inventory = data.inventory;
+      sortInventoryAndRender();
+    }).catch(()=>{ /* non-critical -- next profile visit will pick it up anyway */ });
   }
 }
 
@@ -4320,7 +4763,7 @@ function renderProfileGrid(){
       ${c.swap_listed ? `<div class="profile-swap-tag">Обмен</div>` : ""}
       ${c.staked_at ? `<div class="profile-stake-tag">${formatStakedDuration(c.staked_at)}</div>` : ""}
       ${c.pvp_round_id ? `<div class="profile-pvp-tag">PvP</div>` : ""}
-      ${c.in_giveaway ? `<div class="profile-giveaway-tag">🎁 Розыгрыш</div>` : ""}
+      ${c.in_giveaway ? `<div class="profile-giveaway-tag">🎁</div>` : ""}
     </div>
   `).join("");
 
@@ -4412,12 +4855,17 @@ function openModalAt(index){
   modalImgEl.src = `/static/cards/${item.filename}?v=${CARD_IMG_VERSION}`;
   setRarityBorder(modalImgEl, item.rarity);
   document.getElementById("modal-name").textContent = `${item.name || "Без названия"} #${item.drop_number}`;
+  const modalRarityBadge = document.getElementById("modal-rarity-tag");
+  modalRarityBadge.textContent = item.rarity;
+  modalRarityBadge.className = `modal-rarity-tag ${item.rarity}`;
+  document.getElementById("modal-drop-number").textContent = `#${item.drop_number}`;
   document.getElementById("modal-overlay").classList.add("active");
   document.getElementById("modal-card").dataset.filename = item.filename;
   updateSellButton(item);
   updateSwapButton(item);
   updateStakeButton(item);
   updateCraftButton(item);
+  updateShareButton(item);
 }
 
 // Player rank (time-played tier, NOT card rarity) — colors the avatar ring + profile
@@ -4500,6 +4948,27 @@ document.getElementById("rank-info-overlay").addEventListener("click", (e)=>{
     document.getElementById("rank-info-overlay").classList.remove("active");
   }
 });
+
+// Mirrors database.py's ALLOWED_AUCTION_NUMBERS (VANITY_NUMBERS + 1..LOW_NUMBER_SEED_UP_TO)
+// — client-side copy just to decide whether "Номер" mode shows up on this card. Was
+// 1..25, extended to 1..100 by request (matches LOW_NUMBER_SEED_UP_TO = 100).
+const RARE_NUMBERS_SET = new Set([
+  ...Array.from({length: 100}, (_, i) => i + 1),
+  11, 22, 33, 44, 55, 66, 67, 69, 77, 88, 99,
+  100, 101,
+  111, 200, 222, 300, 333, 400, 444, 500, 555, 600, 666,
+  700, 777, 800, 888, 900, 999, 1000, 1001,
+  1111, 2000, 2222, 3000, 3333, 4000, 4444, 5000, 5555,
+  6000, 6666, 7000, 7777, 8000, 8888, 9000, 9999, 10000,
+]);
+
+function updateShareButton(item){
+  const btn = document.getElementById("modal-share");
+  const busy = !!(item.listed_price || item.swap_listed || item.staked_at || item.pvp_round_id || item.pinned_at || item.in_giveaway);
+  const numberMode = RARE_NUMBERS_SET.has(item.drop_number) && !busy;
+  btn.classList.toggle("number-mode", numberMode);
+  btn.textContent = numberMode ? `Номер #${item.drop_number}` : "Поделиться";
+}
 
 function updateCraftButton(item){
   const btn = document.getElementById("modal-craft");
@@ -4643,8 +5112,39 @@ document.getElementById("modal-overlay").addEventListener("click", (e)=>{
   }
 });
 
+const EXTRACT_NUMBER_COST_GEMS = 500; // mirrors database.py's EXTRACT_NUMBER_COST_GEMS
 document.getElementById("modal-share").addEventListener("click", async ()=>{
   if(!selectedUserCardId) return;
+  if(document.getElementById("modal-share").classList.contains("number-mode")){
+    if(!selectedItem) return;
+    const oldNumber = selectedItem.drop_number;
+    if(gemsBalance < EXTRACT_NUMBER_COST_GEMS){
+      toastHTML(`Не хватает гемов — извлечение номера стоит ${EXTRACT_NUMBER_COST_GEMS} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
+      return;
+    }
+    const extractConfirmed = await confirmAction(
+      `Извлечь номер #${oldNumber} из карты за ${EXTRACT_NUMBER_COST_GEMS} гемов? Номер уйдёт в «Номера» (можно будет продать или поставить на другую карту), а эта карта получит новый номер — как будто её только что зафармили.`
+    );
+    if(!extractConfirmed) return;
+    try{
+      const res = await api("/numbers/extract", { user_card_id: selectedUserCardId });
+      selectedItem.drop_number = res.new_number;
+      selectedItem.number_override = res.new_number;
+      updateShareButton(selectedItem);
+      document.getElementById("modal-name").textContent = `${selectedItem.name || "Без названия"} #${selectedItem.drop_number}`;
+      document.getElementById("modal-drop-number").textContent = `#${selectedItem.drop_number}`;
+      if(typeof res.gems === "number") setGemsDisplay(res.gems);
+      sortInventoryAndRender();
+      toast(`Номер #${oldNumber} извлечён за ${EXTRACT_NUMBER_COST_GEMS} гемов! Карте присвоен новый номер #${res.new_number}. Смотри «Номера» — там он теперь твой.`);
+    }catch(e){
+      if(String(e.message).includes("not enough gems")){
+        toastHTML(`Не хватает гемов — извлечение номера стоит ${EXTRACT_NUMBER_COST_GEMS} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
+      }else{
+        toast("Не получилось: " + e.message);
+      }
+    }
+    return;
+  }
   // tg.switchInlineQuery only works for Mini Apps launched from the attachment menu;
   // ours is opened via a normal web_app button, so Telegram throws synchronously here
   // instead of just doing nothing — catch it and fall back to DMing the photo instead
@@ -5090,7 +5590,7 @@ function renderNumbersList(){
   const list = document.getElementById("numbers-list");
   const sub = document.getElementById("numbers-sub");
   if(numbersMode === "auction"){
-    sub.textContent = `Топ 100 самых низких свободных номеров — минимальная ставка ${numbersBoard.min_bid || 100} гемов, таймер 24ч с момента последней ставки`;
+    sub.textContent = `Топ 100 самых низких свободных номеров — минимальная ставка ${numbersBoard.min_bid || 100} гемов, таймер 12ч с момента последней ставки`;
     if(!numbersBoard.auctions.length){
       list.innerHTML = `<div class="empty-state">Пока нет свободных номеров</div>`;
       return;
@@ -5141,10 +5641,12 @@ function renderNumbersList(){
         ? `<button class="act cancel" data-number="${n.number}" data-action="cancel">Снять</button>`
         : `<button class="act attach" data-number="${n.number}" data-action="attach">Закрепить</button><button class="act sell" data-number="${n.number}" data-action="sell">Продать</button>`;
       return `
-        <div class="number-row" data-number="${n.number}">
-          <div class="num">#${n.number}</div>
-          <div class="info">${status}</div>
-          <div style="display:flex; gap:6px; flex-shrink:0;">${actions}</div>
+        <div class="number-row number-row-mine" data-number="${n.number}">
+          <div class="row-top">
+            <div class="num">#${n.number}</div>
+            <div class="info">${status}</div>
+          </div>
+          <div class="row-actions">${actions}</div>
         </div>`;
     }).join("");
     list.querySelectorAll("[data-action='attach']").forEach(btn=>{
@@ -5165,7 +5667,7 @@ async function bidOnNumber(number, minBid){
   try{
     const result = await api("/numbers/bid", { number, amount });
     setGemsDisplay(result.gems);
-    toast(`Ставка ${amount} гемов принята — таймер обновлён на 24ч`);
+    toast(`Ставка ${amount} гемов принята — таймер обновлён на 12ч`);
     await loadNumbers();
   }catch(e){
     toast("Не получилось: " + e.message);
