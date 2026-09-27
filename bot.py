@@ -664,33 +664,61 @@ async def handle_card_batch_giveaway_join(call: CallbackQuery):
 
 
 async def _announce_card_batch_giveaway_result(giveaway: dict, result: dict):
+    """Builds a PER-WINNER summary (name -> how many cards, incl. rarity breakdown)
+    instead of one line per card -- with big batches (hundreds of cards) a one-line-
+    per-card message blows past Telegram's 4096-char limit, and send_message/
+    edit_message_text then silently fail (caught below, only logged) -- cards were
+    genuinely handed out but the chat never finds out. A compact per-winner summary
+    stays well under the limit at any realistic participant count, and chunks itself
+    into multiple messages as a last-resort safety net if it somehow still doesn't."""
     results = result["results"]
-    lines = []
+    by_winner: dict[int, dict] = {}
+    not_transferred = 0
     for r in results:
         card = r["card"]
         if r["winner"] and r["transferred"]:
             w = r["winner"]
             who = f"@{w['username']}" if w["username"] else (w["first_name"] or str(w["telegram_id"]))
-            lines.append(f"«{card['name'] or card['rarity']}» ({card['rarity'].upper()}) -- {who}")
+            bucket = by_winner.setdefault(w["telegram_id"], {"who": who, "total": 0, "by_rarity": {}})
+            bucket["total"] += 1
+            rarity = (card["rarity"] or "?").upper()
+            bucket["by_rarity"][rarity] = bucket["by_rarity"].get(rarity, 0) + 1
         elif r["winner"] and not r["transferred"]:
-            lines.append(f"«{card['name'] or card['rarity']}» -- не выдана: {r['reason']}")
-    if lines:
-        text = (
+            not_transferred += 1
+    if by_winner:
+        ranked = sorted(by_winner.values(), key=lambda b: -b["total"])
+        lines = []
+        for b in ranked:
+            breakdown = ", ".join(f"{n}×{rarity}" for rarity, n in b["by_rarity"].items())
+            lines.append(f"{b['who']} — {b['total']} карт ({breakdown})")
+        if not_transferred:
+            lines.append(f"\n(не выдано: {not_transferred} карт(ы) — были заняты/недоступны на момент розыгрыша)")
+        header = (
             f"\U0001F389 Розыгрыш {len(results)} карт завершён!\n\n"
-            f"Участников: {result['total_entries']}\n\n" + "\n".join(lines)
+            f"Участников: {result['total_entries']}\n\n"
         )
+        chunks = []
+        current = header
+        for line in lines:
+            if len(current) + len(line) + 1 > 3800:
+                chunks.append(current)
+                current = ""
+            current += line + "\n"
+        if current.strip():
+            chunks.append(current)
     else:
-        text = f"\U0001F389 Розыгрыш {len(results)} карт завершён -- участников не набралось, увы."
+        chunks = [f"\U0001F389 Розыгрыш {len(results)} карт завершён -- участников не набралось, увы."]
     chat_id = giveaway.get("chat_id") or PUBLIC_CHAT
     if giveaway.get("message_id"):
         try:
-            await bot.edit_message_text(chat_id=chat_id, message_id=giveaway["message_id"], text=text)
+            await bot.edit_message_text(chat_id=chat_id, message_id=giveaway["message_id"], text=chunks[0])
         except Exception:
             logger.warning("could not edit original card batch giveaway %s post", giveaway["id"])
-    try:
-        await bot.send_message(chat_id, text)
-    except Exception:
-        logger.warning("could not announce card batch giveaway %s result", giveaway["id"])
+    for chunk in chunks:
+        try:
+            await bot.send_message(chat_id, chunk)
+        except Exception:
+            logger.warning("could not announce card batch giveaway %s result", giveaway["id"])
 
 
 async def _announce_number_giveaway_result(giveaway: dict, result: dict):
@@ -1314,6 +1342,19 @@ async def share_pvp_result(round_id: int) -> bool:
         return True
     except Exception:
         logger.warning("could not share pvp round %s", round_id)
+        return False
+
+
+async def send_pvp_invite(name: str) -> bool:
+    """"Позвать игрока" button in the PvP lobby -- one ping into PUBLIC_CHAT inviting
+    others to join the open bank. Cooldown is enforced server-side by
+    db.try_pvp_invite() before this is ever called."""
+    text = f"⚔️ {name} зовёт в PvP — кто со мной? Заходи в приложение и ставь карты!"
+    try:
+        await bot.send_message(PUBLIC_CHAT, text)
+        return True
+    except Exception:
+        logger.warning("could not send pvp invite for %s", name)
         return False
 
 

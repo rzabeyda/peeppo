@@ -663,6 +663,8 @@ async def pvp_invite(body: InitDataBody):
     user = _authenticate(body.initData)
     if not db.is_in_open_pvp_round(user["telegram_id"]):
         raise HTTPException(400, "not_joined: stake cards in the pvp bank first")
+    if db.get_open_pvp_participant_count() >= 2:
+        raise HTTPException(400, "already_full: bank already has 2+ players")
     claim = db.try_pvp_invite(user["telegram_id"])
     if not claim["ok"]:
         raise HTTPException(429, f"cooldown: {claim['seconds_left']}s left")
@@ -896,6 +898,13 @@ def numbers_board(body: InitDataBody):
 def numbers_mine(body: InitDataBody):
     user = _authenticate(body.initData)
     return {"numbers": db.get_my_numbers(user["telegram_id"])}
+
+
+@app.post("/api/numbers/owners")
+def numbers_owners(body: InitDataBody):
+    """"Владельцы" tab -- every tracked number currently owned, and by whom."""
+    _authenticate(body.initData)
+    return {"numbers": db.get_all_owned_numbers()}
 
 
 @app.post("/api/numbers/bid")

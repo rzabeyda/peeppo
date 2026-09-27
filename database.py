@@ -346,6 +346,18 @@ def _free_number(conn: sqlite3.Connection, user_card_id: int) -> None:
         number = conn.execute(
             "SELECT COUNT(*) FROM user_cards WHERE obtained_at <= ?", (row["obtained_at"],)
         ).fetchone()[0]
+    # Guard against a coincidental collision: this card's NATURAL number (no
+    # number_override) is just its rank by obtained_at, and that rank can land on
+    # a number someone else already independently owns/listed/is bidding on in the
+    # numbers marketplace (ranks can shift, e.g. a reused evolved-card row gets a
+    # fresh obtained_at, bumping a later card down into an earlier rank). If this
+    # exact number is already tracked as owned/auction AND it isn't actually the
+    # one pinned on THIS card, someone else's real ownership must never be wiped.
+    existing = conn.execute(
+        "SELECT status, user_card_id FROM card_numbers WHERE number = ?", (number,)
+    ).fetchone()
+    if existing is not None and existing["status"] in ("owned", "auction") and existing["user_card_id"] != user_card_id:
+        return
     now = _now()
     conn.execute(
         """
@@ -2078,6 +2090,49 @@ def get_numbers_board(limit: int = 200) -> dict:
         "listings": [dict(r) for r in listing_rows],
         "min_bid": NUMBER_MIN_BID_GEMS,
     }
+
+
+def get_all_owned_numbers() -> list[dict]:
+    """Every number that currently HAS an owner, for the "Владельцы" tab: both numbers
+    formally tracked as 'owned' in card_numbers (won at auction or bought as a resale)
+    AND cool/vanity numbers (see ALLOWED_AUCTION_NUMBERS) that nobody has ever
+    extracted/bought yet but that are still naturally shown by someone's live card --
+    same rule _seed_number_if_unclaimed() uses to decide a number is "in use" and must
+    not be seeded as free. Without this second half, a genuinely vanity number like #1
+    just silently never appears anywhere in this tab (it's not in Аукцион either, since
+    it's in use) even though someone clearly "has" it. Ordered by number ascending,
+    same convention as the other number listings."""
+    with get_conn() as conn:
+        _finalize_expired_number_auctions(conn)
+        rows = conn.execute(
+            "SELECT cn.number, cn.owner_id, cn.user_card_id, cn.list_price, "
+            "u.username, u.first_name "
+            "FROM card_numbers cn JOIN users u ON u.telegram_id = cn.owner_id "
+            "WHERE cn.status = 'owned' ORDER BY cn.number ASC"
+        ).fetchall()
+        result = [dict(r) for r in rows]
+        tracked_numbers = {r["number"] for r in result}
+        # Window function (not a per-row correlated subquery) so this stays cheap no
+        # matter how many cards exist -- one sorted pass over user_cards, not O(n^2).
+        natural_rows = conn.execute(
+            """
+            SELECT * FROM (
+                SELECT uc.id AS user_card_id, uc.user_id, uc.voided, u.username, u.first_name,
+                       COALESCE(uc.number_override, ROW_NUMBER() OVER (ORDER BY uc.obtained_at)) AS number
+                FROM user_cards uc JOIN users u ON u.telegram_id = uc.user_id
+            ) WHERE voided = 0
+            """
+        ).fetchall()
+        for r in natural_rows:
+            n = r["number"]
+            if n in tracked_numbers or n not in ALLOWED_AUCTION_NUMBERS:
+                continue
+            tracked_numbers.add(n)
+            result.append({
+                "number": n, "owner_id": r["user_id"], "user_card_id": r["user_card_id"],
+                "list_price": None, "username": r["username"], "first_name": r["first_name"],
+            })
+    return sorted(result, key=lambda r: r["number"])
 
 
 def get_my_numbers(user_id: int) -> list[dict]:
@@ -3965,7 +4020,7 @@ def join_pvp_round(user_id: int, user_card_ids: list[int]) -> dict:
     return get_pvp_state(user_id)
 
 
-PVP_INVITE_COOLDOWN_SECONDS = 60  # keeps "Позвать игрока" from spamming PUBLIC_CHAT
+PVP_INVITE_COOLDOWN_SECONDS = 180  # keeps "Позвать игрока" from spamming PUBLIC_CHAT
 
 
 def is_in_open_pvp_round(user_id: int) -> bool:
@@ -3979,6 +4034,19 @@ def is_in_open_pvp_round(user_id: int) -> bool:
             (round_id, user_id),
         ).fetchone()
         return row is not None
+
+
+def get_open_pvp_participant_count() -> int:
+    """Number of DISTINCT players currently staked in the current open PvP lobby round
+    -- used to gate "Позвать игрока": once the bank already has 2+ people it doesn't
+    need more callers, so the button stops working past that point."""
+    with get_conn() as conn:
+        round_id = _get_or_create_open_round(conn)
+        row = conn.execute(
+            "SELECT COUNT(DISTINCT user_id) AS n FROM pvp_entries WHERE round_id = ?",
+            (round_id,),
+        ).fetchone()
+        return row["n"]
 
 
 def try_pvp_invite(user_id: int) -> dict:

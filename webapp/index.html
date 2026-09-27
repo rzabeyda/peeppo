@@ -110,6 +110,7 @@
     justify-content:center;
     min-height:calc(100vh - 160px);
     min-height:calc(100dvh - 160px);
+    min-height:calc(var(--tg-vh, 100dvh) - 160px);
     text-align:center;
   }
   #farm-screen.active{display:flex;}
@@ -880,7 +881,7 @@
   }
   #pvp-join-btn:disabled{background:#3a3a3a; color:#888; cursor:not-allowed;}
   .pvp-invite-btn{
-    background:#3b82f6; color:#fff; border:none; border-radius:12px;
+    background:#000; color:#fff; border:none; border-radius:12px;
     padding:11px 14px; font-size:13px; font-weight:800; cursor:pointer;
     width:100%; margin-top:8px;
   }
@@ -931,7 +932,7 @@
   #pvp-reveal-outcome.won{color:var(--accent2);}
   #pvp-reveal-close{
     display:none; margin-top:16px; width:100%;
-    background:#4a4a4a; color:#fff; border:none; border-radius:12px;
+    background:#22c55e; color:#fff; border:none; border-radius:12px;
     padding:12px; font-size:13px; font-weight:700; cursor:pointer;
   }
 
@@ -1091,7 +1092,7 @@
 
   .game-share-btn{
     width:100%; margin-top:10px; padding:11px 0; border-radius:12px; border:none;
-    background:#3b82f6; color:#fff; font-weight:700; font-size:13px; cursor:pointer;
+    background:#000; color:#fff; font-weight:700; font-size:13px; cursor:pointer;
   }
   .game-share-btn:disabled{opacity:.6; cursor:not-allowed;}
 
@@ -1105,6 +1106,35 @@
     padding:24px;
   }
   #pvp-picker-overlay.active{display:flex;}
+  #pvp-picker-rarity-filters{
+    display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap;
+  }
+  .pvp-picker-rarity-btn{
+    flex:1 1 0; min-width:0;
+    border:none; border-radius:9px;
+    padding:7px 4px;
+    font-size:10px; font-weight:800;
+    text-transform:uppercase;
+    cursor:pointer;
+    text-align:center;
+  }
+  .pvp-picker-rarity-btn.bronze{background:linear-gradient(135deg,#8c5a2b,#cd7f32); color:#fff8ee;}
+  .pvp-picker-rarity-btn.silver{background:linear-gradient(135deg,#8e97a3,#e5e7eb); color:#1f2530;}
+  .pvp-picker-rarity-btn.gold{background:linear-gradient(135deg,#d4a017,#fde68a); color:#4a3500;}
+  .pvp-picker-rarity-btn.platinum{background:linear-gradient(135deg,#7c3aed,#c4b5fd); color:#fff;}
+  .pvp-picker-rarity-btn.diamond{background:linear-gradient(135deg,#ff2fb0,#ffb3ec); color:#3a0022;}
+  .pvp-picker-rarity-btn:active{transform:scale(.95);}
+  #pvp-picker-select-all{
+    width:100%;
+    background:#000; color:#fff;
+    border:1px solid #333;
+    border-radius:10px;
+    padding:9px 0;
+    font-size:12px; font-weight:800;
+    cursor:pointer;
+    margin-bottom:10px;
+  }
+  #pvp-picker-select-all:active{transform:scale(.98);}
   #pvp-picker-card{
     width:100%; max-width:340px; max-height:80vh;
     background:var(--card-bg);
@@ -1205,6 +1235,12 @@
   #numbers-mode-switch .mode-switch-btn[data-mode="auction"].active{background:rgba(59,130,246,.18); color:#3b82f6;}
   #numbers-mode-switch .mode-switch-btn[data-mode="listings"].active{background:rgba(250,204,21,.18); color:#facc15;}
   #numbers-mode-switch .mode-switch-btn[data-mode="mine"].active{background:rgba(34,197,94,.18); color:#22c55e;}
+  #numbers-mode-switch .mode-switch-btn[data-mode="owners"].active{background:rgba(236,20,144,.18); color:#ec1490;}
+  #numbers-owners-btn{
+    width:100%; background:#000; color:#fff; border:none; border-radius:10px;
+    padding:10px; font-size:13px; font-weight:800; cursor:pointer; margin-bottom:10px;
+  }
+  #numbers-owners-btn:active{transform:scale(.98);}
   #pvp-mode-switch{margin-bottom:10px;}
   #pvp-mode-switch .mode-switch-btn[data-mode="cards"].active{background:rgba(236,20,144,.18); color:#ec1490;}
   #pvp-mode-switch .mode-switch-btn[data-mode="redblack"].active{background:rgba(239,68,68,.18); color:#ef4444;}
@@ -1313,8 +1349,8 @@
   }
   .number-row .act.bid{background:linear-gradient(135deg,#3b82f6,#1d4ed8);}
   .number-row .act.buy{background:linear-gradient(135deg,#facc15,#f59e0b); color:#111;}
-  .number-row .act.attach{background:#22c55e;}
-  .number-row .act.sell{background:#8b5cf6;}
+  .number-row .act.attach{background:#000;}
+  .number-row .act.sell{background:#22c55e;}
   .number-row .act.cancel{background:#ef4444;}
   .number-row .act:active{transform:scale(.95);}
   .number-row-mine{flex-direction:column; align-items:stretch; gap:8px;}
@@ -2391,7 +2427,7 @@
       <div id="stake-confirm-title">🔒 Стейкинг карты</div>
       <div id="stake-confirm-rows">
         <div class="info-feature-row">
-          <div class="info-feature-icon" style="background:rgba(250,204,21,.18); color:#facc15;">💎</div>
+          <div class="info-feature-icon" style="background:rgba(250,204,21,.18); color:#facc15;"><img src="/static/icons/diamond.png" alt="" style="width:16px;height:16px;object-fit:contain;"></div>
           <div class="info-feature-body">
             <div class="info-feature-title" style="color:#facc15;">Ставки по редкости</div>
             <div class="info-feature-desc">Bronze 5 · Silver 10 · Gold 25 · Platinum 50 · Diamond 100 гемов/сутки</div>
@@ -2608,6 +2644,14 @@
   <div id="pvp-picker-overlay">
     <div id="pvp-picker-card">
       <div id="pvp-picker-title">Выбери карты для PvP — заберут навсегда, если проиграешь</div>
+      <div id="pvp-picker-rarity-filters">
+        <button class="pvp-picker-rarity-btn bronze" data-rarity="bronze">Bronze</button>
+        <button class="pvp-picker-rarity-btn silver" data-rarity="silver">Silver</button>
+        <button class="pvp-picker-rarity-btn gold" data-rarity="gold">Gold</button>
+        <button class="pvp-picker-rarity-btn platinum" data-rarity="platinum">PLTNM</button>
+        <button class="pvp-picker-rarity-btn diamond" data-rarity="diamond">DMND</button>
+      </div>
+      <button id="pvp-picker-select-all">Выбрать все</button>
       <div class="grid" id="pvp-picker-grid"></div>
       <div id="input-actions">
         <button id="pvp-picker-confirm">Поставить</button>
@@ -2626,6 +2670,7 @@
         <button class="mode-switch-btn" data-mode="mine">Мои</button>
       </div>
       <div id="numbers-sub"></div>
+      <button id="numbers-owners-btn">👑 Владельцы</button>
       <div id="numbers-list"></div>
       <button id="numbers-close-bottom">Закрыть</button>
     </div>
@@ -2681,7 +2726,6 @@
       <div id="pvp-reveal-legend"></div>
       <div id="pvp-reveal-outcome"></div>
       <button id="pvp-reveal-close">Закрыть</button>
-      <button class="game-share-btn" id="pvp-reveal-share" style="display:none">Поделиться в чат</button>
     </div>
   </div>
 
@@ -3007,7 +3051,15 @@ function switchScreen(screenId){
   document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
   document.querySelector(`.nav-btn[data-screen="${screenId}"]`)?.classList.add("active");
   document.getElementById(screenId).classList.add("active");
-  document.querySelector("main").classList.toggle("no-scroll", screenId === "farm-screen");
+  const mainEl = document.querySelector("main");
+  mainEl.classList.toggle("no-scroll", screenId === "farm-screen");
+  // Switching screens reuses the SAME scrollable <main> for all of them -- if the
+  // previous screen (e.g. a long PvP participant list) was scrolled down, that
+  // scrollTop carries over as-is. no-scroll only blocks FURTHER scrolling, it doesn't
+  // reset the existing position, so farm-screen's content rendered shifted/clipped
+  // exactly as if still scrolled. Reset it on every navigation so each screen always
+  // starts at the top.
+  mainEl.scrollTop = 0;
   if(screenId !== "pvp-screen") stopPvpPolling();
   if(screenId === "farm-screen") loadStats(); // re-sync "Всего" — it drifts stale otherwise, since it only updates from THIS player's own farm/craft/case/burn actions
   if(screenId === "profile-screen") loadProfile();
@@ -3599,9 +3651,9 @@ const PVP_TOP_SUBMODES = {
   cards:   { endpoint: "/pvp/leaderboard/cards",   valueKey: "cards_won",         suffix: " карт", signed: true,
              title: "🏆 Топ 10 по картам в PvP", sub: "Кто больше всего в плюсе по картам (забрано минус проиграно)",
              empty: "Пока никто не в плюсе по картам.", empty_emoji: "🃏" },
-  diamond: { endpoint: "/pvp/leaderboard/diamond", valueKey: "diamond_cards_won", suffix: " 💎", signed: true,
+  diamond: { endpoint: "/pvp/leaderboard/diamond", valueKey: "diamond_cards_won", suffix: ' <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">', signed: true,
              title: "🏆 Топ 10 по Diamond-картам в PvP", sub: "Кто больше всего в плюсе по diamond-картам (забрано минус проиграно)",
-             empty: "Пока никто не в плюсе по diamond-картам.", empty_emoji: "💎" },
+             empty: "Пока никто не в плюсе по diamond-картам.", empty_emoji: '<img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">' },
 };
 let pvpTopSubmode = "wins";
 
@@ -4253,7 +4305,7 @@ function renderPvp(){
         <div class="pvp-timer ${counting ? 'counting' : ''}">${timerText}</div>
       </div>
       <button id="pvp-join-btn" ${joinClosed ? "disabled" : ""}>${joinClosed ? "Ставки закрыты" : "Поставить карты"}</button>
-      <button id="pvp-invite-btn" class="pvp-invite-btn">Позвать игрока</button>
+      <button id="pvp-invite-btn" class="pvp-invite-btn" ${participants.length >= 2 ? "disabled" : ""}>Позвать игрока</button>
       <div class="pvp-legend">${legendRows}</div>
     </div>
   `;
@@ -4271,7 +4323,12 @@ function renderPvp(){
       const coolMatch = m.match(/cooldown:\s*(\d+)s/);
       if(coolMatch){
         const s = parseInt(coolMatch[1], 10);
-        toast(`Можно звать раз в 60 секунд — подожди ещё ~${s} сек.`);
+        const mins = Math.ceil(s / 60);
+        toast(`Можно звать раз в 3 минуты — подожди ещё ~${mins} мин.`);
+      }else if(m.includes("already_full")){
+        toast("В банке уже 2+ игрока — звать больше не нужно");
+      }else if(m.includes("not_joined")){
+        toast("Сначала поставь карты в банк");
       }else{
         toast("Не удалось позвать: " + m);
       }
@@ -4312,7 +4369,6 @@ function openPvpReveal(result){
   outcome.className = "";
   outcome.textContent = "";
   closeBtn.style.display = "none";
-  document.getElementById("pvp-reveal-share").style.display = "none";
 
   const gradient = segments.length
     ? segments.map(s=>`${s.color} ${s.start}deg ${s.end}deg`).join(", ")
@@ -4360,11 +4416,6 @@ function openPvpReveal(result){
       ? `Ты выиграл! Забрал весь банк — ${pluralCards(result.total_cards)}.`
       : `Победил ${result.winner_name} — забрал ${pluralCards(result.total_cards)} у ${result.total_players} игроков.`;
     closeBtn.style.display = "block";
-    const shareBtn = document.getElementById("pvp-reveal-share");
-    shareBtn.style.display = "block";
-    shareBtn.textContent = "Поделиться в чат";
-    shareBtn.disabled = false;
-    shareBtn.onclick = ()=>shareGameResult("pvp", result.round_id, shareBtn);
   };
   wheel.addEventListener("transitionend", finish, { once: true });
   setTimeout(finish, 4600); // fallback in case transitionend doesn't fire
@@ -4483,7 +4534,7 @@ let miningQuickTimer = null;
 
 function showMiningQuickModal(text){
   clearTimeout(miningQuickTimer);
-  document.getElementById("mining-quick-text").textContent = text;
+  document.getElementById("mining-quick-text").innerHTML = text;
   const overlay = document.getElementById("mining-quick-overlay");
   overlay.classList.add("active");
   miningQuickTimer = setTimeout(()=>{
@@ -4566,7 +4617,7 @@ document.getElementById("mining-open-btn").addEventListener("click", async ()=>{
     if(result.claimed > 0){
       setGemsDisplay(result.gems);
       tg?.HapticFeedback?.notificationOccurred("success");
-      showMiningQuickModal(`+${result.claimed} 💎 добыто!\nНовый цикл начался ⛏️`);
+      showMiningQuickModal(`+${result.claimed} <img src="/static/icons/diamond.png" alt="" style="width:16px;height:16px;object-fit:contain;"> добыто!\nНовый цикл начался ⛏️`);
     }else if(!wasActive){
       showMiningQuickModal("Фарминг запущен! ⛏️\nЗагляни через час");
     }else{
@@ -4597,7 +4648,7 @@ document.getElementById("mining-action-btn").addEventListener("click", async ()=
     const result = await api("/gemmining/collect");
     if(result.claimed > 0){
       setGemsDisplay(result.gems);
-      toast(`+${result.claimed} 💎 добыто! Новый цикл начался.`);
+      toastHTML(`+${result.claimed} <img src="/static/icons/diamond.png" alt="" style="width:16px;height:16px;object-fit:contain;"> добыто! Новый цикл начался.`);
       tg?.HapticFeedback?.notificationOccurred("success");
     }
     renderMining(result);
@@ -4619,13 +4670,17 @@ function openPvpPicker(){
   document.getElementById("pvp-picker-overlay").classList.add("active");
 }
 
-function renderPvpPickerGrid(){
-  const grid = document.getElementById("pvp-picker-grid");
-  const available = inventory
+function getPvpPickerAvailableCards(){
+  return inventory
     .filter(c => !c.listed_price && !c.swap_listed && !c.staked_at && !c.pvp_round_id && !c.pinned_at && !c.in_giveaway)
     // Bronze always first (same "worst first" ordering as the market's Bronze filter) —
     // makes it easy to stake your least valuable cards without hunting for them.
     .sort((a, b) => (RARITY_ORDER[b.rarity] ?? 4) - (RARITY_ORDER[a.rarity] ?? 4));
+}
+
+function renderPvpPickerGrid(){
+  const grid = document.getElementById("pvp-picker-grid");
+  const available = getPvpPickerAvailableCards();
   if(available.length === 0){
     grid.innerHTML = `<div class="empty-state">Нет свободных карт — сними с продажи/обмена/стейкинга или иди фармить 🌱</div>`;
     return;
@@ -4647,6 +4702,28 @@ function renderPvpPickerGrid(){
   });
 }
 
+// Toggle: if every card in the given set is already selected, a second press
+// deselects them all instead of being a no-op -- same idea for "Выбрать все" and
+// each rarity quick-filter button.
+function pvpPickerToggleSelection(cards){
+  const allSelected = cards.length > 0 && cards.every(c => pvpPickerSelected.has(c.user_card_id));
+  if(allSelected){
+    cards.forEach(c => pvpPickerSelected.delete(c.user_card_id));
+  }else{
+    cards.forEach(c => pvpPickerSelected.add(c.user_card_id));
+  }
+}
+document.getElementById("pvp-picker-select-all").addEventListener("click", ()=>{
+  pvpPickerToggleSelection(getPvpPickerAvailableCards());
+  renderPvpPickerGrid();
+});
+document.getElementById("pvp-picker-rarity-filters").addEventListener("click", (e)=>{
+  const btn = e.target.closest(".pvp-picker-rarity-btn");
+  if(!btn) return;
+  const rarity = btn.dataset.rarity;
+  pvpPickerToggleSelection(getPvpPickerAvailableCards().filter(c => c.rarity === rarity));
+  renderPvpPickerGrid();
+});
 document.getElementById("pvp-picker-cancel").addEventListener("click", ()=>{
   document.getElementById("pvp-picker-overlay").classList.remove("active");
 });
@@ -5787,9 +5864,6 @@ async function openCase(caseKey){
     toastHTML(`Не хватает гемов — нужно ${def.price} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
     return;
   }
-  const confirmed = await confirmAction(`Открыть кейс «${def.name}» за ${def.price} гемов?`);
-  if(!confirmed) return;
-
   caseOpenBusy = true;
   document.getElementById("case-overlay").classList.remove("active");
   switchScreen("farm-screen");
@@ -5833,6 +5907,7 @@ async function openCase(caseKey){
 let numbersMode = "auction";
 let numbersBoard = { auctions: [], listings: [] };
 let numbersMine = [];
+let numbersOwners = [];
 
 function numberTimeLeftLabel(expiresAt){
   if(!expiresAt) return "";
@@ -5849,12 +5924,20 @@ async function loadNumbers(){
   setGemsDisplay(board.gems);
   const mine = await api("/numbers/mine");
   numbersMine = mine.numbers;
+  try{
+    const owners = await api("/numbers/owners");
+    numbersOwners = owners.numbers;
+  }catch(e){
+    console.warn("numbers/owners failed", e);
+    numbersOwners = [];
+  }
   renderNumbersList();
 }
 
 function renderNumbersList(){
   const list = document.getElementById("numbers-list");
   const sub = document.getElementById("numbers-sub");
+  document.getElementById("numbers-owners-btn").style.display = numbersMode === "auction" ? "block" : "none";
   if(numbersMode === "auction"){
     sub.textContent = `Топ 100 самых низких свободных номеров — минимальная ставка ${numbersBoard.min_bid || 100} гемов, таймер 12ч с момента последней ставки`;
     if(!numbersBoard.auctions.length){
@@ -5893,7 +5976,7 @@ function renderNumbersList(){
     list.querySelectorAll(".act.buy").forEach(btn=>{
       btn.addEventListener("click", ()=>buyListedNumber(parseInt(btn.dataset.number)));
     });
-  }else{
+  }else if(numbersMode === "mine"){
     sub.textContent = "Номера, которые ты выиграл или купил";
     if(!numbersMine.length){
       list.innerHTML = `<div class="empty-state">У тебя пока нет купленных номеров</div>`;
@@ -5924,6 +6007,23 @@ function renderNumbersList(){
     list.querySelectorAll("[data-action='cancel']").forEach(btn=>{
       btn.addEventListener("click", ()=>cancelNumberListingFlow(parseInt(btn.dataset.number)));
     });
+  }else{
+    sub.textContent = "Все занятые номера и их текущие владельцы";
+    if(!numbersOwners.length){
+      list.innerHTML = `<div class="empty-state">Пока ни один номер никому не принадлежит</div>`;
+      return;
+    }
+    list.innerHTML = numbersOwners.map(n=>{
+      const owner = n.username ? `@${n.username}` : (n.first_name || "Игрок");
+      const status = n.user_card_id
+        ? "закреплён за картой"
+        : (n.list_price ? `продаётся за ${n.list_price} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">` : "не закреплён");
+      return `
+        <div class="number-row" data-number="${n.number}">
+          <div class="num">#${n.number}</div>
+          <div class="info"><div class="lbl">${owner}</div><div class="val">${status}</div></div>
+        </div>`;
+    }).join("");
   }
 }
 
@@ -6052,6 +6152,11 @@ document.getElementById("numbers-mode-switch").addEventListener("click", (e)=>{
   document.querySelectorAll("#numbers-mode-switch .mode-switch-btn").forEach(b=>b.classList.remove("active"));
   btn.classList.add("active");
   numbersMode = btn.dataset.mode;
+  renderNumbersList();
+});
+document.getElementById("numbers-owners-btn").addEventListener("click", ()=>{
+  document.querySelectorAll("#numbers-mode-switch .mode-switch-btn").forEach(b=>b.classList.remove("active"));
+  numbersMode = "owners";
   renderNumbersList();
 });
 
