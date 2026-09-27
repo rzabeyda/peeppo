@@ -937,7 +937,7 @@ def play_redblack(user_id: int, bet: int, choice: str) -> dict:
 AVIATOR_DEFAULT_BET = 25
 AVIATOR_MIN_BET = 25
 AVIATOR_HOUSE_EDGE = 0.05  # RTP 95%
-AVIATOR_TICKS = [1.00, 1.15, 1.30, 1.50, 1.75, 2.00, 2.50, 3.00, 4.00, 5.00, 7.00, 10.00, 15.00, 20.00]
+AVIATOR_TICKS = [1.00, 1.15, 1.30, 1.50, 1.75, 2.00, 2.50, 3.00, 4.00, 5.00, 7.00, 10.00, 15.00, 20.00, 25.00, 35.00, 50.00, 75.00, 100.00]
 
 
 class AviatorError(Exception):
@@ -4305,52 +4305,83 @@ def get_pvp_win_leaderboard(limit: int = 10, exclude_id: int | None = None) -> l
 
 
 def get_pvp_cards_won_leaderboard(limit: int = 10, exclude_id: int | None = None) -> list[dict]:
-    """Top players by total cards CAPTURED FROM OPPONENTS across all resolved PvP rounds
-    they won -- a winner's own staked cards returning to them don't count, only what
-    they took from other participants (pe.user_id != pr.winner_id)."""
+    """Top players by NET cards across all resolved PvP rounds -- cards captured from
+    opponents (rounds they won) minus cards they themselves lost (rounds someone else
+    won), not just a gross "cards captured" count. A winner's own staked cards
+    returning to them never count on either side (pe.user_id != pr.winner_id in both
+    the won and lost halves)."""
     with get_conn() as conn:
         excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
-        query = (
-            "SELECT pr.winner_id AS telegram_id, u.username AS username, u.first_name AS first_name, "
-            "COUNT(*) AS cards_won "
-            "FROM pvp_entries pe "
-            "JOIN pvp_rounds pr ON pr.id = pe.round_id "
-            "JOIN users u ON u.telegram_id = pr.winner_id "
-            "WHERE pr.status = 'resolved' AND pr.winner_id IS NOT NULL AND pe.user_id != pr.winner_id "
-            f"AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})"
-        )
+        query = f"""
+            WITH won AS (
+                SELECT pr.winner_id AS user_id, COUNT(*) AS n
+                FROM pvp_entries pe JOIN pvp_rounds pr ON pr.id = pe.round_id
+                WHERE pr.status = 'resolved' AND pr.winner_id IS NOT NULL AND pe.user_id != pr.winner_id
+                GROUP BY pr.winner_id
+            ),
+            lost AS (
+                SELECT pe.user_id AS user_id, COUNT(*) AS n
+                FROM pvp_entries pe JOIN pvp_rounds pr ON pr.id = pe.round_id
+                WHERE pr.status = 'resolved' AND pr.winner_id IS NOT NULL AND pe.user_id != pr.winner_id
+                GROUP BY pe.user_id
+            )
+            SELECT u.telegram_id AS telegram_id, u.username AS username, u.first_name AS first_name,
+                   COALESCE(won.n, 0) - COALESCE(lost.n, 0) AS cards_won
+            FROM users u
+            LEFT JOIN won ON won.user_id = u.telegram_id
+            LEFT JOIN lost ON lost.user_id = u.telegram_id
+            WHERE (won.n IS NOT NULL OR lost.n IS NOT NULL)
+            AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})
+        """
         params: list = list(LEADERBOARD_EXCLUDED_USERNAMES)
         if exclude_id is not None:
-            query += " AND pr.winner_id != ?"
+            query += " AND u.telegram_id != ?"
             params.append(exclude_id)
-        query += " GROUP BY pr.winner_id ORDER BY cards_won DESC LIMIT ?"
+        query += " ORDER BY cards_won DESC LIMIT ?"
         params.append(limit)
         rows = conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
 
 def get_pvp_diamond_cards_won_leaderboard(limit: int = 10, exclude_id: int | None = None) -> list[dict]:
-    """Same as get_pvp_cards_won_leaderboard(), restricted to diamond-rarity cards only
-    (rarity at the time it was staked -- a card's rarity never changes after farming)."""
+    """Same as get_pvp_cards_won_leaderboard() (net = captured - lost), restricted to
+    diamond-rarity cards only (rarity at the time staked -- never changes after farming)."""
     with get_conn() as conn:
         excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
-        query = (
-            "SELECT pr.winner_id AS telegram_id, u.username AS username, u.first_name AS first_name, "
-            "COUNT(*) AS diamond_cards_won "
-            "FROM pvp_entries pe "
-            "JOIN pvp_rounds pr ON pr.id = pe.round_id "
-            "JOIN user_cards uc ON uc.id = pe.user_card_id "
-            "JOIN cards c ON c.id = uc.card_id "
-            "JOIN users u ON u.telegram_id = pr.winner_id "
-            "WHERE pr.status = 'resolved' AND pr.winner_id IS NOT NULL AND pe.user_id != pr.winner_id "
-            "AND c.rarity = 'diamond' "
-            f"AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})"
-        )
+        query = f"""
+            WITH won AS (
+                SELECT pr.winner_id AS user_id, COUNT(*) AS n
+                FROM pvp_entries pe
+                JOIN pvp_rounds pr ON pr.id = pe.round_id
+                JOIN user_cards uc ON uc.id = pe.user_card_id
+                JOIN cards c ON c.id = uc.card_id
+                WHERE pr.status = 'resolved' AND pr.winner_id IS NOT NULL AND pe.user_id != pr.winner_id
+                AND c.rarity = 'diamond'
+                GROUP BY pr.winner_id
+            ),
+            lost AS (
+                SELECT pe.user_id AS user_id, COUNT(*) AS n
+                FROM pvp_entries pe
+                JOIN pvp_rounds pr ON pr.id = pe.round_id
+                JOIN user_cards uc ON uc.id = pe.user_card_id
+                JOIN cards c ON c.id = uc.card_id
+                WHERE pr.status = 'resolved' AND pr.winner_id IS NOT NULL AND pe.user_id != pr.winner_id
+                AND c.rarity = 'diamond'
+                GROUP BY pe.user_id
+            )
+            SELECT u.telegram_id AS telegram_id, u.username AS username, u.first_name AS first_name,
+                   COALESCE(won.n, 0) - COALESCE(lost.n, 0) AS diamond_cards_won
+            FROM users u
+            LEFT JOIN won ON won.user_id = u.telegram_id
+            LEFT JOIN lost ON lost.user_id = u.telegram_id
+            WHERE (won.n IS NOT NULL OR lost.n IS NOT NULL)
+            AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})
+        """
         params: list = list(LEADERBOARD_EXCLUDED_USERNAMES)
         if exclude_id is not None:
-            query += " AND pr.winner_id != ?"
+            query += " AND u.telegram_id != ?"
             params.append(exclude_id)
-        query += " GROUP BY pr.winner_id ORDER BY diamond_cards_won DESC LIMIT ?"
+        query += " ORDER BY diamond_cards_won DESC LIMIT ?"
         params.append(limit)
         rows = conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]

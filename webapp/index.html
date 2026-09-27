@@ -3529,7 +3529,7 @@ function renderRedBlackHistoryList(rounds){
     return `
       <div class="history-row pvp-history-row">
         <div class="info">
-          <div class="line1">${colorEmoji} ${name} — ${r.won ? "выиграл" : "проиграл"} ${sign} 💎</div>
+          <div class="line1">${colorEmoji} ${name} — ${r.won ? "выиграл" : "проиграл"} ${sign} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></div>
           <div class="line2">ставка ${r.bet} · ${fmtHistoryDate(r.created_at)}</div>
         </div>
       </div>`;
@@ -3551,7 +3551,7 @@ function renderAviatorHistoryList(rounds){
     return `
       <div class="history-row pvp-history-row">
         <div class="info">
-          <div class="line1">🚀 ${name} — ${won ? "забрал" : "улетела"} на ${mult.toFixed(2)}x (${sign} 💎)</div>
+          <div class="line1">🚀 ${name} — ${won ? "забрал" : "улетела"} на ${mult.toFixed(2)}x (${sign} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">)</div>
           <div class="line2">ставка ${r.bet} · ${fmtHistoryDate(r.created_at)}</div>
         </div>
       </div>`;
@@ -3593,15 +3593,15 @@ const GAME_TOP_CONFIG = {
 };
 
 const PVP_TOP_SUBMODES = {
-  wins:    { endpoint: "/pvp/leaderboard",         valueKey: "wins",              suffix: " 🏆",
+  wins:    { endpoint: "/pvp/leaderboard",         valueKey: "wins",              suffix: " 🏆", signed: false,
              title: "🏆 Топ 10 по победам в PvP", sub: "Больше всего выигранных раундов",
              empty: "Пока никто не выиграл ни одного раунда.", empty_emoji: "⚔️" },
-  cards:   { endpoint: "/pvp/leaderboard/cards",   valueKey: "cards_won",         suffix: " карт",
-             title: "🏆 Топ 10 по картам в PvP", sub: "Больше всего карт отбито у соперников",
-             empty: "Пока никто не выиграл ни одной карты.", empty_emoji: "🃏" },
-  diamond: { endpoint: "/pvp/leaderboard/diamond", valueKey: "diamond_cards_won", suffix: " 💎",
-             title: "🏆 Топ 10 по Diamond-картам в PvP", sub: "Больше всего diamond-карт отбито у соперников",
-             empty: "Пока никто не выиграл ни одной diamond-карты.", empty_emoji: "💎" },
+  cards:   { endpoint: "/pvp/leaderboard/cards",   valueKey: "cards_won",         suffix: " карт", signed: true,
+             title: "🏆 Топ 10 по картам в PvP", sub: "Кто больше всего в плюсе по картам (забрано минус проиграно)",
+             empty: "Пока никто не в плюсе по картам.", empty_emoji: "🃏" },
+  diamond: { endpoint: "/pvp/leaderboard/diamond", valueKey: "diamond_cards_won", suffix: " 💎", signed: true,
+             title: "🏆 Топ 10 по Diamond-картам в PvP", sub: "Кто больше всего в плюсе по diamond-картам (забрано минус проиграно)",
+             empty: "Пока никто не в плюсе по diamond-картам.", empty_emoji: "💎" },
 };
 let pvpTopSubmode = "wins";
 
@@ -3621,7 +3621,9 @@ async function renderPvpTopRows(cfg, mode){
     rowsEl.innerHTML = rows.map((r, i)=>{
       const name = r.username ? r.username : (r.first_name || `Игрок ${r.telegram_id}`);
       const rank = medals[i] || `${i + 1}.`;
-      const valueLabel = mode === "pvp" ? `${r[cfg.valueKey]}${cfg.suffix}` : `${r.net_profit >= 0 ? "+" : ""}${r.net_profit} 💎`;
+      const valueLabel = mode === "pvp"
+        ? `${cfg.signed && r[cfg.valueKey] >= 0 ? "+" : ""}${r[cfg.valueKey]}${cfg.suffix}`
+        : `${r.net_profit >= 0 ? "+" : ""}${r.net_profit} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">`;
       return `<div class="pvp-top-row"><span class="rank">${rank}</span><span class="name">${name}</span><span class="wins">${valueLabel}</span></div>`;
     }).join("");
   }catch(e){
@@ -4521,7 +4523,7 @@ function renderMining(status){
     progressWrap.classList.remove("active");
     btn.classList.add("ready");
     btn.disabled = false;
-    btn.textContent = "Забрать 50 💎";
+    btn.innerHTML = 'Забрать 50 <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">';
     label.textContent = "Готово! Жми, чтобы забрать и начать заново";
     openBtn.classList.remove("mining");
     openBtn.classList.add("ready");
