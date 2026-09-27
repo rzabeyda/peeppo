@@ -702,6 +702,20 @@ def pvp_leaderboard(body: InitDataBody):
     return {"leaderboard": db.get_pvp_win_leaderboard(10, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)}
 
 
+@app.post("/api/pvp/leaderboard/cards")
+def pvp_leaderboard_cards(body: InitDataBody):
+    """Top-10 by total cards captured from opponents across all won PvP rounds."""
+    _authenticate(body.initData)
+    return {"leaderboard": db.get_pvp_cards_won_leaderboard(10, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)}
+
+
+@app.post("/api/pvp/leaderboard/diamond")
+def pvp_leaderboard_diamond(body: InitDataBody):
+    """Top-10 by total DIAMOND-rarity cards captured from opponents across all won PvP rounds."""
+    _authenticate(body.initData)
+    return {"leaderboard": db.get_pvp_diamond_cards_won_leaderboard(10, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)}
+
+
 @app.post("/api/redblack/play")
 def redblack_play(body: RedBlackPlayBody):
     """In-app Red&Black -- fully independent from the chat /redblack game (no shared

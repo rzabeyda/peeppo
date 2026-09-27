@@ -3770,7 +3770,7 @@ def get_global_rarity_breakdown() -> dict:
 # account (ADMIN_ID). Used by get_leaderboard()/get_ref_leaderboard()/
 # get_pvp_win_leaderboard() -- add a username here to hide that account from all
 # three at once.
-LEADERBOARD_EXCLUDED_USERNAMES = {"rzabeyda", "zzabeyda"}
+LEADERBOARD_EXCLUDED_USERNAMES = {"rzabeyda"}
 
 
 def get_leaderboard() -> list[dict]:
@@ -3965,7 +3965,7 @@ def join_pvp_round(user_id: int, user_card_ids: list[int]) -> dict:
     return get_pvp_state(user_id)
 
 
-PVP_INVITE_COOLDOWN_SECONDS = 30  # keeps "Позвать игрока" from spamming PUBLIC_CHAT
+PVP_INVITE_COOLDOWN_SECONDS = 60  # keeps "Позвать игрока" from spamming PUBLIC_CHAT
 
 
 def is_in_open_pvp_round(user_id: int) -> bool:
@@ -4299,6 +4299,58 @@ def get_pvp_win_leaderboard(limit: int = 10, exclude_id: int | None = None) -> l
             query += " AND pr.winner_id != ?"
             params.append(exclude_id)
         query += " GROUP BY pr.winner_id ORDER BY wins DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
+
+def get_pvp_cards_won_leaderboard(limit: int = 10, exclude_id: int | None = None) -> list[dict]:
+    """Top players by total cards CAPTURED FROM OPPONENTS across all resolved PvP rounds
+    they won -- a winner's own staked cards returning to them don't count, only what
+    they took from other participants (pe.user_id != pr.winner_id)."""
+    with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        query = (
+            "SELECT pr.winner_id AS telegram_id, u.username AS username, u.first_name AS first_name, "
+            "COUNT(*) AS cards_won "
+            "FROM pvp_entries pe "
+            "JOIN pvp_rounds pr ON pr.id = pe.round_id "
+            "JOIN users u ON u.telegram_id = pr.winner_id "
+            "WHERE pr.status = 'resolved' AND pr.winner_id IS NOT NULL AND pe.user_id != pr.winner_id "
+            f"AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})"
+        )
+        params: list = list(LEADERBOARD_EXCLUDED_USERNAMES)
+        if exclude_id is not None:
+            query += " AND pr.winner_id != ?"
+            params.append(exclude_id)
+        query += " GROUP BY pr.winner_id ORDER BY cards_won DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
+
+def get_pvp_diamond_cards_won_leaderboard(limit: int = 10, exclude_id: int | None = None) -> list[dict]:
+    """Same as get_pvp_cards_won_leaderboard(), restricted to diamond-rarity cards only
+    (rarity at the time it was staked -- a card's rarity never changes after farming)."""
+    with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        query = (
+            "SELECT pr.winner_id AS telegram_id, u.username AS username, u.first_name AS first_name, "
+            "COUNT(*) AS diamond_cards_won "
+            "FROM pvp_entries pe "
+            "JOIN pvp_rounds pr ON pr.id = pe.round_id "
+            "JOIN user_cards uc ON uc.id = pe.user_card_id "
+            "JOIN cards c ON c.id = uc.card_id "
+            "JOIN users u ON u.telegram_id = pr.winner_id "
+            "WHERE pr.status = 'resolved' AND pr.winner_id IS NOT NULL AND pe.user_id != pr.winner_id "
+            "AND c.rarity = 'diamond' "
+            f"AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})"
+        )
+        params: list = list(LEADERBOARD_EXCLUDED_USERNAMES)
+        if exclude_id is not None:
+            query += " AND pr.winner_id != ?"
+            params.append(exclude_id)
+        query += " GROUP BY pr.winner_id ORDER BY diamond_cards_won DESC LIMIT ?"
         params.append(limit)
         rows = conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]

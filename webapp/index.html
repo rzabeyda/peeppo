@@ -677,6 +677,28 @@
   .mode-switch-btn[data-mode="trade"].active{background:rgba(34,197,94,.18); color:#22c55e;}
   .mode-switch-btn[data-mode="swap"].active{background:rgba(250,204,21,.18); color:#facc15;}
   .mode-switch-btn:active{transform:scale(.95);}
+
+  .pvp-top-submode{
+    display:flex; gap:2px;
+    background:rgba(255,255,255,.05);
+    border:1px solid var(--card-border);
+    border-radius:12px;
+    padding:3px;
+    margin-bottom:12px;
+  }
+  .pvp-top-submode-btn{
+    flex:1 1 0; min-width:0;
+    border:none; background:none;
+    color:#888;
+    font-size:11px; font-weight:800;
+    padding:8px 6px;
+    border-radius:9px;
+    cursor:pointer;
+    white-space:nowrap;
+    text-align:center;
+  }
+  .pvp-top-submode-btn.active{background:rgba(236,20,144,.18); color:#ec1490;}
+  .pvp-top-submode-btn:active{transform:scale(.95);}
   .market-item{
     display:flex; align-items:center; gap:12px;
     background:var(--card-bg);
@@ -688,7 +710,7 @@
   .market-item img{width:56px; height:56px; border-radius:12px; object-fit:cover; flex-shrink:0;}
   .market-item-info{flex:1; min-width:0;}
   .market-item-name{font-weight:700; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  .market-item-price{font-size:13px; font-weight:800; color:var(--accent2); margin-top:4px; display:flex; align-items:center; gap:4px;}
+  .market-item-price{font-size:13px; font-weight:800; color:#ec1490; margin-top:4px; display:flex; align-items:center; gap:4px;}
   .market-item-price img{width:14px; height:14px; border-radius:0;}
   .market-item-actions{display:flex; flex-direction:column; gap:6px; flex-shrink:0;}
   .market-item-actions button{
@@ -702,7 +724,7 @@
   .market-price-tag{
     position:absolute; bottom:6px; right:6px;
     background:rgba(0,0,0,.75);
-    color:var(--accent2);
+    color:#ec1490;
     font-size:10px; font-weight:800;
     padding:3px 7px; border-radius:8px;
     display:flex; align-items:center; gap:3px;
@@ -747,7 +769,7 @@
   #market-item-card img{width:100%; border-radius:14px; margin-bottom:14px; aspect-ratio:1/1; object-fit:cover;}
   #market-item-name{font-weight:700; margin-bottom:8px;}
   #market-item-price-row{
-    font-size:14px; font-weight:800; color:var(--accent2);
+    font-size:14px; font-weight:800; color:#ec1490;
     margin-bottom:14px;
     display:flex; align-items:center; justify-content:center; gap:6px;
   }
@@ -2441,6 +2463,11 @@
       <button class="btn-close-inline" id="pvp-top-close">✕</button>
       <div id="pvp-top-title">🏆 Топ 10 по победам в PvP</div>
       <div id="pvp-top-sub">Больше всего выигранных раундов</div>
+      <div class="pvp-top-submode" id="pvp-top-submode-switch" style="display:none">
+        <button class="pvp-top-submode-btn active" data-submode="wins">Победы</button>
+        <button class="pvp-top-submode-btn" data-submode="cards">Карты</button>
+        <button class="pvp-top-submode-btn" data-submode="diamond">Diamond</button>
+      </div>
       <div id="pvp-top-rows"></div>
     </div>
   </div>
@@ -3559,21 +3586,30 @@ document.getElementById("rb-rules-close").addEventListener("click", ()=>{
 });
 
 const GAME_TOP_CONFIG = {
-  pvp:      { endpoint: "/pvp/leaderboard",      empty: "Пока никто не выиграл ни одного раунда.", empty_emoji: "⚔️",
-              title: "🏆 Топ 10 по победам в PvP", sub: "Больше всего выигранных раундов" },
   redblack: { endpoint: "/redblack/leaderboard", empty: "Пока никто не сыграл ни одного раунда.",  empty_emoji: "🔴⚫",
               title: "🏆 Топ 10 Red&Black", sub: "Больше всего выигранных гемов" },
   aviator:  { endpoint: "/aviator/leaderboard",  empty: "Пока никто не сыграл ни одного раунда.",  empty_emoji: "🚀",
               title: "🏆 Топ 10 Ракетки", sub: "Больше всего выигранных гемов" },
 };
 
-async function openGameTop(mode){
-  const cfg = GAME_TOP_CONFIG[mode];
+const PVP_TOP_SUBMODES = {
+  wins:    { endpoint: "/pvp/leaderboard",         valueKey: "wins",              suffix: " 🏆",
+             title: "🏆 Топ 10 по победам в PvP", sub: "Больше всего выигранных раундов",
+             empty: "Пока никто не выиграл ни одного раунда.", empty_emoji: "⚔️" },
+  cards:   { endpoint: "/pvp/leaderboard/cards",   valueKey: "cards_won",         suffix: " карт",
+             title: "🏆 Топ 10 по картам в PvP", sub: "Больше всего карт отбито у соперников",
+             empty: "Пока никто не выиграл ни одной карты.", empty_emoji: "🃏" },
+  diamond: { endpoint: "/pvp/leaderboard/diamond", valueKey: "diamond_cards_won", suffix: " 💎",
+             title: "🏆 Топ 10 по Diamond-картам в PvP", sub: "Больше всего diamond-карт отбито у соперников",
+             empty: "Пока никто не выиграл ни одной diamond-карты.", empty_emoji: "💎" },
+};
+let pvpTopSubmode = "wins";
+
+async function renderPvpTopRows(cfg, mode){
   document.getElementById("pvp-top-title").textContent = cfg.title;
   document.getElementById("pvp-top-sub").textContent = cfg.sub;
   const rowsEl = document.getElementById("pvp-top-rows");
   rowsEl.innerHTML = `<div class="empty-state"><span class="emoji">⏳</span>Загрузка...</div>`;
-  document.getElementById("pvp-top-overlay").classList.add("active");
   try{
     const res = await api(cfg.endpoint);
     const rows = res.leaderboard || [];
@@ -3585,13 +3621,36 @@ async function openGameTop(mode){
     rowsEl.innerHTML = rows.map((r, i)=>{
       const name = r.username ? r.username : (r.first_name || `Игрок ${r.telegram_id}`);
       const rank = medals[i] || `${i + 1}.`;
-      const valueLabel = mode === "pvp" ? `${r.wins} 🏆` : `${r.net_profit >= 0 ? "+" : ""}${r.net_profit} 💎`;
+      const valueLabel = mode === "pvp" ? `${r[cfg.valueKey]}${cfg.suffix}` : `${r.net_profit >= 0 ? "+" : ""}${r.net_profit} 💎`;
       return `<div class="pvp-top-row"><span class="rank">${rank}</span><span class="name">${name}</span><span class="wins">${valueLabel}</span></div>`;
     }).join("");
   }catch(e){
     rowsEl.innerHTML = `<div class="empty-state"><span class="emoji">⚠️</span>Не удалось загрузить.</div>`;
   }
 }
+
+async function openGameTop(mode){
+  const submodeSwitch = document.getElementById("pvp-top-submode-switch");
+  document.getElementById("pvp-top-overlay").classList.add("active");
+  if(mode === "pvp"){
+    submodeSwitch.style.display = "flex";
+    pvpTopSubmode = "wins";
+    submodeSwitch.querySelectorAll(".pvp-top-submode-btn").forEach(b=>b.classList.toggle("active", b.dataset.submode === "wins"));
+    await renderPvpTopRows(PVP_TOP_SUBMODES.wins, "pvp");
+  }else{
+    submodeSwitch.style.display = "none";
+    await renderPvpTopRows(GAME_TOP_CONFIG[mode], mode);
+  }
+}
+document.getElementById("pvp-top-submode-switch").addEventListener("click", (e)=>{
+  const btn = e.target.closest(".pvp-top-submode-btn");
+  if(!btn) return;
+  const sm = btn.dataset.submode;
+  if(sm === pvpTopSubmode) return;
+  pvpTopSubmode = sm;
+  document.querySelectorAll("#pvp-top-submode-switch .pvp-top-submode-btn").forEach(b=>b.classList.toggle("active", b.dataset.submode === sm));
+  renderPvpTopRows(PVP_TOP_SUBMODES[sm], "pvp");
+});
 document.getElementById("pvp-top-btn").addEventListener("click", ()=>openGameTop("pvp"));
 document.getElementById("rb-top-btn").addEventListener("click", ()=>openGameTop("redblack"));
 document.getElementById("av-top-btn").addEventListener("click", ()=>openGameTop("aviator"));
@@ -4210,7 +4269,7 @@ function renderPvp(){
       const coolMatch = m.match(/cooldown:\s*(\d+)s/);
       if(coolMatch){
         const s = parseInt(coolMatch[1], 10);
-        toast(`Можно звать раз в 30 секунд — подожди ещё ~${s} сек.`);
+        toast(`Можно звать раз в 60 секунд — подожди ещё ~${s} сек.`);
       }else{
         toast("Не удалось позвать: " + m);
       }
