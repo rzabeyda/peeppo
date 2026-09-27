@@ -195,6 +195,11 @@ class AviatorRoundBody(InitDataBody):
     round_id: int
 
 
+class GameShareBody(InitDataBody):
+    game: str  # "pvp" | "redblack" | "aviator"
+    round_id: int
+
+
 class CryptoWithdrawBody(InitDataBody):
     user_card_ids: list[int]
     wallet_address: str = ""
@@ -730,6 +735,62 @@ def aviator_cashout(body: AviatorRoundBody):
         return db.cashout_aviator_now(body.round_id, user["telegram_id"])
     except db.AviatorError as e:
         raise HTTPException(400, str(e))
+
+
+@app.post("/api/redblack/history")
+def redblack_history(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"rounds": db.get_redblack_history()}
+
+
+@app.post("/api/redblack/leaderboard")
+def redblack_leaderboard(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"leaderboard": db.get_redblack_leaderboard(10)}
+
+
+@app.post("/api/aviator/history")
+def aviator_history(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"rounds": db.get_aviator_history()}
+
+
+@app.post("/api/aviator/leaderboard")
+def aviator_leaderboard(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"leaderboard": db.get_aviator_leaderboard(10)}
+
+
+@app.post("/api/games/share")
+async def games_share(body: GameShareBody):
+    """Shared by the "Поделиться" button on every Игры sub-tab (PvP / Ракетка /
+    Red&Black) -- verifies the round actually belongs to (or involved) this player,
+    then bot.py re-derives the outcome server-side from the DB and posts one message
+    into PUBLIC_CHAT. The client never supplies the outcome text/numbers itself."""
+    user = _authenticate(body.initData)
+    import bot as bot_module
+
+    if body.game == "redblack":
+        round_row = db.get_redblack_round(body.round_id)
+        if round_row is None or round_row["user_id"] != user["telegram_id"]:
+            raise HTTPException(404, "round not found")
+        ok = await bot_module.share_redblack_result(body.round_id)
+    elif body.game == "aviator":
+        round_row = db.get_aviator_round(body.round_id)
+        if round_row is None or round_row["user_id"] != user["telegram_id"]:
+            raise HTTPException(404, "round not found")
+        ok = await bot_module.share_aviator_result(body.round_id)
+    elif body.game == "pvp":
+        round_row = db.get_last_resolved_pvp_round(body.round_id)
+        if round_row is None or not any(p["user_id"] == user["telegram_id"] for p in round_row["participants"]):
+            raise HTTPException(404, "round not found")
+        ok = await bot_module.share_pvp_result(body.round_id)
+    else:
+        raise HTTPException(400, "unknown game")
+
+    if not ok:
+        raise HTTPException(502, "could not post to chat")
+    return {"ok": True}
 
 
 @app.post("/api/wheel/spin")

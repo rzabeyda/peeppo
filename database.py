@@ -194,6 +194,22 @@ CREATE TABLE IF NOT EXISTS aviator_rounds (
     created_at        TEXT NOT NULL
 );
 
+-- Every Red&Black round ever played, newest first via created_at -- unlike PvP or
+-- Aviator (which already had a rounds table for other reasons), play_redblack() used
+-- to just mutate gems and forget the round entirely. Added purely to power the
+-- in-app "Топ 10"/"История" panels for Red&Black (see get_redblack_history()/
+-- get_redblack_leaderboard()); play_redblack() inserts one row per round.
+CREATE TABLE IF NOT EXISTS redblack_rounds (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL REFERENCES users(telegram_id),
+    bet           INTEGER NOT NULL,
+    choice        TEXT NOT NULL,
+    result        TEXT NOT NULL,
+    won           INTEGER NOT NULL,
+    payout        INTEGER NOT NULL,
+    created_at    TEXT NOT NULL
+);
+
 -- Simple lifetime action counters for the /admin panel (cases bought, cards crafted,
 -- cards evolved/burned) — bumped by open_case()/craft_card()/burn_cards() themselves,
 -- see _bump_counter()/get_action_counters().
@@ -878,7 +894,14 @@ def play_redblack(user_id: int, bet: int, choice: str) -> dict:
         new_gems = conn.execute(
             "SELECT gems FROM users WHERE telegram_id = ?", (user_id,)
         ).fetchone()["gems"]
-    return {"result": result, "won": won, "bet": bet, "payout": bet * 2 if won else 0, "gems": new_gems}
+        payout = bet * 2 if won else 0
+        cur = conn.execute(
+            "INSERT INTO redblack_rounds (user_id, bet, choice, result, won, payout, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user_id, bet, choice, result, int(won), payout, _now()),
+        )
+        round_id = cur.lastrowid
+    return {"round_id": round_id, "result": result, "won": won, "bet": bet, "payout": payout, "gems": new_gems}
 
 
 # ---------------------------------------------------------------------------
@@ -4012,18 +4035,27 @@ def get_pvp_state(viewer_id: int | None = None) -> dict:
     }
 
 
-def get_last_resolved_pvp_round() -> dict | None:
+def get_last_resolved_pvp_round(round_id: int | None = None) -> dict | None:
     """The most recently resolved PvP round's summary — so the lobby can show a 'last
     result' banner even to players who weren't watching when it happened (this is the
     only place the actual winner reveal lives; the client shows it once per round_id).
     Includes a full `participants` breakdown (same shape as get_pvp_state's), rebuilt
     from the historical pvp_entries rows, so the client can redraw the exact wheel the
-    round was decided on for the spin-to-a-winner reveal animation."""
+    round was decided on for the spin-to-a-winner reveal animation. Pass round_id to
+    look up one specific resolved round instead of "whatever resolved most recently"
+    -- used by the "Поделиться" share endpoint, which must re-derive its message from
+    a round the player actually saw rather than trusting the client's own claim."""
     with get_conn() as conn:
-        round_row = conn.execute(
-            "SELECT id, winner_id, resolved_at FROM pvp_rounds WHERE status = 'resolved' "
-            "ORDER BY id DESC LIMIT 1"
-        ).fetchone()
+        if round_id is not None:
+            round_row = conn.execute(
+                "SELECT id, winner_id, resolved_at FROM pvp_rounds WHERE status = 'resolved' AND id = ?",
+                (round_id,),
+            ).fetchone()
+        else:
+            round_row = conn.execute(
+                "SELECT id, winner_id, resolved_at FROM pvp_rounds WHERE status = 'resolved' "
+                "ORDER BY id DESC LIMIT 1"
+            ).fetchone()
         if round_row is None or round_row["winner_id"] is None:
             return None
         winner = conn.execute(
@@ -4112,6 +4144,101 @@ def get_pvp_history(limit: int = 50) -> list[dict]:
                 "total_players": total_players,
             })
     return out
+
+
+def get_redblack_round(round_id: int) -> dict | None:
+    """One Red&Black round by id, joined with the player's username/first_name — used
+    both by the "Поделиться" share endpoint (to verify ownership + build the message
+    server-side, never trusting the client's own claimed result) and could back a
+    per-round lookup elsewhere later."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT rr.*, u.username, u.first_name FROM redblack_rounds rr "
+            "JOIN users u ON u.telegram_id = rr.user_id WHERE rr.id = ?",
+            (round_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_redblack_history(limit: int = 50) -> list[dict]:
+    """Every Red&Black round ever played, newest first — for the "История" panel,
+    same convention as get_pvp_history()/get_market_history()."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT rr.id, rr.user_id, rr.bet, rr.choice, rr.result, rr.won, rr.payout, rr.created_at, "
+            "u.username, u.first_name "
+            "FROM redblack_rounds rr JOIN users u ON u.telegram_id = rr.user_id "
+            "ORDER BY rr.id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_redblack_leaderboard(limit: int = 10) -> list[dict]:
+    """Top players by total net gems won across every Red&Black round they've played
+    (SUM(payout - bet) -- a loss round contributes -bet, a win round contributes
+    +bet), highest first. Same LEADERBOARD_EXCLUDED_USERNAMES convention as every
+    other leaderboard in the game."""
+    with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        rows = conn.execute(
+            "SELECT rr.user_id AS telegram_id, u.username AS username, u.first_name AS first_name, "
+            "SUM(rr.payout - rr.bet) AS net_profit, COUNT(*) AS rounds_played "
+            "FROM redblack_rounds rr JOIN users u ON u.telegram_id = rr.user_id "
+            f"WHERE LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders}) "
+            "GROUP BY rr.user_id ORDER BY net_profit DESC LIMIT ?",
+            list(LEADERBOARD_EXCLUDED_USERNAMES) + [limit],
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_aviator_round(round_id: int) -> dict | None:
+    """One Aviator round by id, joined with the player's username/first_name -- same
+    role as get_redblack_round() (share endpoint's server-side source of truth)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT ar.*, u.username, u.first_name FROM aviator_rounds ar "
+            "JOIN users u ON u.telegram_id = ar.user_id WHERE ar.id = ?",
+            (round_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_aviator_history(limit: int = 50) -> list[dict]:
+    """Every resolved Aviator round (won or lost -- 'active' ones are still in
+    flight and excluded), newest first, for the "История" panel. Covers BOTH the
+    chat /go game and the in-app one -- same underlying table, same game, just two
+    ways to play it, same convention count_active_aviator_rounds_for_user() already
+    uses (chat_id IS NULL) to tell them apart when it matters."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT ar.id, ar.user_id, ar.bet, ar.crash_point, ar.status, ar.cashout_multiplier, ar.created_at, "
+            "u.username, u.first_name "
+            "FROM aviator_rounds ar JOIN users u ON u.telegram_id = ar.user_id "
+            "WHERE ar.status IN ('won', 'lost') "
+            "ORDER BY ar.id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_aviator_leaderboard(limit: int = 10) -> list[dict]:
+    """Top players by total net gems won across every resolved Aviator round
+    (won: +(bet*cashout_multiplier - bet), lost: -bet), highest first. Same
+    LEADERBOARD_EXCLUDED_USERNAMES convention as every other leaderboard."""
+    with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        rows = conn.execute(
+            "SELECT ar.user_id AS telegram_id, u.username AS username, u.first_name AS first_name, "
+            "SUM(CASE WHEN ar.status = 'won' THEN CAST(ROUND(ar.bet * ar.cashout_multiplier) AS INTEGER) - ar.bet "
+            "ELSE -ar.bet END) AS net_profit, "
+            "COUNT(*) AS rounds_played "
+            "FROM aviator_rounds ar JOIN users u ON u.telegram_id = ar.user_id "
+            f"WHERE ar.status IN ('won', 'lost') AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders}) "
+            "GROUP BY ar.user_id ORDER BY net_profit DESC LIMIT ?",
+            list(LEADERBOARD_EXCLUDED_USERNAMES) + [limit],
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def get_pvp_win_leaderboard(limit: int = 10, exclude_id: int | None = None) -> list[dict]:

@@ -1045,6 +1045,28 @@
   .pvp-rules-row .w{font-size:13px; font-weight:800; color:#eee;}
   #pvp-rules-footnote{font-size:11.5px; color:#888; line-height:1.5;}
 
+  #av-rules-overlay, #rb-rules-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.92);
+    display:none; align-items:center; justify-content:center;
+    z-index:92; padding:24px;
+  }
+  #av-rules-overlay.active, #rb-rules-overlay.active{display:flex;}
+  #av-rules-card, #rb-rules-card{
+    position:relative;
+    width:100%; max-width:320px; max-height:86vh; overflow-y:auto;
+    background:var(--card-bg); border:1px solid var(--card-border); border-radius:20px;
+    padding:22px 18px 18px; box-sizing:border-box;
+  }
+  #av-rules-title, #rb-rules-title{font-size:16px; font-weight:800; margin-bottom:12px;}
+  #av-rules-text, #rb-rules-text{font-size:13px; color:#ccc; line-height:1.5;}
+
+  .game-share-btn{
+    width:100%; padding:11px 0; border-radius:12px; border:1px solid var(--card-border);
+    background:#161616; color:#facc15; font-weight:700; font-size:13px; cursor:pointer;
+  }
+  .game-share-btn:disabled{opacity:.6; cursor:not-allowed;}
+
   /* ---------- PvP picker overlay (same look as the swap picker) ---------- */
   #pvp-picker-overlay{
     position:absolute; inset:0;
@@ -2003,6 +2025,11 @@
       </div>
 
       <div id="pvp-aviator-block" style="display:none">
+        <div class="market-header-row">
+          <button type="button" id="av-rules-btn" class="history-btn">Правила</button>
+          <button type="button" id="av-top-btn" class="history-btn">Топ 10</button>
+          <button type="button" id="av-history-btn" class="history-btn">История</button>
+        </div>
         <div class="av-card">
           <div class="av-title">Ракетка</div>
           <div class="av-sub">Ставь гемы — множитель растёт. Жми "Забрать" пока не улетела — не успел, ставка сгорает.</div>
@@ -2030,11 +2057,17 @@
           </div>
 
           <div class="av-result" id="av-result"></div>
+          <button class="game-share-btn" id="av-share-btn" style="display:none">Поделиться в чат</button>
           <div class="av-history" id="av-history"></div>
         </div>
       </div>
 
       <div id="pvp-redblack-block" style="display:none">
+        <div class="market-header-row">
+          <button type="button" id="rb-rules-btn" class="history-btn">Правила</button>
+          <button type="button" id="rb-top-btn" class="history-btn">Топ 10</button>
+          <button type="button" id="rb-history-btn" class="history-btn">История</button>
+        </div>
         <div class="rb-card">
           <div class="rb-title">Red&amp;Black</div>
           <div class="rb-sub">Ставь гемы и угадай цвет. Угадал — забираешь x2, не угадал — ставка сгорает.</div>
@@ -2056,6 +2089,7 @@
             <button class="rb-choice rb-black" id="rb-pick-black">⚫ Чёрное</button>
           </div>
           <div class="rb-result" id="rb-result"></div>
+          <button class="game-share-btn" id="rb-share-btn" style="display:none">Поделиться в чат</button>
           <div class="rb-history" id="rb-history"></div>
         </div>
       </div>
@@ -2489,7 +2523,7 @@
     <div id="gems-choice-card">
       <div id="gems-choice-title"><img src="/static/icons/diamond.png" alt="">Гемы</div>
       <button id="gems-choice-buy">Купить Гемы за Звёзды</button>
-      <button id="gems-choice-sell">Продать за Stars</button>
+      <button id="gems-choice-sell">Продать Diamond за Звёзды</button>
       <button id="gems-choice-cancel">Закрыть</button>
     </div>
   </div>
@@ -2613,6 +2647,7 @@
       </div>
       <div id="pvp-reveal-legend"></div>
       <div id="pvp-reveal-outcome"></div>
+      <button class="game-share-btn" id="pvp-reveal-share" style="display:none">Поделиться в чат</button>
       <button id="pvp-reveal-close">Закрыть</button>
     </div>
   </div>
@@ -2655,6 +2690,27 @@
         <div class="pvp-rules-row"><span class="rarity-tag diamond">diamond</span><span class="w">50</span></div>
       </div>
       <div id="pvp-rules-footnote">Например, одна Diamond-карта по шансам равна 50 Bronze-картам. Твой шанс на победу = твой вес ÷ суммарный вес всех карт в банке.</div>
+    </div>
+  </div>
+
+  <div id="av-rules-overlay">
+    <div id="av-rules-card">
+      <button class="btn-close-inline" id="av-rules-close">✕</button>
+      <div id="av-rules-title">Правила Ракетки</div>
+      <div id="av-rules-text">
+        Ставишь гемы и жмёшь «Старт» — множитель начинает расти от 1.00x. Жми «Забрать» в любой момент, чтобы получить ставку × текущий множитель. Если не успел — ракетка «улетает» в случайный момент, и ставка сгорает полностью.<br><br>
+        Момент краша определяется один раз, сразу после старта, и скрыт от игрока — подкрутить нельзя. Средняя отдача (RTP) — 95%.
+      </div>
+    </div>
+  </div>
+
+  <div id="rb-rules-overlay">
+    <div id="rb-rules-card">
+      <button class="btn-close-inline" id="rb-rules-close">✕</button>
+      <div id="rb-rules-title">Правила Red&amp;Black</div>
+      <div id="rb-rules-text">
+        Ставишь гемы и выбираешь цвет — красное или чёрное. Честная монетка 50/50: угадал — забираешь x2 (ставка + столько же сверху), не угадал — ставка сгорает полностью. Третьего варианта нет.
+      </div>
     </div>
   </div>
 
@@ -2879,6 +2935,21 @@ document.getElementById("input-confirm").addEventListener("click", ()=>{
     closeInputModal(val ? val : null);
   }
 });
+
+async function shareGameResult(game, roundId, btn){
+  if(!roundId || !btn) return;
+  btn.disabled = true;
+  const original = btn.textContent;
+  try{
+    await api("/games/share", { game, round_id: roundId });
+    btn.textContent = "Опубликовано ✓";
+    tg?.HapticFeedback?.notificationOccurred("success");
+  }catch(e){
+    toast("Не удалось поделиться: " + e.message);
+    btn.textContent = original;
+    btn.disabled = false;
+  }
+}
 
 async function api(path, body={}){
   const res = await fetch(API_BASE + path, {
@@ -3332,6 +3403,18 @@ async function openHistory(explicitMode){
       const data = await api("/pvp/history");
       renderPvpHistory(data.rounds || []);
     }catch(e){ list.innerHTML = `<div class="empty-state">Не удалось загрузить историю</div>`; }
+  }else if(mode === "redblack"){
+    title.textContent = "История Red&Black";
+    try{
+      const data = await api("/redblack/history");
+      renderRedBlackHistoryList(data.rounds || []);
+    }catch(e){ list.innerHTML = `<div class="empty-state">Не удалось загрузить историю</div>`; }
+  }else if(mode === "aviator"){
+    title.textContent = "История Ракетки";
+    try{
+      const data = await api("/aviator/history");
+      renderAviatorHistoryList(data.rounds || []);
+    }catch(e){ list.innerHTML = `<div class="empty-state">Не удалось загрузить историю</div>`; }
   }else{
     title.textContent = "История продаж";
     try{
@@ -3400,8 +3483,52 @@ function renderPvpHistory(rounds){
   `).join("");
 }
 
+function renderRedBlackHistoryList(rounds){
+  const list = document.getElementById("history-list");
+  if(!rounds.length){
+    list.innerHTML = `<div class="empty-state"><span class="emoji">🔴⚫</span>Раундов пока не было.</div>`;
+    return;
+  }
+  list.innerHTML = rounds.map(r => {
+    const name = r.username ? r.username : (r.first_name || "Игрок");
+    const colorEmoji = r.result === "red" ? "🔴" : "⚫";
+    const sign = r.won ? `+${r.payout - r.bet}` : `-${r.bet}`;
+    return `
+      <div class="history-row pvp-history-row">
+        <div class="info">
+          <div class="line1">${colorEmoji} ${name} — ${r.won ? "выиграл" : "проиграл"} ${sign} 💎</div>
+          <div class="line2">ставка ${r.bet} · ${fmtHistoryDate(r.created_at)}</div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function renderAviatorHistoryList(rounds){
+  const list = document.getElementById("history-list");
+  if(!rounds.length){
+    list.innerHTML = `<div class="empty-state"><span class="emoji">🚀</span>Раундов пока не было.</div>`;
+    return;
+  }
+  list.innerHTML = rounds.map(r => {
+    const name = r.username ? r.username : (r.first_name || "Игрок");
+    const won = r.status === "won";
+    const mult = won ? r.cashout_multiplier : r.crash_point;
+    const payout = won ? Math.round(r.bet * r.cashout_multiplier) : 0;
+    const sign = won ? `+${payout - r.bet}` : `-${r.bet}`;
+    return `
+      <div class="history-row pvp-history-row">
+        <div class="info">
+          <div class="line1">🚀 ${name} — ${won ? "забрал" : "улетела"} на ${mult.toFixed(2)}x (${sign} 💎)</div>
+          <div class="line2">ставка ${r.bet} · ${fmtHistoryDate(r.created_at)}</div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
 document.getElementById("market-history-btn").addEventListener("click", ()=>openHistory());
 document.getElementById("pvp-history-btn").addEventListener("click", ()=>openHistory("pvp"));
+document.getElementById("rb-history-btn").addEventListener("click", ()=>openHistory("redblack"));
+document.getElementById("av-history-btn").addEventListener("click", ()=>openHistory("aviator"));
 document.getElementById("history-close").addEventListener("click", ()=>{
   document.getElementById("history-overlay").classList.remove("active");
 });
@@ -3412,29 +3539,56 @@ document.getElementById("pvp-rules-btn").addEventListener("click", ()=>{
 document.getElementById("pvp-rules-close").addEventListener("click", ()=>{
   document.getElementById("pvp-rules-overlay").classList.remove("active");
 });
+document.getElementById("av-rules-btn").addEventListener("click", ()=>{
+  document.getElementById("av-rules-overlay").classList.add("active");
+});
+document.getElementById("av-rules-close").addEventListener("click", ()=>{
+  document.getElementById("av-rules-overlay").classList.remove("active");
+});
+document.getElementById("rb-rules-btn").addEventListener("click", ()=>{
+  document.getElementById("rb-rules-overlay").classList.add("active");
+});
+document.getElementById("rb-rules-close").addEventListener("click", ()=>{
+  document.getElementById("rb-rules-overlay").classList.remove("active");
+});
 
-async function openPvpTop(){
+const GAME_TOP_CONFIG = {
+  pvp:      { endpoint: "/pvp/leaderboard",      empty: "Пока никто не выиграл ни одного раунда.", empty_emoji: "⚔️",
+              title: "🏆 Топ 10 по победам в PvP", sub: "Больше всего выигранных раундов" },
+  redblack: { endpoint: "/redblack/leaderboard", empty: "Пока никто не сыграл ни одного раунда.",  empty_emoji: "🔴⚫",
+              title: "🏆 Топ 10 Red&Black", sub: "Больше всего выигранных гемов" },
+  aviator:  { endpoint: "/aviator/leaderboard",  empty: "Пока никто не сыграл ни одного раунда.",  empty_emoji: "🚀",
+              title: "🏆 Топ 10 Ракетки", sub: "Больше всего выигранных гемов" },
+};
+
+async function openGameTop(mode){
+  const cfg = GAME_TOP_CONFIG[mode];
+  document.getElementById("pvp-top-title").textContent = cfg.title;
+  document.getElementById("pvp-top-sub").textContent = cfg.sub;
   const rowsEl = document.getElementById("pvp-top-rows");
   rowsEl.innerHTML = `<div class="empty-state"><span class="emoji">⏳</span>Загрузка...</div>`;
   document.getElementById("pvp-top-overlay").classList.add("active");
   try{
-    const res = await api("/pvp/leaderboard");
+    const res = await api(cfg.endpoint);
     const rows = res.leaderboard || [];
     if(!rows.length){
-      rowsEl.innerHTML = `<div class="empty-state"><span class="emoji">⚔️</span>Пока никто не выиграл ни одного раунда.</div>`;
+      rowsEl.innerHTML = `<div class="empty-state"><span class="emoji">${cfg.empty_emoji}</span>${cfg.empty}</div>`;
       return;
     }
     const medals = ["🥇","🥈","🥉"];
     rowsEl.innerHTML = rows.map((r, i)=>{
       const name = r.username ? r.username : (r.first_name || `Игрок ${r.telegram_id}`);
       const rank = medals[i] || `${i + 1}.`;
-      return `<div class="pvp-top-row"><span class="rank">${rank}</span><span class="name">${name}</span><span class="wins">${r.wins} 🏆</span></div>`;
+      const valueLabel = mode === "pvp" ? `${r.wins} 🏆` : `${r.net_profit >= 0 ? "+" : ""}${r.net_profit} 💎`;
+      return `<div class="pvp-top-row"><span class="rank">${rank}</span><span class="name">${name}</span><span class="wins">${valueLabel}</span></div>`;
     }).join("");
   }catch(e){
     rowsEl.innerHTML = `<div class="empty-state"><span class="emoji">⚠️</span>Не удалось загрузить.</div>`;
   }
 }
-document.getElementById("pvp-top-btn").addEventListener("click", openPvpTop);
+document.getElementById("pvp-top-btn").addEventListener("click", ()=>openGameTop("pvp"));
+document.getElementById("rb-top-btn").addEventListener("click", ()=>openGameTop("redblack"));
+document.getElementById("av-top-btn").addEventListener("click", ()=>openGameTop("aviator"));
 document.getElementById("pvp-top-close").addEventListener("click", ()=>{
   document.getElementById("pvp-top-overlay").classList.remove("active");
 });
@@ -3771,6 +3925,7 @@ async function playRedBlack(choice){
   const btnRed = document.getElementById("rb-pick-red");
   const btnBlack = document.getElementById("rb-pick-black");
   btnRed.disabled = true; btnBlack.disabled = true;
+  document.getElementById("rb-share-btn").style.display = "none";
   try{
     const res = await api("/redblack/play", { bet: rbBet, choice });
     setGemsDisplay(res.gems);
@@ -3788,6 +3943,11 @@ async function playRedBlack(choice){
     void resultEl.offsetWidth;
     resultEl.classList.add("rb-pulse");
     prependRbHistory(res);
+    const shareBtn = document.getElementById("rb-share-btn");
+    shareBtn.style.display = "block";
+    shareBtn.textContent = "Поделиться в чат";
+    shareBtn.disabled = false;
+    shareBtn.onclick = ()=>shareGameResult("redblack", res.round_id, shareBtn);
   }catch(e){
     toast("Ошибка: " + e.message);
   }finally{
@@ -3865,6 +4025,7 @@ async function startAviator(){
     avRoundId = res.round_id;
     if(!isAdminUser) setGemsDisplay(gemsBalance - avBet); // start_aviator already deducted the bet server-side
     document.getElementById("av-result").innerHTML = "";
+    document.getElementById("av-share-btn").style.display = "none";
     showAviatorFlying();
     updateAviatorMultiplier(1.00, false);
     stopAviatorPolling();
@@ -3884,17 +4045,24 @@ function stopAviatorPolling(){
 
 function onAviatorCrashed(st){
   const crash = st.crash_point ?? st.multiplier ?? 0;
+  const finishedRoundId = avRoundId;
   document.getElementById("av-result").innerHTML =
     `<span class="av-lose">💥 Улетела на ${crash.toFixed(2)}x — проигрыш -${st.bet} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></span>`;
   tg?.HapticFeedback?.notificationOccurred("error");
   prependAvHistory({ won: false, multiplier: crash });
   avRoundId = null;
   showAviatorIdle();
+  const shareBtn = document.getElementById("av-share-btn");
+  shareBtn.style.display = "block";
+  shareBtn.textContent = "Поделиться в чат";
+  shareBtn.disabled = false;
+  shareBtn.onclick = ()=>shareGameResult("aviator", finishedRoundId, shareBtn);
 }
 
 function onAviatorCashedOut(res){
   const multiplier = res.multiplier ?? (avBet > 0 ? res.payout / avBet : 0);
   const profit = res.payout - res.bet;
+  const finishedRoundId = avRoundId;
   document.getElementById("av-result").innerHTML =
     `<span class="av-win">✅ Забрал на ${multiplier.toFixed(2)}x — выигрыш +${profit} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></span>`;
   tg?.HapticFeedback?.notificationOccurred("success");
@@ -3902,6 +4070,11 @@ function onAviatorCashedOut(res){
   avRoundId = null;
   if(typeof res.gems === "number") setGemsDisplay(res.gems);
   showAviatorIdle();
+  const shareBtn = document.getElementById("av-share-btn");
+  shareBtn.style.display = "block";
+  shareBtn.textContent = "Поделиться в чат";
+  shareBtn.disabled = false;
+  shareBtn.onclick = ()=>shareGameResult("aviator", finishedRoundId, shareBtn);
 }
 
 async function pollAviator(){
@@ -4052,6 +4225,7 @@ function openPvpReveal(result){
   outcome.className = "";
   outcome.textContent = "";
   closeBtn.style.display = "none";
+  document.getElementById("pvp-reveal-share").style.display = "none";
 
   const gradient = segments.length
     ? segments.map(s=>`${s.color} ${s.start}deg ${s.end}deg`).join(", ")
@@ -4099,6 +4273,11 @@ function openPvpReveal(result){
       ? `Ты выиграл! Забрал весь банк — ${pluralCards(result.total_cards)}.`
       : `Победил ${result.winner_name} — забрал ${pluralCards(result.total_cards)} у ${result.total_players} игроков.`;
     closeBtn.style.display = "block";
+    const shareBtn = document.getElementById("pvp-reveal-share");
+    shareBtn.style.display = "block";
+    shareBtn.textContent = "Поделиться в чат";
+    shareBtn.disabled = false;
+    shareBtn.onclick = ()=>shareGameResult("pvp", result.round_id, shareBtn);
   };
   wheel.addEventListener("transitionend", finish, { once: true });
   setTimeout(finish, 4600); // fallback in case transitionend doesn't fire

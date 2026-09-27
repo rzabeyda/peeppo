@@ -1250,6 +1250,74 @@ async def handle_inline_share(inline_query: InlineQuery):
 
 
 # ---------------------------------------------------------------------------
+# "Поделиться" share buttons in the Игры tab (PvP / Ракетка / Red&Black) -- the player
+# taps Share on a round they just played, api.py verifies the round belongs to them
+# and re-derives the outcome server-side (never trusts the client's own numbers), then
+# one of these posts a single message into PUBLIC_CHAT. Each returns True/False so the
+# endpoint can tell the player whether it actually went through.
+# ---------------------------------------------------------------------------
+
+def _display_name(username: str | None, first_name: str | None) -> str:
+    return f"@{username}" if username else (first_name or "Игрок")
+
+
+async def share_redblack_result(round_id: int) -> bool:
+    round_row = db.get_redblack_round(round_id)
+    if round_row is None:
+        return False
+    name = _display_name(round_row.get("username"), round_row.get("first_name"))
+    color = "🔴 Красное" if round_row["result"] == "red" else "⚫ Чёрное"
+    if round_row["won"]:
+        profit = round_row["payout"] - round_row["bet"]
+        text = f"🎲 {name} сыграл в Red&Black — выпало {color}, угадал и забрал +{profit} 💎!"
+    else:
+        text = f"🎲 {name} сыграл в Red&Black — выпало {color}, не угадал и потерял {round_row['bet']} 💎"
+    try:
+        await bot.send_message(PUBLIC_CHAT, text)
+        return True
+    except Exception:
+        logger.warning("could not share redblack round %s", round_id)
+        return False
+
+
+async def share_aviator_result(round_id: int) -> bool:
+    round_row = db.get_aviator_round(round_id)
+    if round_row is None or round_row["status"] not in ("won", "lost"):
+        return False
+    name = _display_name(round_row.get("username"), round_row.get("first_name"))
+    if round_row["status"] == "won":
+        payout = int(round(round_row["bet"] * round_row["cashout_multiplier"]))
+        text = (
+            f"🚀 {name} сыграл в Ракетку — забрал на {round_row['cashout_multiplier']:.2f}x, "
+            f"выигрыш +{payout - round_row['bet']} 💎!"
+        )
+    else:
+        text = f"🚀 {name} сыграл в Ракетку — улетела на {round_row['crash_point']:.2f}x, проигрыш {round_row['bet']} 💎"
+    try:
+        await bot.send_message(PUBLIC_CHAT, text)
+        return True
+    except Exception:
+        logger.warning("could not share aviator round %s", round_id)
+        return False
+
+
+async def share_pvp_result(round_id: int) -> bool:
+    round_row = db.get_last_resolved_pvp_round(round_id)
+    if round_row is None:
+        return False
+    text = (
+        f"⚔️ Розыгрыш PvP: {round_row['winner_name']} забрал банк — "
+        f"{round_row['total_cards']} карт у {round_row['total_players']} игроков!"
+    )
+    try:
+        await bot.send_message(PUBLIC_CHAT, text)
+        return True
+    except Exception:
+        logger.warning("could not share pvp round %s", round_id)
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Referral race — /ref shows a top-5 leaderboard, counting only referrals who've
 # farmed at least one card AND joined PUBLIC_CHAT (see database.py's
 # get_unverified_ref_candidates()/mark_chat_verified()/get_ref_leaderboard()). A
