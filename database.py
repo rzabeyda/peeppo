@@ -513,6 +513,10 @@ def init_db():
         # way as last_daily_bonus (UTC calendar day).
         if "last_wheel_spin" not in u_cols:
             conn.execute("ALTER TABLE users ADD COLUMN last_wheel_spin TEXT")
+        # migration for the PvP "Позвать игрока" chat ping button — cooldown so one
+        # player can't spam PUBLIC_CHAT with invites (see PVP_INVITE_COOLDOWN_SECONDS).
+        if "last_pvp_invite_at" not in u_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN last_pvp_invite_at TEXT")
         # migration for burn_cards() — see its docstring for why this is "soft destroy"
         # (voided=1) rather than an actual DELETE.
         if "voided" not in uc_cols:
@@ -3959,6 +3963,42 @@ def join_pvp_round(user_id: int, user_card_ids: list[int]) -> dict:
             conn.execute("UPDATE pvp_rounds SET lock_at = ? WHERE id = ?", (lock_at, round_id))
 
     return get_pvp_state(user_id)
+
+
+PVP_INVITE_COOLDOWN_SECONDS = 30  # keeps "Позвать игрока" from spamming PUBLIC_CHAT
+
+
+def is_in_open_pvp_round(user_id: int) -> bool:
+    """True if user_id currently has at least one card staked in the CURRENT open PvP
+    lobby round (i.e. get_pvp_state()'s you_joined for this user) -- used to gate
+    "Позвать игрока" so only someone who has actually staked cards can ping the chat."""
+    with get_conn() as conn:
+        round_id = _get_or_create_open_round(conn)
+        row = conn.execute(
+            "SELECT 1 FROM pvp_entries WHERE round_id = ? AND user_id = ? LIMIT 1",
+            (round_id, user_id),
+        ).fetchone()
+        return row is not None
+
+
+def try_pvp_invite(user_id: int) -> dict:
+    """Claims the right to post one "зовёт в PvP" ping into PUBLIC_CHAT, gated by
+    PVP_INVITE_COOLDOWN_SECONDS per player (not global -- each player gets their own
+    cooldown clock). Returns {"ok": True} and stamps last_pvp_invite_at the instant
+    this call is allowed to go through (bot.py sends the actual chat message right
+    after, so the stamp and the send happen back to back); {"ok": False,
+    "seconds_left": int} if the player is still on cooldown -- the caller shows that
+    instead of posting anything."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT last_pvp_invite_at FROM users WHERE telegram_id = ?", (user_id,)
+        ).fetchone()
+        if row and row["last_pvp_invite_at"]:
+            elapsed = (datetime.now(timezone.utc) - _parse_utc(row["last_pvp_invite_at"])).total_seconds()
+            if elapsed < PVP_INVITE_COOLDOWN_SECONDS:
+                return {"ok": False, "seconds_left": int(PVP_INVITE_COOLDOWN_SECONDS - elapsed)}
+        conn.execute("UPDATE users SET last_pvp_invite_at = ? WHERE telegram_id = ?", (_now(), user_id))
+    return {"ok": True}
 
 
 def get_pvp_state(viewer_id: int | None = None) -> dict:

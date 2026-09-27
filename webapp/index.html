@@ -857,6 +857,12 @@
     width:100%; margin-top:10px;
   }
   #pvp-join-btn:disabled{background:#3a3a3a; color:#888; cursor:not-allowed;}
+  .pvp-invite-btn{
+    background:#3b82f6; color:#fff; border:none; border-radius:12px;
+    padding:11px 14px; font-size:13px; font-weight:800; cursor:pointer;
+    width:100%; margin-top:8px;
+  }
+  .pvp-invite-btn:disabled{background:#3a3a3a; color:#888; cursor:not-allowed;}
   .pvp-legend{width:100%; margin-top:12px; display:flex; flex-direction:column; gap:8px;}
   .pvp-participant{
     background:var(--card-bg); border:1px solid var(--card-border); border-radius:14px;
@@ -903,7 +909,7 @@
   #pvp-reveal-outcome.won{color:var(--accent2);}
   #pvp-reveal-close{
     display:none; margin-top:16px; width:100%;
-    background:var(--accent); color:#fff; border:none; border-radius:12px;
+    background:#4a4a4a; color:#fff; border:none; border-radius:12px;
     padding:12px; font-size:13px; font-weight:700; cursor:pointer;
   }
 
@@ -1062,8 +1068,8 @@
   #av-rules-text, #rb-rules-text{font-size:13px; color:#ccc; line-height:1.5;}
 
   .game-share-btn{
-    width:100%; padding:11px 0; border-radius:12px; border:1px solid var(--card-border);
-    background:#161616; color:#facc15; font-weight:700; font-size:13px; cursor:pointer;
+    width:100%; margin-top:10px; padding:11px 0; border-radius:12px; border:none;
+    background:#3b82f6; color:#fff; font-weight:700; font-size:13px; cursor:pointer;
   }
   .game-share-btn:disabled{opacity:.6; cursor:not-allowed;}
 
@@ -2647,8 +2653,8 @@
       </div>
       <div id="pvp-reveal-legend"></div>
       <div id="pvp-reveal-outcome"></div>
-      <button class="game-share-btn" id="pvp-reveal-share" style="display:none">Поделиться в чат</button>
       <button id="pvp-reveal-close">Закрыть</button>
+      <button class="game-share-btn" id="pvp-reveal-share" style="display:none">Поделиться в чат</button>
     </div>
   </div>
 
@@ -4186,12 +4192,32 @@ function renderPvp(){
         <div class="pvp-timer ${counting ? 'counting' : ''}">${timerText}</div>
       </div>
       <button id="pvp-join-btn" ${joinClosed ? "disabled" : ""}>${joinClosed ? "Ставки закрыты" : "Поставить карты"}</button>
+      <button id="pvp-invite-btn" class="pvp-invite-btn">Позвать игрока</button>
       <div class="pvp-legend">${legendRows}</div>
     </div>
   `;
   if(!joinClosed){
     document.getElementById("pvp-join-btn").addEventListener("click", openPvpPicker);
   }
+  document.getElementById("pvp-invite-btn").addEventListener("click", async (e)=>{
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try{
+      await api("/pvp/invite");
+      toast("Зов отправлен в чат!");
+    }catch(err){
+      const m = err.message || "";
+      const coolMatch = m.match(/cooldown:\s*(\d+)s/);
+      if(coolMatch){
+        const s = parseInt(coolMatch[1], 10);
+        toast(`Можно звать раз в 30 секунд — подожди ещё ~${s} сек.`);
+      }else{
+        toast("Не удалось позвать: " + m);
+      }
+    }finally{
+      setTimeout(()=>{ btn.disabled = false; }, 1500);
+    }
+  });
 
   // Reveal the previous round's outcome exactly once per player — the server tells us
   // via unseen_result (and marks it seen the moment it hands it to us), since there's

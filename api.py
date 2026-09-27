@@ -656,6 +656,26 @@ async def pvp_join(body: PvpJoinBody):
     return state
 
 
+@app.post("/api/pvp/invite")
+async def pvp_invite(body: InitDataBody):
+    """"Позвать игрока" button -- pings PUBLIC_CHAT to invite others into the open PvP
+    bank. Rate-limited per player server-side (db.try_pvp_invite)."""
+    user = _authenticate(body.initData)
+    if not db.is_in_open_pvp_round(user["telegram_id"]):
+        raise HTTPException(400, "not_joined: stake cards in the pvp bank first")
+    claim = db.try_pvp_invite(user["telegram_id"])
+    if not claim["ok"]:
+        raise HTTPException(429, f"cooldown: {claim['seconds_left']}s left")
+
+    import bot as bot_module
+
+    name = f"@{user['username']}" if user.get("username") else (user.get("first_name") or "Игрок")
+    ok = await bot_module.send_pvp_invite(name)
+    if not ok:
+        raise HTTPException(502, "could not post to chat")
+    return {"ok": True}
+
+
 @app.post("/api/market/history")
 def market_history(body: InitDataBody):
     _authenticate(body.initData)
