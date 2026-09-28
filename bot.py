@@ -18,7 +18,7 @@ import asyncio
 import logging
 import os
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
@@ -197,16 +197,34 @@ async def handle_admin_panel(message: Message):
         f"Юзеры: <b>{stats['users']}</b>\n"
         f"Сегодня: <b>{stats['active_today']}</b>\n"
         f"Карты: <b>{stats['total_farmed']}</b>\n"
+        f"Фарм: <b>{stats['farms_pressed']}</b>\n"
         f"Кейсы: <b>{stats['cases_bought']}</b>\n"
         f"Крафт: <b>{stats['cards_crafted']}</b>\n"
-        f"Эволюция: <b>{stats['cards_evolved']}</b>\n\n"
+        f"Эволюция: <b>{stats['cards_evolved']}</b>\n"
+        f"Стейки: <b>{stats['cards_staked']}</b>\n\n"
         "<b>Команды:</b>\n"
         "/addgem id_или_@username кол-во — начислить гемы\n"
         "/cardgiveaway [редкость] [кол-во] [мин] [макс] — мгновенный розыгрыш ТВОИХ карт среди всех юзеров бота\n"
         "/numbergiveaway номер [часов] — розыгрыш ТВОЕЙ карты с этим номером живьём в чате (кнопка «Участвовать», по умолчанию 1 час)\n"
-        "/cardsgiveaway [часов] — розыгрыш ВСЕХ твоих карт кроме diamond сразу, живьём в чате (кнопка «Участвовать», карты раздаются случайно между всеми, кто нажал)",
+        "/cardsgiveaway [часов] — розыгрыш ВСЕХ твоих карт кроме diamond сразу, живьём в чате (кнопка «Участвовать», карты раздаются случайно между всеми, кто нажал)\n"
+        "/topstakers — топ-10 по заработку на стейкинге",
         parse_mode="HTML",
     )
+
+
+@dp.message(Command("topstakers"))
+async def handle_top_stakers(message: Message):
+    if not _is_admin(message.from_user.id):
+        return
+    rows = db.get_top_stakers(10)
+    if not rows:
+        await message.answer("Пока никто ничего не заработал на стейкинге.")
+        return
+    lines = ["📊 <b>Топ-10 по стейкингу</b> (всего заработано гемов)\n"]
+    for i, r in enumerate(rows, 1):
+        name = f"@{r['username']}" if r['username'] else (r['first_name'] or f"id{r['telegram_id']}")
+        lines.append(f"{i}. {name} — <b>{r['staking_gems_earned']}</b> 💎")
+    await message.answer("\n".join(lines), parse_mode="HTML")
 
 
 @dp.message(Command("addgem", "addgems"))
@@ -277,7 +295,7 @@ async def handle_admin_find_user(message: Message):
     )
 
 
-GEM_DROP_AMOUNT = 50
+GEM_DROP_AMOUNT = 25
 
 # Auto-scheduler: fires roughly once every hour, round the clock (24/7 — used to be
 # limited to 06:00-00:00 Tallinn time, now runs all 24 hours). GEM_DROP_MIN_GAP_SECONDS
@@ -1150,8 +1168,10 @@ async def send_share_message(user_id: int, photo_path: str, card_name: str | Non
 # ---------------------------------------------------------------------------
 
 def _withdrawal_text(withdrawal_id: int, card_count: int, gram_amount: int, wallet_address: str,
-                      status_line: str = "") -> str:
+                      display_name: str = "", user_id: int | None = None, status_line: str = "") -> str:
+    player_line = f"Игрок: {display_name} (id {user_id})\n\n" if display_name else ""
     text = (
+        f"{player_line}"
         f"⭐ <b>Заявка на вывод Stars</b> #{withdrawal_id}\n\n"
         f"Карт Diamond: <b>{card_count}</b>\n"
         f"К выплате: <b>{gram_amount} Stars</b>"
@@ -1171,8 +1191,7 @@ async def notify_admin_withdrawal_request(withdrawal_id: int, user_id: int, disp
     kb.button(text="❌ Отменить", callback_data=f"crypto_cancel:{withdrawal_id}")
     kb.adjust(2)
     text = (
-        f"Игрок: {display_name} (id {user_id})\n\n" +
-        _withdrawal_text(withdrawal_id, card_count, gram_amount, wallet_address) +
+        _withdrawal_text(withdrawal_id, card_count, gram_amount, wallet_address, display_name, user_id) +
         "\n\nОтправь Stars игроку вручную, затем нажми «Оплатить»."
     )
     try:
@@ -1191,10 +1210,12 @@ async def handle_crypto_pay(call: CallbackQuery):
     if result is None:
         await call.answer("Заявка уже обработана", show_alert=True)
         return
+    payer = db.get_user(result["user_id"])
+    display_name = _display_name(payer["username"], payer["first_name"]) if payer else ""
     try:
         await call.message.edit_text(
             _withdrawal_text(withdrawal_id, result["card_count"], result["gram_amount"],
-                              result["wallet_address"], "✅ <b>Оплачено</b>"),
+                              result["wallet_address"], display_name, result["user_id"], "✅ <b>Оплачено</b>"),
             parse_mode="HTML",
         )
     except Exception:
@@ -1219,10 +1240,12 @@ async def handle_crypto_cancel(call: CallbackQuery):
     if result is None:
         await call.answer("Заявка уже обработана", show_alert=True)
         return
+    payer = db.get_user(result["user_id"])
+    display_name = _display_name(payer["username"], payer["first_name"]) if payer else ""
     try:
         await call.message.edit_text(
             _withdrawal_text(withdrawal_id, result["card_count"], result["gram_amount"],
-                              result["wallet_address"], "❌ <b>Отменено</b>"),
+                              result["wallet_address"], display_name, result["user_id"], "❌ <b>Отменено</b>"),
             parse_mode="HTML",
         )
     except Exception:
@@ -1349,7 +1372,7 @@ async def send_pvp_invite(name: str) -> bool:
     """"Позвать игрока" button in the PvP lobby -- one ping into PUBLIC_CHAT inviting
     others to join the open bank. Cooldown is enforced server-side by
     db.try_pvp_invite() before this is ever called."""
-    text = f"⚔️ {name} зовёт в PvP — кто со мной? Заходи в приложение и ставь карты!"
+    text = f"⚔️ {name} зовёт в PvP"
     try:
         await bot.send_message(PUBLIC_CHAT, text)
         return True
@@ -1858,15 +1881,29 @@ async def handle_aviator_cashout(call: CallbackQuery):
         logger.warning("could not edit aviator result message for user %s", call.from_user.id)
 
 
+# Countdown pings before the race ends, each fired exactly once (db.ref_race_countdown_sent
+# guards it, same idempotency pattern as the final announcement below). Ordered soonest-
+# first so the loop can just iterate and check each one every tick.
+REF_RACE_COUNTDOWN_STAGES = [
+    ("24h", timedelta(hours=24), "⏰ До конца реферальной гонки остались сутки! Успей пригласить друзей и попасть в топ-5 🏆"),
+    ("4h", timedelta(hours=4), "🔥 До конца реферальной гонки осталось 4 часа! Финальный рывок"),
+    ("1h", timedelta(hours=1), "⌛ До конца реферальной гонки остался 1 час! Последний шанс попасть в топ-5"),
+    ("5m", timedelta(minutes=5), "🚨 До конца реферальной гонки осталось 5 минут!"),
+]
+
+
 async def ref_race_scheduler():
-    """Background loop living for the lifetime of the bot process: once real time
-    passes REF_RACE_ANNOUNCE_AT, posts the leaderboard to PUBLIC_CHAT exactly once
-    (guarded by db.has_ref_race_been_announced(), same idempotency pattern as
-    check_hundred_club/hundred_club) and keeps looping harmlessly forever after."""
+    """Background loop living for the lifetime of the bot process: posts a countdown
+    ping to PUBLIC_CHAT at 24h/4h/1h/5m before REF_RACE_ANNOUNCE_AT (each exactly once,
+    guarded by db.has_ref_race_countdown_been_sent()), then once real time passes
+    REF_RACE_ANNOUNCE_AT itself, posts the final leaderboard exactly once (guarded by
+    db.has_ref_race_been_announced(), same idempotency pattern as check_hundred_club/
+    hundred_club) and keeps looping harmlessly forever after."""
     logger.info("referral race scheduler started")
     while True:
         try:
-            if not db.has_ref_race_been_announced() and datetime.now(ZoneInfo("Europe/Moscow")) >= REF_RACE_ANNOUNCE_AT:
+            now = datetime.now(ZoneInfo("Europe/Moscow"))
+            if not db.has_ref_race_been_announced() and now >= REF_RACE_ANNOUNCE_AT:
                 await sync_referral_chat_verification()
                 rows = db.get_ref_leaderboard(5, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)
                 text = "🏁 Реферальная гонка завершена!\n\n" + format_ref_leaderboard(rows)
@@ -1875,9 +1912,22 @@ async def ref_race_scheduler():
                 except Exception:
                     logger.warning("could not post ref race results to %s", PUBLIC_CHAT)
                 db.mark_ref_race_announced()
+            elif not db.has_ref_race_been_announced():
+                for stage, remaining, headline in REF_RACE_COUNTDOWN_STAGES:
+                    if db.has_ref_race_countdown_been_sent(stage):
+                        continue
+                    if now >= REF_RACE_ANNOUNCE_AT - remaining:
+                        await sync_referral_chat_verification()
+                        rows = db.get_ref_leaderboard(5, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)
+                        text = headline + "\n\n" + format_ref_leaderboard(rows)
+                        try:
+                            await bot.send_message(PUBLIC_CHAT, text)
+                        except Exception:
+                            logger.warning("could not post ref race %s countdown to %s", stage, PUBLIC_CHAT)
+                        db.mark_ref_race_countdown_sent(stage)
         except Exception:
             logger.exception("ref race scheduler iteration failed")
-        await asyncio.sleep(300)
+        await asyncio.sleep(60)  # tight enough that the 5-minute checkpoint stays meaningful
 
 
 async def referral_chat_verification_scheduler():

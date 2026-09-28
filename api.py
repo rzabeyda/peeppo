@@ -195,6 +195,24 @@ class AviatorRoundBody(InitDataBody):
     round_id: int
 
 
+class PokerDealBody(InitDataBody):
+    bet: int
+
+
+class PokerDrawBody(InitDataBody):
+    round_id: int
+    hold_mask: list[bool]
+
+
+class PokerGambleBody(InitDataBody):
+    round_id: int
+    choice: str
+
+
+class PokerRoundBody(InitDataBody):
+    round_id: int
+
+
 class GameShareBody(InitDataBody):
     game: str  # "pvp" | "redblack" | "aviator"
     round_id: int
@@ -231,6 +249,34 @@ class NumberCancelListingBody(InitDataBody):
 class NumberBuyListedBody(InitDataBody):
     number: int
     user_card_id: int
+
+
+class NameCreateBody(InitDataBody):
+    name: str
+
+
+class NameBidBody(InitDataBody):
+    name: str
+    amount: int
+
+
+class NameListBody(InitDataBody):
+    name: str
+    price_gems: int
+
+
+class NameCancelListingBody(InitDataBody):
+    name: str
+
+
+class NameBuyListedBody(InitDataBody):
+    name: str
+
+
+class CustomNftCreateBody(InitDataBody):
+    user_card_id: int
+    name: str
+    number: int
 
 
 class WallPinBody(InitDataBody):
@@ -333,7 +379,7 @@ async def farm(body: InitDataBody):
         who_name = f"@{user['username']}" if user.get("username") else (user.get("first_name") or "Реферал")
         db.set_referral_notice(referral_reward["referrer_id"], who_name, referral_reward["amount"])
 
-    if result.get("rarity") == "diamond":
+    if result.get("rarity") == "diamond" and (user.get("username") or "").lower() not in ("rzabeyda", "zzabeyda"):
         import bot as bot_module
         display_name = f"@{user['username']}" if user.get("username") else (user.get("first_name") or "Игрок")
         await bot_module.notify_diamond_farmed(display_name, result["name"])
@@ -773,6 +819,63 @@ def aviator_cashout(body: AviatorRoundBody):
         raise HTTPException(400, str(e))
 
 
+@app.post("/api/poker/deal")
+def poker_deal(body: PokerDealBody):
+    """Charges the bet and deals a fresh 5-card hand -- everything server-side, the
+    client only ever supplies the bet amount."""
+    user = _authenticate(body.initData)
+    try:
+        return db.deal_poker(user["telegram_id"], body.bet)
+    except db.PokerError as e:
+        raise HTTPException(400, str(e))
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
+
+
+@app.post("/api/poker/draw")
+def poker_draw(body: PokerDrawBody):
+    """Replaces the non-held cards, evaluates the hand, and credits any win --
+    hold_mask must be exactly 5 booleans, same order as the cards dealt."""
+    user = _authenticate(body.initData)
+    try:
+        return db.draw_poker(body.round_id, user["telegram_id"], body.hold_mask)
+    except db.PokerError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/poker/gamble")
+def poker_gamble(body: PokerGambleBody):
+    """Double-up: a fair 50/50 flip on the current running payout."""
+    user = _authenticate(body.initData)
+    try:
+        return db.gamble_poker(body.round_id, user["telegram_id"], body.choice)
+    except db.PokerError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/poker/collect")
+def poker_collect(body: PokerRoundBody):
+    """Closes out a won round -- gems were already credited live, this is just a
+    status flip."""
+    user = _authenticate(body.initData)
+    try:
+        return db.collect_poker(body.round_id, user["telegram_id"])
+    except db.PokerError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/poker/history")
+def poker_history(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"rounds": db.get_poker_history()}
+
+
+@app.post("/api/poker/leaderboard")
+def poker_leaderboard(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"leaderboard": db.get_poker_leaderboard(10)}
+
+
 @app.post("/api/redblack/history")
 def redblack_history(body: InitDataBody):
     _authenticate(body.initData)
@@ -981,6 +1084,110 @@ def numbers_buy_listed(body: NumberBuyListedBody):
     except db.InsufficientGems:
         raise HTTPException(400, "not enough gems")
     result["gems"] = db.get_gems(user["telegram_id"])
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Custom-name marketplace ("Имена") + Custom NFT ("Obsidian").
+# ---------------------------------------------------------------------------
+
+@app.post("/api/names/board")
+def names_board(body: InitDataBody):
+    user = _authenticate(body.initData)
+    board = db.get_names_board()
+    board["gems"] = db.get_gems(user["telegram_id"])
+    return board
+
+
+@app.post("/api/names/mine")
+def names_mine(body: InitDataBody):
+    user = _authenticate(body.initData)
+    return {"names": db.get_my_names(user["telegram_id"])}
+
+
+@app.post("/api/names/owners")
+def names_owners(body: InitDataBody):
+    """"Владельцы" tab -- every owned name and by whom."""
+    _authenticate(body.initData)
+    return {"names": db.get_all_owned_names()}
+
+
+@app.post("/api/names/create")
+def names_create(body: NameCreateBody):
+    user = _authenticate(body.initData)
+    try:
+        result = db.create_name_auction(user["telegram_id"], body.name)
+    except db.NameInvalid:
+        raise HTTPException(400, f"name must be 1-{db.CUSTOM_NAME_MAX_LEN} English letters/digits")
+    except db.NameTaken:
+        raise HTTPException(400, "this name is already taken")
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
+    return result
+
+
+@app.post("/api/names/bid")
+def names_bid(body: NameBidBody):
+    user = _authenticate(body.initData)
+    try:
+        result = db.place_name_bid(user["telegram_id"], body.name, body.amount)
+    except db.NameNotAvailable:
+        raise HTTPException(404, "name isn't up for auction right now")
+    except db.NameBidTooLow as e:
+        raise HTTPException(400, f"minimum bid is {e.min_bid} gems")
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
+    return result
+
+
+@app.post("/api/names/list")
+def names_list(body: NameListBody):
+    user = _authenticate(body.initData)
+    try:
+        db.list_name_for_sale(user["telegram_id"], body.name, body.price_gems)
+    except db.ListingPriceTooLow as e:
+        raise HTTPException(400, f"minimum price is {e.min_price} gems")
+    except db.NameNotAvailable:
+        raise HTTPException(404, "you don't own this name")
+    return {"ok": True}
+
+
+@app.post("/api/names/cancel_listing")
+def names_cancel_listing(body: NameCancelListingBody):
+    user = _authenticate(body.initData)
+    try:
+        db.cancel_name_listing(user["telegram_id"], body.name)
+    except db.NameNotAvailable:
+        raise HTTPException(404, "listing not found")
+    return {"ok": True}
+
+
+@app.post("/api/names/buy_listed")
+def names_buy_listed(body: NameBuyListedBody):
+    user = _authenticate(body.initData)
+    try:
+        result = db.buy_listed_name(user["telegram_id"], body.name)
+    except db.NameNotAvailable:
+        raise HTTPException(404, "listing no longer available")
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
+    result["gems"] = db.get_gems(user["telegram_id"])
+    return result
+
+
+@app.post("/api/custom_nft/create")
+def custom_nft_create(body: CustomNftCreateBody):
+    user = _authenticate(body.initData)
+    try:
+        result = db.create_custom_nft(user["telegram_id"], body.user_card_id, body.name, body.number)
+    except db.InsufficientGems:
+        raise HTTPException(400, f"need at least {db.CUSTOM_NFT_MIN_GEMS_REQUIRED} gems")
+    except db.NumberCardNotUsable:
+        raise HTTPException(404, "card not found in your inventory, or it's busy (listed/staked/swapped/in a PvP round)")
+    except db.NameNotAvailable:
+        raise HTTPException(404, "you don't own this name")
+    except db.NumberNotAvailable:
+        raise HTTPException(404, "you don't own this number")
     return result
 
 

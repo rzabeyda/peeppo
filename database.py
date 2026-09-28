@@ -179,6 +179,14 @@ CREATE TABLE IF NOT EXISTS ref_race_announced (
     announced_at  TEXT NOT NULL
 );
 
+-- Countdown pings before the referral race ends ('24h', '4h', '1h', '5m') -- separate
+-- from ref_race_announced (the final results post) so each of the 4 reminders fires
+-- exactly once, independent of the others and of the final announcement.
+CREATE TABLE IF NOT EXISTS ref_race_countdown_sent (
+    stage    TEXT PRIMARY KEY,
+    sent_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS daily_command_broadcast (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     posted_date   TEXT NOT NULL UNIQUE  -- calendar date (Europe/Tallinn), YYYY-MM-DD
@@ -208,6 +216,29 @@ CREATE TABLE IF NOT EXISTS redblack_rounds (
     won           INTEGER NOT NULL,
     payout        INTEGER NOT NULL,
     created_at    TEXT NOT NULL
+);
+
+-- American Poker '90s -- one row per hand from deal() through its eventual
+-- collect()/bust. status: dealt (waiting on draw()) -> won/lost (post-draw; won means
+-- payout > 0 and still open to gamble or collect) -> collected/busted (final). Gems are
+-- credited/debited live at each step (draw win, each gamble win/loss) rather than held
+-- in escrow, so the balance is always correct even if the client abandons a round
+-- mid-gamble -- collect() just marks the round closed, no gems move there.
+CREATE TABLE IF NOT EXISTS poker_rounds (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL REFERENCES users(telegram_id),
+    bet            INTEGER NOT NULL,
+    dealt_cards    TEXT NOT NULL,           -- JSON list of 5 card codes, e.g. ["AS","TH",...]
+    deck_remaining TEXT NOT NULL,           -- JSON list of the other 47 cards, in draw order
+    held_mask      TEXT,                    -- JSON list of 5 booleans, set by draw()
+    final_cards    TEXT,                    -- JSON list of 5 card codes after the draw
+    category       TEXT,                    -- winning hand category, or 'nothing'
+    base_payout    INTEGER,                 -- payout from the draw itself, before any gambling
+    current_payout INTEGER,                 -- running payout through the gamble chain; 0 once busted
+    gamble_count   INTEGER NOT NULL DEFAULT 0,
+    gamble_joker_used INTEGER NOT NULL DEFAULT 0,  -- the one guaranteed-win Joker reveal per round, already spent or not
+    status         TEXT NOT NULL DEFAULT 'dealt',
+    created_at     TEXT NOT NULL
 );
 
 -- Simple lifetime action counters for the /admin panel (cases bought, cards crafted,
@@ -273,6 +304,31 @@ CREATE TABLE IF NOT EXISTS card_numbers (
 );
 
 CREATE INDEX IF NOT EXISTS idx_card_numbers_owner ON card_numbers(owner_id);
+
+-- Custom-name marketplace ("Имена") -- same state machine as card_numbers, keyed by
+-- the name string (canonical lowercase) instead of a number:
+--   auction — created just now or still being bid on; highest_bid/highest_bidder_id/
+--             bid_expires_at track the fight, same 12h-reset-on-every-bid rule as
+--             card_numbers. Names have no 'free' status -- a name only starts
+--             existing the moment someone creates it (that creation IS the first bid).
+--   owned   — owner_id owns it outright; user_card_id is set when it's currently
+--             attached to one of their Custom NFT cards (NULL means "in the bank,
+--             not used yet"), list_price is set when listed for resale.
+-- See create_name_auction() / place_name_bid() / create_custom_nft().
+CREATE TABLE IF NOT EXISTS card_names (
+    name                TEXT PRIMARY KEY,
+    status              TEXT NOT NULL DEFAULT 'auction',
+    owner_id            INTEGER REFERENCES users(telegram_id),
+    user_card_id        INTEGER REFERENCES user_cards(id),
+    highest_bid         INTEGER,
+    highest_bidder_id   INTEGER REFERENCES users(telegram_id),
+    bid_expires_at      TEXT,
+    list_price          INTEGER,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_card_names_owner ON card_names(owner_id);
 
 -- Batch card giveaways: /cardsgiveaway [часов] -- admin gives away ALL of their
 -- currently-owned non-diamond cards at once, live in chat for a chosen duration.
@@ -398,6 +454,8 @@ def get_action_counters() -> dict[str, int]:
         "cases_bought": counts.get("case_open", 0),
         "cards_crafted": counts.get("craft", 0),
         "cards_evolved": counts.get("evolve", 0),
+        "farms_pressed": counts.get("farm", 0),
+        "cards_staked": counts.get("stake", 0),
     }
 
 
@@ -433,6 +491,11 @@ def init_db():
             conn.execute("ALTER TABLE user_cards ADD COLUMN number_override INTEGER")
         if "pinned_at" not in uc_cols:
             conn.execute("ALTER TABLE user_cards ADD COLUMN pinned_at TEXT")
+        # migration for DBs created before the Custom NFT ("Obsidian") feature existed
+        if "custom_name" not in uc_cols:
+            conn.execute("ALTER TABLE user_cards ADD COLUMN custom_name TEXT")
+        if "custom_rarity" not in uc_cols:
+            conn.execute("ALTER TABLE user_cards ADD COLUMN custom_rarity TEXT")
         # migration for DBs created before gems existed
         u_cols = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
         if "gems" not in u_cols:
@@ -440,6 +503,10 @@ def init_db():
         # migration for DBs created before gems_earned existed (lifetime gems earned, for the Топы screen)
         if "gems_earned" not in u_cols:
             conn.execute("ALTER TABLE users ADD COLUMN gems_earned INTEGER NOT NULL DEFAULT 0")
+        # migration for DBs created before the staking-specific earnings counter existed
+        # (gems_earned mixes in every source -- this one is staking payouts only)
+        if "staking_gems_earned" not in u_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN staking_gems_earned INTEGER NOT NULL DEFAULT 0")
         # migration for DBs created before staking existed
         if "staked_at" not in uc_cols:
             conn.execute("ALTER TABLE user_cards ADD COLUMN staked_at TEXT")
@@ -462,6 +529,10 @@ def init_db():
         # result" has to live server-side, per player, not in the browser.
         if "pvp_last_seen_round_id" not in u_cols:
             conn.execute("ALTER TABLE users ADD COLUMN pvp_last_seen_round_id INTEGER")
+        # migration for DBs created before the PvP history's win-% display existed
+        pr_cols = {row["name"] for row in conn.execute("PRAGMA table_info(pvp_rounds)")}
+        if "winner_win_pct" not in pr_cols:
+            conn.execute("ALTER TABLE pvp_rounds ADD COLUMN winner_win_pct INTEGER")
         # migration for the in-app (not bot-DM) referral reward popup — holds the
         # referred player's display name until the referrer's client next calls
         # /api/auth, which shows it once and clears it (same read-once pattern as
@@ -562,6 +633,22 @@ def init_db():
             conn.execute("ALTER TABLE card_batch_giveaways ADD COLUMN reminder_1h_sent INTEGER NOT NULL DEFAULT 0")
         if "reminder_5m_sent" not in cbg_cols:
             conn.execute("ALTER TABLE card_batch_giveaways ADD COLUMN reminder_5m_sent INTEGER NOT NULL DEFAULT 0")
+        # One-time (but harmless-every-startup) backfill for poker rounds stranded in
+        # status='won': the client used to only flip a round to 'collected' when the
+        # player explicitly pressed "Забрать", so leaving the Poker tab (switching to
+        # another game, or another screen entirely) after a win, without pressing that
+        # button, left the round sitting in 'won' forever -- invisible to both
+        # get_poker_history() and get_poker_leaderboard(), which both filter to
+        # status IN ('collected', 'busted', 'lost'). The gems were already credited live
+        # at draw/gamble time (see draw_poker()/gamble_poker()), so this is purely a
+        # status flip, not a balance change -- exactly what collect_poker() itself does.
+        # The client now also auto-collects on navigating away, so this should stop
+        # producing new rows to fix; safe to leave running every startup regardless,
+        # since a round only ever matches this WHERE once.
+        conn.execute("UPDATE poker_rounds SET status = 'collected' WHERE status = 'won'")
+        pr_cols = {row["name"] for row in conn.execute("PRAGMA table_info(poker_rounds)")}
+        if "gamble_joker_used" not in pr_cols:
+            conn.execute("ALTER TABLE poker_rounds ADD COLUMN gamble_joker_used INTEGER NOT NULL DEFAULT 0")
 
 
 DAILY_BONUS_GEMS = 25
@@ -769,12 +856,25 @@ def get_daily_bonus_info(user_id: int) -> dict:
 # "did they already claim today" gate below instead of a separate column/date: the
 # streak only ever advances at the same moment the daily bonus does, so there's
 # nothing to keep in sync between two independent timers.
-STREAK_BONUS_PER_DAY = 5
-STREAK_BONUS_CAP_DAYS = 30  # streak bonus tops out at STREAK_BONUS_CAP_DAYS * STREAK_BONUS_PER_DAY gems/day
+# Streak bonus curve: checkpoints at day 1 (+5), day 10 (+25), day 20 (+50), day 30+
+# (+100, the max) -- gems/day get better the longer the streak runs, with the biggest
+# jump (last leg, +5/day) saved for days 20-30 as the strongest push toward the cap.
+STREAK_BONUS_CHECKPOINTS = [(1, 5), (10, 25), (20, 50), (30, 100)]
+STREAK_BONUS_CAP_DAYS = STREAK_BONUS_CHECKPOINTS[-1][0]
+STREAK_BONUS_MAX = STREAK_BONUS_CHECKPOINTS[-1][1]
 
 
 def _streak_bonus_for(streak_days: int) -> int:
-    return min(streak_days, STREAK_BONUS_CAP_DAYS) * STREAK_BONUS_PER_DAY
+    """Piecewise-linear interpolation between STREAK_BONUS_CHECKPOINTS, capped at
+    STREAK_BONUS_MAX once streak_days reaches STREAK_BONUS_CAP_DAYS."""
+    if streak_days <= STREAK_BONUS_CHECKPOINTS[0][0]:
+        return STREAK_BONUS_CHECKPOINTS[0][1]
+    if streak_days >= STREAK_BONUS_CAP_DAYS:
+        return STREAK_BONUS_MAX
+    for (d0, b0), (d1, b1) in zip(STREAK_BONUS_CHECKPOINTS, STREAK_BONUS_CHECKPOINTS[1:]):
+        if d0 <= streak_days <= d1:
+            return round(b0 + (b1 - b0) * (streak_days - d0) / (d1 - d0))
+    return STREAK_BONUS_MAX  # unreachable, keeps the type checker happy
 
 
 def get_streak_info(user_id: int) -> dict:
@@ -948,7 +1048,7 @@ def play_redblack(user_id: int, bet: int, choice: str) -> dict:
 
 AVIATOR_DEFAULT_BET = 25
 AVIATOR_MIN_BET = 25
-AVIATOR_HOUSE_EDGE = 0.05  # RTP 95%
+AVIATOR_HOUSE_EDGE = 0.03  # RTP 97%
 AVIATOR_TICKS = [1.00, 1.15, 1.30, 1.50, 1.75, 2.00, 2.50, 3.00, 4.00, 5.00, 7.00, 10.00, 15.00, 20.00, 25.00, 35.00, 50.00, 75.00, 100.00]
 
 
@@ -1128,6 +1228,337 @@ def count_active_aviator_rounds_for_user(user_id: int) -> int:
     return row["n"] if row else 0
 
 
+# ---------------------------------------------------------------------------
+# American Poker '90s -- classic 5-card draw video poker with a double-up (gamble)
+# feature, dealt/played entirely server-side (client only ever sends a bet, a
+# hold_mask, or a red/black gamble choice -- it never sees hidden cards it shouldn't).
+# Paytable's SHAPE (which hand pays how much relative to the others) matches a real
+# "American Poker" cabinet's payout card (per user reference photo): no payout below
+# two pair, five_of_a_kind (Joker-only) added above royal flush. The exact multipliers
+# had to be scaled down from the reference photo's raw numbers, though -- those are
+# calibrated for a normal 52-card deck, and our deck carries one Joker wild card (see
+# _poker_evaluate()), which makes every category hit noticeably more often than on a
+# real machine. Using the reference photo's numbers as-is simulated at ~189% RTP with
+# the client's actual hold-suggestion strategy (see poker_rtp_sim.py-style check) --
+# the house would lose gems on every hand on average. These multipliers were solved
+# against that same simulation to land close to a 97% target (comes out ~97.9%,
+# same ballpark as real 8/5 Jacks-or-Better's 97.298% -- an exact 97.00% isn't a
+# realistic target for any discrete integer paytable). Re-run that simulation whenever
+# this table changes -- looking "reasonable" next to a real machine's numbers doesn't
+# mean the RTP is anywhere close once the joker's extra win-rate is in the mix.
+# ---------------------------------------------------------------------------
+POKER_MIN_BET = 1
+POKER_PAYTABLE = {
+    "five_of_a_kind": 380,  # only possible with the Joker: 4 naturally-matching cards + it -- the rarest hand, so it pays MORE than a royal flush
+    "royal_flush": 190,
+    "straight_flush": 51,
+    "four_kind": 25,
+    "full_house": 8,
+    "flush": 6,
+    "straight": 5,
+    "three_kind": 4,
+    "two_pair": 1,
+    # no "jacks_or_better" entry -- a lone pair no longer pays (see comment above).
+    # Rescaled up from the previous table (300/150/40/20/6/5/4/3/1) because the client's
+    # pokerSuggestHold() strategy changed: it no longer holds a lone pair on its own
+    # (holding one used to convert into two_pair/three_kind/etc at a much higher rate --
+    # removing that hold, per request, dropped simulated RTP from ~97.9% to ~77.2% with
+    # the OLD numbers, so every multiplier had to go up ~27% to land back near ~96.5%
+    # under the corrected strategy. Re-run the RTP simulation whenever this table OR
+    # pokerSuggestHold() changes -- the two are coupled, changing one without the other
+    # silently moves RTP.
+}
+# Double-up ladder: 6 plain doublings, then a 7th "bonus" step that's a bigger jump than
+# a plain x2 (200x total off the base win instead of the 128x a 7th double would give) --
+# a classic cabinet-poker touch, and rare enough (needs 6 straight correct 50/50 guesses
+# to even reach it) that it doesn't meaningfully move the overall payout math.
+POKER_DOUBLE_MULTIPLIERS = [2, 4, 8, 16, 32, 64, 150]  # index i-1 == total multiplier at ladder level i -- level 7 raised 133->150 per request (base 500 -> lvl6 32000, lvl7 75000 exactly)
+POKER_MAX_GAMBLES = len(POKER_DOUBLE_MULTIPLIERS)  # 7 -- once here, must collect
+POKER_DOUBLE_JOKER_CHANCE = 0.12  # per-step odds of the one guaranteed-win Joker reveal (see gamble_poker())
+
+POKER_RANKS = "23456789TJQKA"
+POKER_SUITS = "SHDC"
+POKER_JOKER = "JK"  # unambiguous: "K" is never a rank+suit pair since K isn't in POKER_SUITS
+
+
+def _poker_fresh_deck() -> list[str]:
+    return [r + s for r in POKER_RANKS for s in POKER_SUITS] + [POKER_JOKER]
+
+
+def _poker_rank_value(card: str) -> int:
+    return POKER_RANKS.index(card[0]) + 2
+
+
+# Strength order for _poker_evaluate()'s joker substitution search below -- higher wins.
+# five_of_a_kind isn't listed: it's handled as its own special case (see _poker_evaluate),
+# since no substitute card from the deck can ever produce it (the 4 matching naturals
+# already use up every card of that rank -- there's no 5th one left to substitute in).
+_POKER_CATEGORY_STRENGTH = {
+    "royal_flush": 9, "straight_flush": 8, "four_kind": 7, "full_house": 6,
+    "flush": 5, "straight": 4, "three_kind": 3, "two_pair": 2,
+    "jacks_or_better": 1, "nothing": 0,
+}
+
+
+def _poker_evaluate_natural(cards: list[str]) -> str:
+    """Standard 5-card poker hand ranking (no joker involved), collapsed to just the
+    categories POKER_PAYTABLE actually pays -- a made pair below Jacks is 'nothing'
+    (doesn't pay), same as a real Jacks-or-Better machine."""
+    ranks = sorted((_poker_rank_value(c) for c in cards), reverse=True)
+    suits = [c[1] for c in cards]
+    is_flush = len(set(suits)) == 1
+    rc: dict[int, int] = {}
+    for r in ranks:
+        rc[r] = rc.get(r, 0) + 1
+    counts = sorted(rc.values(), reverse=True)
+    uniq = sorted(set(ranks), reverse=True)
+    is_straight = False
+    if len(uniq) == 5:
+        if uniq[0] - uniq[4] == 4:
+            is_straight = True
+        elif uniq == [14, 5, 4, 3, 2]:  # wheel: A-2-3-4-5
+            is_straight = True
+    if is_straight and is_flush:
+        if sorted(uniq) == [10, 11, 12, 13, 14]:
+            return "royal_flush"
+        return "straight_flush"
+    if counts[0] == 4:
+        return "four_kind"
+    if counts[0] == 3 and counts[1] == 2:
+        return "full_house"
+    if is_flush:
+        return "flush"
+    if is_straight:
+        return "straight"
+    if counts[0] == 3:
+        return "three_kind"
+    if counts[0] == 2 and counts[1] == 2:
+        return "two_pair"
+    if counts[0] == 2:
+        pair_rank = [r for r, c in rc.items() if c == 2][0]
+        if pair_rank >= 11:  # Jack (11) or better
+            return "jacks_or_better"
+        return "nothing"
+    return "nothing"
+
+
+def _poker_evaluate(cards: list[str]) -> str:
+    """Wraps _poker_evaluate_natural() with joker-wild handling. The deck carries
+    exactly one POKER_JOKER, so a hand has 0 or 1 of it -- never more:
+    - No joker: plain _poker_evaluate_natural().
+    - Joker + 4 naturals all the same rank: there's no 5th real card of that rank left
+      in the deck to try as a substitute, so this can ONLY be five_of_a_kind -- handled
+      directly rather than via the search below.
+    - Joker + anything else: brute-force every one of the (up to 52) real cards not
+      already in hand as the joker's stand-in, evaluate the resulting natural 5-card
+      hand each time, and keep whichever substitution scores highest per
+      _POKER_CATEGORY_STRENGTH -- i.e. the joker always completes the best hand it can
+      (a royal flush if one's reachable, a made pair if nothing better is, etc.)."""
+    if POKER_JOKER not in cards:
+        return _poker_evaluate_natural(cards)
+    others = [c for c in cards if c != POKER_JOKER]
+    if len({c[0] for c in others}) == 1:
+        return "five_of_a_kind"
+    used = set(others)
+    best_category = "nothing"
+    best_strength = -1
+    for r in POKER_RANKS:
+        for s in POKER_SUITS:
+            candidate = r + s
+            if candidate in used:
+                continue
+            category = _poker_evaluate_natural(others + [candidate])
+            strength = _POKER_CATEGORY_STRENGTH.get(category, 0)
+            if strength > best_strength:
+                best_strength = strength
+                best_category = category
+    return best_category
+
+
+class PokerError(Exception):
+    """Raised by the poker functions for a bad bet/state -- not a balance problem
+    (that's InsufficientGems, same convention as every other gem-spending action)."""
+
+
+def deal_poker(user_id: int, bet: int) -> dict:
+    """Charges `bet` gems, deals a fresh 5-card hand, and stashes the rest of the
+    shuffled deck server-side for the draw step. Raises PokerError for a bad bet,
+    InsufficientGems if the balance can't cover it."""
+    if not isinstance(bet, int) or bet < POKER_MIN_BET:
+        raise PokerError(f"bet must be a whole number >= {POKER_MIN_BET}")
+    deck = _poker_fresh_deck()
+    random.shuffle(deck)
+    hand, rest = deck[:5], deck[5:]
+    with get_conn() as conn:
+        row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        if row is None or row["gems"] < bet:
+            raise InsufficientGems()
+        conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (bet, user_id))
+        cur = conn.execute(
+            "INSERT INTO poker_rounds (user_id, bet, dealt_cards, deck_remaining, status, created_at) "
+            "VALUES (?, ?, ?, ?, 'dealt', ?)",
+            (user_id, bet, json.dumps(hand), json.dumps(rest), _now()),
+        )
+        round_id = cur.lastrowid
+        new_gems = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()["gems"]
+    return {"round_id": round_id, "cards": hand, "bet": bet, "gems": new_gems}
+
+
+def draw_poker(round_id: int, user_id: int, hold_mask: list) -> dict:
+    """Replaces every non-held card from the server-stashed deck, evaluates the final
+    hand, and -- if it pays -- credits the win immediately (still open to gamble via
+    gamble_poker() or close out via collect_poker()). Raises PokerError if the round
+    doesn't exist, isn't this player's, isn't in 'dealt' status, or hold_mask is the
+    wrong shape."""
+    if not isinstance(hold_mask, list) or len(hold_mask) != 5:
+        raise PokerError("hold_mask must be a list of 5 booleans")
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM poker_rounds WHERE id = ? AND user_id = ?", (round_id, user_id)
+        ).fetchone()
+        if row is None or row["status"] != "dealt":
+            raise PokerError("round not found or already drawn")
+        hand = json.loads(row["dealt_cards"])
+        rest = json.loads(row["deck_remaining"])
+        ri = 0
+        final = []
+        for held, card in zip(hold_mask, hand):
+            if held:
+                final.append(card)
+            else:
+                final.append(rest[ri])
+                ri += 1
+        category = _poker_evaluate(final)
+        multiplier = POKER_PAYTABLE.get(category, 0)
+        payout = row["bet"] * multiplier
+        status = "won" if payout > 0 else "lost"
+        if payout > 0:
+            conn.execute(
+                "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
+                (payout, payout, user_id),
+            )
+        conn.execute(
+            "UPDATE poker_rounds SET final_cards = ?, held_mask = ?, category = ?, base_payout = ?, "
+            "current_payout = ?, status = ? WHERE id = ?",
+            (json.dumps(final), json.dumps(hold_mask), category, payout, payout, status, round_id),
+        )
+        new_gems = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()["gems"]
+    return {
+        "round_id": round_id, "cards": final, "category": category,
+        "multiplier": multiplier, "payout": payout, "gems": new_gems,
+        "can_gamble": payout > 0,
+    }
+
+
+def gamble_poker(round_id: int, user_id: int, choice: str) -> dict:
+    """Classic double-up ladder: a fair 50/50 red/black flip moves you up ONE rung of
+    POKER_DOUBLE_MULTIPLIERS (applied to the round's original base_payout, not simply
+    doubling the running total) -- win and gems are topped up by exactly the difference
+    from the current payout (so the running DB balance is always correct regardless of
+    chain length -- see the module-level comment on POKER_DOUBLE_MULTIPLIERS for why the
+    last rung isn't a plain double), lose and the whole running payout (already-credited
+    gems) is taken back. Raises PokerError if the round isn't open to gamble or the
+    ladder top has been reached."""
+    if choice not in ("red", "black"):
+        raise PokerError("choice must be 'red' or 'black'")
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM poker_rounds WHERE id = ? AND user_id = ?", (round_id, user_id)
+        ).fetchone()
+        if row is None or row["status"] != "won":
+            raise PokerError("round not found or not open for gamble")
+        if row["gamble_count"] >= POKER_MAX_GAMBLES:
+            raise PokerError("max gambles reached -- collect your winnings")
+        joker_used = row["gamble_joker_used"]
+        joker_hit = joker_used == 0 and random.random() < POKER_DOUBLE_JOKER_CHANCE
+        if joker_hit:
+            result = "joker"
+            won = True  # the Joker always wins, whichever color the player picked
+        else:
+            result = random.choice(("red", "black"))
+            won = result == choice
+        current = row["current_payout"]
+        new_level = row["gamble_count"] + 1
+        new_joker_used = 1 if joker_hit else joker_used
+        if won:
+            new_payout = row["base_payout"] * POKER_DOUBLE_MULTIPLIERS[new_level - 1]
+            increment = new_payout - current
+            conn.execute(
+                "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
+                (increment, increment, user_id),
+            )
+            conn.execute(
+                "UPDATE poker_rounds SET current_payout = ?, gamble_count = ?, gamble_joker_used = ? WHERE id = ?",
+                (new_payout, new_level, new_joker_used, round_id),
+            )
+            new_status = "won"
+        else:
+            new_payout = 0
+            conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (current, user_id))
+            conn.execute(
+                "UPDATE poker_rounds SET current_payout = 0, status = 'busted', gamble_count = ?, "
+                "gamble_joker_used = ? WHERE id = ?",
+                (new_level, new_joker_used, round_id),
+            )
+            new_status = "busted"
+        new_gems = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()["gems"]
+    return {
+        "result": result, "won": won, "payout": new_payout, "gems": new_gems,
+        "status": new_status, "gamble_count": new_level,
+        "can_gamble": new_status == "won" and new_level < POKER_MAX_GAMBLES,
+    }
+
+
+def collect_poker(round_id: int, user_id: int) -> dict:
+    """Closes out a 'won' round -- gems were already credited live at draw/gamble time,
+    so this is just a status flip, not a balance change."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM poker_rounds WHERE id = ? AND user_id = ?", (round_id, user_id)
+        ).fetchone()
+        if row is None or row["status"] != "won":
+            raise PokerError("round not found or not open to collect")
+        conn.execute("UPDATE poker_rounds SET status = 'collected' WHERE id = ?", (round_id,))
+        gems = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()["gems"]
+    return {"payout": row["current_payout"], "gems": gems}
+
+
+def get_poker_history(limit: int = 50) -> list[dict]:
+    """Every FINISHED Poker round (collected, busted, or lost -- never an in-progress
+    'dealt'/'won' one still waiting on a draw/gamble/collect), newest first -- same
+    convention as get_redblack_history()."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT pr.id, pr.user_id, pr.bet, pr.category, pr.current_payout, pr.status, "
+            "pr.gamble_count, pr.created_at, u.username, u.first_name "
+            "FROM poker_rounds pr JOIN users u ON u.telegram_id = pr.user_id "
+            "WHERE pr.status IN ('collected', 'busted', 'lost') "
+            "ORDER BY pr.id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_poker_leaderboard(limit: int = 10) -> list[dict]:
+    """Top players by total net gems won across every finished Poker round
+    (current_payout - bet per round, summed -- this telescopes correctly through any
+    gamble chain since gems are credited/debited live at each step, see draw_poker()/
+    gamble_poker()). Same LEADERBOARD_EXCLUDED_USERNAMES convention as every other
+    leaderboard."""
+    with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        rows = conn.execute(
+            "SELECT pr.user_id AS telegram_id, u.username AS username, u.first_name AS first_name, "
+            "SUM(pr.current_payout - pr.bet) AS net_profit, COUNT(*) AS rounds_played "
+            "FROM poker_rounds pr JOIN users u ON u.telegram_id = pr.user_id "
+            "WHERE pr.status IN ('collected', 'busted', 'lost') "
+            f"AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders}) "
+            "GROUP BY pr.user_id ORDER BY net_profit DESC LIMIT ?",
+            list(LEADERBOARD_EXCLUDED_USERNAMES) + [limit],
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def set_aviator_message(round_id: int, chat_id: int, message_id: int) -> None:
     """Attaches the (chat_id, message_id) of the round's live message once it's been
     sent — round_id has to exist BEFORE the message can be sent (its id goes into the
@@ -1234,7 +1665,7 @@ def refund_aviator(round_id: int) -> dict | None:
 
 
 GEM_MINING_DURATION_SECONDS = 60 * 60  # 60 minutes per cycle
-GEM_MINING_REWARD_GEMS = 50
+GEM_MINING_REWARD_GEMS = 25
 
 
 def get_gem_mining_status(user_id: int) -> dict:
@@ -1363,19 +1794,23 @@ def _draw_card_weighted(weights: dict[str, float]) -> sqlite3.Row | None:
 
 
 CASE_DEFS = {
-    # Each case is themed around ONE target tier — the clear best source for that tier
-    # among all four cases — rather than a flat price->ROI curve.
-    "hamster": {"name": "Хомяк", "price": 50, "image": "case/case_hamster.jpg",  # best for Silver
-                "weights": {"bronze": 50, "silver": 40, "gold": 7, "platinum": 2, "diamond": 1}},
-    "duck": {"name": "Уточка", "price": 100, "image": "case/case_utya.jpg",  # best for Gold
-             "weights": {"bronze": 30, "silver": 25, "gold": 35, "platinum": 8, "diamond": 2}},
-    "capybara": {"name": "Капибара", "price": 200, "image": "case/case_capybara.jpg",  # best for Platinum
-                 "weights": {"bronze": 10, "silver": 15, "gold": 25, "platinum": 40, "diamond": 10}},
-    "pepe": {"name": "Пепе", "price": 500, "image": "case/case_pep.jpg",  # best for Diamond
-             # Diamond chance cut from 65 to 35 — case was too generous ("слишком жирный").
-             # Freed weight redistributed proportionally across the other tiers so this
-             # still sums to 100 and keeps its "best for Diamond" identity, just weaker.
-             "weights": {"silver": 9, "gold": 19, "platinum": 37, "diamond": 35}},
+    # Each case draws from ONLY its two adjacent target tiers — no exposure to the other
+    # three rarities at all. Per 100 gems spent, every case yields MORE of its named target
+    # tier than farm does at the same gem spend, by a deliberately modest, graduated margin
+    # (Hamster +10% silver, Duck +15% gold, Capybara +20% platinum, Pepe +25% diamond vs
+    # RARITY_WEIGHTS/FARM_COST_GEMS=25), so a player chasing that specific tier is always a
+    # bit better off buying the matching case than farming for it. The tradeoff: a case
+    # gives fewer total cards per gem than farm (1 card per open vs farm's cheaper/faster
+    # draws) and zero chance at anything outside its two tiers, unlike farm's small tail
+    # chance at every rarity.
+    "hamster": {"name": "Хомяк", "price": 50, "image": "case/case_hamster.jpg",  # Bronze/Silver only, +10% silver vs farm
+                "weights": {"bronze": 36, "silver": 64}},
+    "duck": {"name": "Уточка", "price": 100, "image": "case/case_utya.jpg",  # Silver/Gold only, +15% gold vs farm
+             "weights": {"silver": 40, "gold": 60}},
+    "capybara": {"name": "Капибара", "price": 200, "image": "case/case_capybara.jpg",  # Gold/Platinum only, +20% platinum vs farm
+                 "weights": {"gold": 33, "platinum": 67}},
+    "pepe": {"name": "Пепе", "price": 500, "image": "case/case_pep.jpg",  # Platinum/Diamond only, +25% diamond vs farm
+             "weights": {"platinum": 75, "diamond": 25}},
 }
 
 
@@ -1501,10 +1936,13 @@ def create_card_giveaway(admin_id: int, rarity: str, total_cards: int,
 # 1:1 mapping to that ratio (which would need ~15-18 platinum cards) since platinum itself is
 # already hard to farm and that would make the top tier unreachable via burn.
 BURN_REQUIREMENTS = {
+    # Uniform 4 cards at every tier now (was 4/5/5/6) -- simpler to remember, and at the
+    # unchanged BURN_SUCCESS_RATE this puts Platinum->Diamond at ~1420 gems/Diamond
+    # (buying the 4 expected Platinum cards via the cheapest source, Capybara).
     "bronze":   {"target": "silver",   "count": 4},
-    "silver":   {"target": "gold",     "count": 5},
-    "gold":     {"target": "platinum", "count": 5},
-    "platinum": {"target": "diamond",  "count": 6},
+    "silver":   {"target": "gold",     "count": 4},
+    "gold":     {"target": "platinum", "count": 4},
+    "platinum": {"target": "diamond",  "count": 4},
     # No "diamond" entry — Diamond is the top tier, nothing to burn UP into (Diamond can
     # still be re-rolled via craft_card(), which is a different mechanic).
 }
@@ -1512,10 +1950,10 @@ BURN_REQUIREMENTS = {
 # Failure chance scales with how rare/valuable the TARGET tier is — evolving into something
 # higher up is riskier. Keyed by target_rarity (not source rarity).
 BURN_SUCCESS_RATE = {
-    "silver":   0.99,  # 1% fail
-    "gold":     0.98,  # 2% fail
-    "platinum": 0.96,  # 4% fail
-    "diamond":  0.92,  # 8% fail
+    "silver":   0.98,  # 2% fail
+    "gold":     0.96,  # 4% fail
+    "platinum": 0.92,  # 8% fail
+    "diamond":  0.84,  # 16% fail
 }
 
 
@@ -1575,7 +2013,14 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
         success = random.random() < BURN_SUCCESS_RATE[target_rarity]
         new_card = _draw_card_weighted({target_rarity: 100}) if success else None
 
+        # Counts every evolve ATTEMPT (press), win or lose -- matches how farm/case_open
+        # count every press, so /admin's usage numbers are comparable across features
+        # instead of undercounting evolve by however often the risk roll fails.
+        if not (ADMIN_ID and str(user_id) == str(ADMIN_ID)):
+            _bump_counter(conn, "evolve")
+
         new_user_card_id = None
+        new_drop_number = None
         if new_card is not None:
             # Reuse the first burned row in place for the new card (same trick as
             # craft_card()) — keeps its id/history valid instead of touching FK-sensitive
@@ -1583,15 +2028,18 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
             # being shown by anyone — free it into the numbers marketplace first.
             recipient_id = burn_ids[0]
             _free_number(conn, recipient_id)
+            new_obtained_at = _now()
             conn.execute(
                 "UPDATE user_cards SET card_id = ?, obtained_at = ?, listed_price = NULL, "
                 "swap_listed = 0, staked_at = NULL, pvp_round_id = NULL, voided = 0, number_override = NULL, pinned_at = NULL WHERE id = ?",
-                (new_card["id"], _now(), recipient_id),
+                (new_card["id"], new_obtained_at, recipient_id),
             )
             new_user_card_id = recipient_id
+            new_drop_number = conn.execute(
+                "SELECT COUNT(*) FROM user_cards WHERE obtained_at <= ?",
+                (new_obtained_at,),
+            ).fetchone()[0]
             remaining_ids = burn_ids[1:]
-            if not (ADMIN_ID and str(user_id) == str(ADMIN_ID)):
-                _bump_counter(conn, "evolve")
         else:
             remaining_ids = burn_ids
 
@@ -1603,7 +2051,8 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
             placeholders = ",".join("?" for _ in remaining_ids)
             conn.execute(
                 f"UPDATE user_cards SET voided = 1, listed_price = NULL, swap_listed = 0, "
-                f"staked_at = NULL, pvp_round_id = NULL, number_override = NULL, pinned_at = NULL WHERE id IN ({placeholders})",
+                f"staked_at = NULL, pvp_round_id = NULL, number_override = NULL, pinned_at = NULL, "
+                f"custom_name = NULL, custom_rarity = NULL WHERE id IN ({placeholders})",
                 remaining_ids,
             )
 
@@ -1623,6 +2072,7 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
             "filename": new_card["filename"],
             "name": new_card["name"],
             "rarity": new_card["rarity"],
+            "drop_number": new_drop_number,
         }
     return result
 
@@ -1679,6 +2129,8 @@ def farm(user_id: int) -> dict | None:
             (user_id, card["id"], _now()),
         )
         user_card_id = cur.lastrowid
+        if not (ADMIN_ID and str(user_id) == str(ADMIN_ID)):
+            _bump_counter(conn, "farm")
         # Global drop number — position among ALL cards ever farmed/crafted by ANY user,
         # not just this user's own collection.
         drop_number = conn.execute("SELECT COUNT(*) FROM user_cards").fetchone()[0]
@@ -1722,6 +2174,7 @@ def farm(user_id: int) -> dict | None:
 # near-lateral reroll, since it's already the top tier) costs far more than crafting a
 # cheap Bronze. Keeps craft from being a flat-rate gem sink regardless of what's at stake.
 CRAFT_COST_GEMS = {
+    # Reverted back to the cheap flat scale (per request, again) -- 25/25/50/100/200.
     "bronze": 25,
     "silver": 25,
     "gold": 50,
@@ -1854,6 +2307,11 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
 
     with get_conn() as conn:
         conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (cost, user_id))
+        # Counts every craft ATTEMPT (press) -- only Diamond input can actually fail
+        # (CRAFT_DIAMOND_SUCCESS_RATE), everything else always succeeds, but count it
+        # here unconditionally anyway so /admin's usage numbers stay comparable.
+        if not (ADMIN_ID and str(user_id) == str(ADMIN_ID)):
+            _bump_counter(conn, "craft")
         if success:
             # Reuse the same user_cards row (swap its card_id in place) instead of deleting it
             # and inserting a fresh one. market_offers, swap_offers, swap_offer_cards, and
@@ -1873,8 +2331,7 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
                 "SELECT COUNT(*) FROM user_cards WHERE obtained_at <= ?",
                 (owned["obtained_at"],),
             ).fetchone()[0]
-            if not (ADMIN_ID and str(user_id) == str(ADMIN_ID)):
-                _bump_counter(conn, "craft")
+
         else:
             # Diamond craft failure — card destroyed outright. Same "voided" soft-destroy
             # trick as burn_cards(): never DELETE (would hit the same FK constraint), just
@@ -1883,7 +2340,8 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
             _free_number(conn, owned["obtained_at"])
             _free_number(conn, user_card_id)
             conn.execute(
-                "UPDATE user_cards SET voided = 1, listed_price = NULL, swap_listed = 0, staked_at = NULL, pvp_round_id = NULL, number_override = NULL, pinned_at = NULL WHERE id = ?",
+                "UPDATE user_cards SET voided = 1, listed_price = NULL, swap_listed = 0, staked_at = NULL, pvp_round_id = NULL, number_override = NULL, pinned_at = NULL, "
+                "custom_name = NULL, custom_rarity = NULL WHERE id = ?",
                 (user_card_id,),
             )
             new_user_card_id = None
@@ -1909,7 +2367,7 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
 # decides how much a specific number is worth by how high people actually bid it up.
 # ---------------------------------------------------------------------------
 
-NUMBER_MIN_BID_GEMS = 100
+NUMBER_MIN_BID_GEMS = 25
 # The FIRST bid on a number nobody has bid on yet (status still 'free') opens a
 # shorter 12h window — no point holding a still-uncontested number open for a full
 # day. Once someone else jumps in and it's a real fight (status already 'auction'),
@@ -2211,7 +2669,7 @@ def attach_number(user_id: int, number: int, user_card_id: int) -> dict:
     return {"number": number}
 
 
-EXTRACT_NUMBER_COST_GEMS = 500
+EXTRACT_NUMBER_COST_GEMS = 100
 
 
 def extract_card_number(user_id: int, user_card_id: int) -> dict:
@@ -2345,6 +2803,300 @@ def buy_listed_number(buyer_id: int, number: int, buyer_user_card_id: int) -> di
 
 
 
+
+# ---------------------------------------------------------------------------
+# Custom-name marketplace ("Имена") + Custom NFT ("Obsidian") creation.
+# Names mirror the card_numbers auction machinery (see its schema comment) with one
+# structural difference: numbers are pre-seeded from a curated pool and start 'free',
+# while a name only starts existing the moment someone creates it -- creation IS the
+# first bid, there is no 'free' status for names.
+# ---------------------------------------------------------------------------
+
+NAME_MIN_BID_GEMS = 25
+NAME_AUCTION_WINDOW_SECONDS = 12 * 60 * 60  # same 12h window as numbers, reset on every bid
+CUSTOM_NAME_MAX_LEN = 16
+CUSTOM_NFT_MIN_GEMS_REQUIRED = 1000  # a THRESHOLD check (must simply HAVE this many), not a charge
+
+
+class NameInvalid(Exception):
+    """Raised when a proposed name fails validation -- empty, too long, or contains
+    anything other than English letters/digits."""
+
+
+class NameTaken(Exception):
+    """Raised by create_name_auction() when the name (case-insensitive) already exists
+    in card_names -- auctioned, owned, or otherwise."""
+
+
+class NameNotAvailable(Exception):
+    """Raised when a name isn't in the state the caller expects -- already someone
+    else's, not mid-auction, not listed for resale, etc."""
+
+
+class NameBidTooLow(Exception):
+    """Raised by place_name_bid() when amount_gems doesn't beat the current highest
+    bid (or NAME_MIN_BID_GEMS, whichever is higher) -- carries the minimum that would
+    have worked."""
+    def __init__(self, min_bid: int):
+        self.min_bid = min_bid
+        super().__init__(f"minimum bid is {min_bid} gems")
+
+
+def validate_custom_name(name: str) -> str:
+    """Trims, checks length (<=CUSTOM_NAME_MAX_LEN) and charset (English letters/digits
+    only), and returns the canonical lowercase form used as the card_names primary key.
+    Raises NameInvalid on any failure."""
+    trimmed = (name or "").strip()
+    if not trimmed or len(trimmed) > CUSTOM_NAME_MAX_LEN:
+        raise NameInvalid()
+    if not all(("a" <= ch.lower() <= "z") or ch.isdigit() for ch in trimmed):
+        raise NameInvalid()
+    return trimmed.lower()
+
+
+def _finalize_expired_name_auctions(conn: sqlite3.Connection) -> None:
+    """Any name auction whose 12h window has lapsed with no new bid flips to 'owned' --
+    the last bidder wins, gems already paid stay spent. Same lazy-expiry, called
+    opportunistically at the top of every names-marketplace read/write, philosophy as
+    _finalize_expired_number_auctions()."""
+    now = _now()
+    rows = conn.execute(
+        "SELECT name, highest_bidder_id FROM card_names WHERE status = 'auction' AND bid_expires_at <= ?",
+        (now,),
+    ).fetchall()
+    for r in rows:
+        conn.execute(
+            "UPDATE card_names SET status = 'owned', owner_id = ?, "
+            "highest_bid = NULL, highest_bidder_id = NULL, bid_expires_at = NULL, updated_at = ? "
+            "WHERE name = ?",
+            (r["highest_bidder_id"], now, r["name"]),
+        )
+
+
+def create_name_auction(user_id: int, name: str) -> dict:
+    """Registers a brand-new name and opens its NAME_AUCTION_WINDOW_SECONDS-long auction
+    with the creator's own NAME_MIN_BID_GEMS bid already placed -- unlike numbers, a name
+    only starts existing the moment someone creates it, so creation IS the first bid,
+    gems escrowed immediately (refunded in full if someone outbids the creator later)."""
+    canonical = validate_custom_name(name)
+    with get_conn() as conn:
+        _finalize_expired_name_auctions(conn)
+        existing = conn.execute("SELECT 1 FROM card_names WHERE name = ?", (canonical,)).fetchone()
+        if existing is not None:
+            raise NameTaken()
+        gems_row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        if gems_row is None or gems_row["gems"] < NAME_MIN_BID_GEMS:
+            raise InsufficientGems()
+        conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (NAME_MIN_BID_GEMS, user_id))
+        now = _now()
+        expires_at = (datetime.now(timezone.utc) + timedelta(seconds=NAME_AUCTION_WINDOW_SECONDS)).isoformat()
+        conn.execute(
+            "INSERT INTO card_names (name, status, highest_bid, highest_bidder_id, bid_expires_at, created_at, updated_at) "
+            "VALUES (?, 'auction', ?, ?, ?, ?, ?)",
+            (canonical, NAME_MIN_BID_GEMS, user_id, expires_at, now, now),
+        )
+        gems_left = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()["gems"]
+    return {"name": canonical, "bid": NAME_MIN_BID_GEMS, "expires_at": expires_at, "gems": gems_left}
+
+
+def place_name_bid(user_id: int, name: str, amount_gems: int) -> dict:
+    """Outbids the current holder of a name still mid-auction -- same escrow/refund/
+    timer-reset shape as place_number_bid()."""
+    canonical = (name or "").strip().lower()
+    with get_conn() as conn:
+        _finalize_expired_name_auctions(conn)
+        row = conn.execute("SELECT * FROM card_names WHERE name = ?", (canonical,)).fetchone()
+        if row is None or row["status"] != "auction":
+            raise NameNotAvailable()
+        current_high = row["highest_bid"] or 0
+        min_required = max(NAME_MIN_BID_GEMS, current_high + 1)
+        if amount_gems < min_required:
+            raise NameBidTooLow(min_required)
+        gems_row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        if gems_row is None or gems_row["gems"] < amount_gems:
+            raise InsufficientGems()
+        if row["highest_bidder_id"] is not None:
+            conn.execute(
+                "UPDATE users SET gems = gems + ? WHERE telegram_id = ?",
+                (row["highest_bid"], row["highest_bidder_id"]),
+            )
+        conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (amount_gems, user_id))
+        expires_at = (datetime.now(timezone.utc) + timedelta(seconds=NAME_AUCTION_WINDOW_SECONDS)).isoformat()
+        conn.execute(
+            "UPDATE card_names SET highest_bid = ?, highest_bidder_id = ?, bid_expires_at = ?, updated_at = ? WHERE name = ?",
+            (amount_gems, user_id, expires_at, _now(), canonical),
+        )
+        gems_left = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()["gems"]
+    return {"name": canonical, "bid": amount_gems, "expires_at": expires_at, "gems": gems_left}
+
+
+def get_names_board(limit: int = 200) -> dict:
+    """Names currently mid-auction (biddable) plus names already owned and listed for
+    resale -- mirrors get_numbers_board()'s two-part shape, minus the curated pool
+    (names have none -- every name starts life as someone's own bid)."""
+    with get_conn() as conn:
+        _finalize_expired_name_auctions(conn)
+        auction_rows = conn.execute(
+            "SELECT name, highest_bid, highest_bidder_id, bid_expires_at FROM card_names "
+            "WHERE status = 'auction' ORDER BY bid_expires_at ASC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        resale_rows = conn.execute(
+            "SELECT cn.name, cn.list_price, cn.owner_id, u.username, u.first_name "
+            "FROM card_names cn JOIN users u ON u.telegram_id = cn.owner_id "
+            "WHERE cn.status = 'owned' AND cn.list_price IS NOT NULL ORDER BY cn.updated_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return {"auctions": [dict(r) for r in auction_rows], "listings": [dict(r) for r in resale_rows], "min_bid": NAME_MIN_BID_GEMS}
+
+
+def get_all_owned_names() -> list[dict]:
+    """Every name that currently has an owner, for the "Владельцы" tab -- mirrors
+    get_all_owned_numbers(), but simpler: a name only ever exists once someone creates
+    it (no natural/vanity pool to also scan for "in use but untracked" entries), so
+    this is just every card_names row already sitting at status='owned'."""
+    with get_conn() as conn:
+        _finalize_expired_name_auctions(conn)
+        rows = conn.execute(
+            "SELECT cn.name, cn.owner_id, cn.user_card_id, cn.list_price, "
+            "u.username, u.first_name "
+            "FROM card_names cn JOIN users u ON u.telegram_id = cn.owner_id "
+            "WHERE cn.status = 'owned' ORDER BY cn.name ASC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_my_names(user_id: int) -> list[dict]:
+    """Names this player currently owns (won auctions or bought resales) -- whether
+    already attached to one of their Custom NFT cards, or still sitting unused in the
+    bank."""
+    with get_conn() as conn:
+        _finalize_expired_name_auctions(conn)
+        rows = conn.execute(
+            "SELECT name, user_card_id, list_price FROM card_names "
+            "WHERE owner_id = ? AND status = 'owned' ORDER BY name ASC",
+            (user_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_name_for_sale(user_id: int, name: str, price_gems: int) -> None:
+    """Puts a name you own up for sale to another player -- keeps working/showing on
+    your Custom NFT card until it actually sells, same as list_number_for_sale()."""
+    if price_gems <= 0:
+        raise ListingPriceTooLow(1)
+    canonical = (name or "").strip().lower()
+    with get_conn() as conn:
+        _finalize_expired_name_auctions(conn)
+        row = conn.execute("SELECT * FROM card_names WHERE name = ?", (canonical,)).fetchone()
+        if row is None or row["owner_id"] != user_id or row["status"] != "owned":
+            raise NameNotAvailable()
+        conn.execute(
+            "UPDATE card_names SET list_price = ?, updated_at = ? WHERE name = ?",
+            (price_gems, _now(), canonical),
+        )
+
+
+def cancel_name_listing(user_id: int, name: str) -> None:
+    canonical = (name or "").strip().lower()
+    with get_conn() as conn:
+        row = conn.execute("SELECT owner_id FROM card_names WHERE name = ?", (canonical,)).fetchone()
+        if row is None or row["owner_id"] != user_id:
+            raise NameNotAvailable()
+        conn.execute("UPDATE card_names SET list_price = NULL, updated_at = ? WHERE name = ?", (_now(), canonical))
+
+
+def buy_listed_name(buyer_id: int, name: str) -> dict:
+    """Buys a name another player listed for resale, paying them directly (no house
+    cut). If it was still attached to the seller's Custom NFT card, that card's
+    custom_name is cleared (its custom_rarity/Obsidian status is NOT -- once granted
+    that's permanent, only voiding clears it) and the name lands unattached in the
+    buyer's own bank, ready to be used via create_custom_nft()."""
+    canonical = (name or "").strip().lower()
+    with get_conn() as conn:
+        _finalize_expired_name_auctions(conn)
+        row = conn.execute("SELECT * FROM card_names WHERE name = ?", (canonical,)).fetchone()
+        if row is None or row["list_price"] is None:
+            raise NameNotAvailable()
+        if row["owner_id"] == buyer_id:
+            raise NameNotAvailable()
+        price = row["list_price"]
+        gems_row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (buyer_id,)).fetchone()
+        if gems_row is None or gems_row["gems"] < price:
+            raise InsufficientGems()
+        conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (price, buyer_id))
+        conn.execute(
+            "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
+            (price, price, row["owner_id"]),
+        )
+        if row["user_card_id"] is not None:
+            conn.execute("UPDATE user_cards SET custom_name = NULL WHERE id = ?", (row["user_card_id"],))
+        conn.execute(
+            "UPDATE card_names SET owner_id = ?, user_card_id = NULL, list_price = NULL, status = 'owned', updated_at = ? "
+            "WHERE name = ?",
+            (buyer_id, _now(), canonical),
+        )
+    return {"name": canonical, "price": price}
+
+
+def create_custom_nft(user_id: int, user_card_id: int, name: str, number: int) -> dict:
+    """Turns one of the caller's own cards into a permanent Obsidian custom NFT.
+    Requires: >= CUSTOM_NFT_MIN_GEMS_REQUIRED gems on hand (a THRESHOLD check -- not
+    spent), a name the caller already owns in their name-bank, and a number the caller
+    already owns in their number-bank (both via the marketplaces above). Sets
+    custom_name + custom_rarity='diamond' on the target card -- permanent, only
+    cleared if the row is later voided (see the voided=1 UPDATE statements) -- and
+    pins the number using the same internal steps as attach_number(), reusing the
+    already-open connection instead of calling that public function directly (this
+    codebase's convention: public entry points open their own connection, so they're
+    never nested inside one another)."""
+    canonical = (name or "").strip().lower()
+    with get_conn() as conn:
+        _finalize_expired_name_auctions(conn)
+        _finalize_expired_number_auctions(conn)
+
+        gems_row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        if gems_row is None or gems_row["gems"] < CUSTOM_NFT_MIN_GEMS_REQUIRED:
+            raise InsufficientGems()
+
+        target = _usable_owned_card(conn, user_id, user_card_id)
+        if target is None:
+            raise NumberCardNotUsable()
+
+        name_row = conn.execute("SELECT * FROM card_names WHERE name = ?", (canonical,)).fetchone()
+        if name_row is None or name_row["owner_id"] != user_id or name_row["status"] != "owned":
+            raise NameNotAvailable()
+
+        number_row = conn.execute("SELECT * FROM card_numbers WHERE number = ?", (number,)).fetchone()
+        if number_row is None or number_row["owner_id"] != user_id or number_row["status"] != "owned":
+            raise NumberNotAvailable()
+
+        # A name/number can only ever show on one card at a time -- detach from
+        # wherever it sat before (if anywhere else).
+        if name_row["user_card_id"] is not None and name_row["user_card_id"] != user_card_id:
+            conn.execute("UPDATE user_cards SET custom_name = NULL WHERE id = ?", (name_row["user_card_id"],))
+        conn.execute(
+            "UPDATE card_names SET user_card_id = ?, updated_at = ? WHERE name = ?",
+            (user_card_id, _now(), canonical),
+        )
+
+        prev_number_card_id = number_row["user_card_id"]
+        if prev_number_card_id is not None and prev_number_card_id != user_card_id:
+            conn.execute("UPDATE user_cards SET number_override = NULL WHERE id = ?", (prev_number_card_id,))
+        _free_number(conn, user_card_id)  # free whatever number the target card currently shows
+        conn.execute("UPDATE user_cards SET number_override = ? WHERE id = ?", (number, user_card_id))
+        conn.execute(
+            "UPDATE card_numbers SET user_card_id = ?, updated_at = ? WHERE number = ?",
+            (user_card_id, _now(), number),
+        )
+
+        conn.execute(
+            "UPDATE user_cards SET custom_name = ?, custom_rarity = 'diamond' WHERE id = ?",
+            (canonical, user_card_id),
+        )
+    return {"user_card_id": user_card_id, "custom_name": canonical, "number": number}
+
+
 # ---------- Wall (Стена) — a personal curated showcase in Profile ----------
 # A player can pin up to MAX_WALL_CARDS of their own cards (pinned_at set) to admire
 # separately from the full collection grid. Purely cosmetic — pinning doesn't lock the
@@ -2417,7 +3169,10 @@ def get_inventory(user_id: int) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT uc.id AS user_card_id, c.id AS card_id, c.filename, c.name, c.rarity,
+            SELECT uc.id AS user_card_id, c.id AS card_id, c.filename,
+                   COALESCE(uc.custom_name, c.name) AS name,
+                   COALESCE(uc.custom_rarity, c.rarity) AS rarity,
+                   uc.custom_name AS custom_name,
                    uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, uc.pinned_at,
                    COALESCE(uc.number_override,
                        (SELECT COUNT(*) FROM user_cards uc2 WHERE uc2.obtained_at <= uc.obtained_at)) AS drop_number,
@@ -3417,8 +4172,9 @@ def settle_staking(user_id: int) -> int:
                     total_credited += full_days * daily_rate
         if total_credited:
             conn.execute(
-                "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
-                (total_credited, total_credited, user_id),
+                "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ?, "
+                "staking_gems_earned = staking_gems_earned + ? WHERE telegram_id = ?",
+                (total_credited, total_credited, total_credited, user_id),
             )
     return total_credited
 
@@ -3456,6 +4212,8 @@ def stake_card(user_card_id: int, owner_id: int) -> bool:
             raise InsufficientGems()
         conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (fee, owner_id))
         conn.execute("UPDATE user_cards SET staked_at = ? WHERE id = ?", (_now(), user_card_id))
+        if not (ADMIN_ID and str(owner_id) == str(ADMIN_ID)):
+            _bump_counter(conn, "stake")
         return True
 
 
@@ -3754,6 +4512,21 @@ def mark_ref_race_announced() -> None:
         conn.execute("INSERT INTO ref_race_announced (announced_at) VALUES (?)", (_now(),))
 
 
+def has_ref_race_countdown_been_sent(stage: str) -> bool:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT 1 FROM ref_race_countdown_sent WHERE stage = ?", (stage,)
+        ).fetchone() is not None
+
+
+def mark_ref_race_countdown_sent(stage: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO ref_race_countdown_sent (stage, sent_at) VALUES (?, ?)",
+            (stage, _now()),
+        )
+
+
 def set_referral_notice(referrer_id: int, who_name: str, amount: int) -> None:
     """Called from /api/farm the moment a referral reward is credited — stores the
     referred player's display name AND the (now graduated, not always 25) gem amount
@@ -3828,25 +4601,33 @@ def get_global_rarity_breakdown() -> dict:
 LEADERBOARD_EXCLUDED_USERNAMES = {"rzabeyda"}
 
 
+# Just for the general/collection "Топы" screen (Карты/Гемы/Diamond-карты) -- kept
+# separate from LEADERBOARD_EXCLUDED_USERNAMES because zzabeyda should still show up
+# on the PvP/Aviator/Red&Black "game" leaderboards, just not here.
+COLLECTION_TOPS_EXCLUDED_USERNAMES = LEADERBOARD_EXCLUDED_USERNAMES | {"zzabeyda"}
+
+
 def get_leaderboard() -> list[dict]:
-    """Players ranked by total cards owned and by lifetime gems earned — for the 'Топы'
-    screen, which lets the player switch between the two rankings client-side. Unlike
-    the market, identities are shown here on purpose: that's the whole point of a
-    leaderboard. Returns everyone (no LIMIT) since the two rankings can surface different
-    people; the frontend slices each to its own top 50."""
+    """Players ranked by total cards owned, lifetime gems earned, and Diamond cards
+    owned — for the 'Топы' screen, which lets the player switch between the rankings
+    client-side. Unlike the market, identities are shown here on purpose: that's the
+    whole point of a leaderboard. Returns everyone (no LIMIT) since the rankings can
+    surface different people; the frontend slices each to its own top 50."""
     with get_conn() as conn:
-        placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        placeholders = ",".join("?" for _ in COLLECTION_TOPS_EXCLUDED_USERNAMES)
         rows = conn.execute(
             f"""
             SELECT u.telegram_id, u.username, u.first_name, u.photo_url,
-                   COUNT(uc.id) AS total_cards, u.gems_earned
+                   COUNT(uc.id) AS total_cards, u.gems AS current_gems,
+                   COUNT(CASE WHEN c.rarity = 'diamond' THEN 1 END) AS diamond_cards
             FROM users u
             LEFT JOIN user_cards uc ON uc.user_id = u.telegram_id AND uc.voided = 0
+            LEFT JOIN cards c ON c.id = uc.card_id
             WHERE LOWER(COALESCE(u.username, '')) NOT IN ({placeholders})
             GROUP BY u.telegram_id
             ORDER BY total_cards DESC, u.telegram_id ASC
             """,
-            list(LEADERBOARD_EXCLUDED_USERNAMES),
+            list(COLLECTION_TOPS_EXCLUDED_USERNAMES),
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -4020,7 +4801,7 @@ def join_pvp_round(user_id: int, user_card_ids: list[int]) -> dict:
     return get_pvp_state(user_id)
 
 
-PVP_INVITE_COOLDOWN_SECONDS = 180  # keeps "Позвать игрока" from spamming PUBLIC_CHAT
+PVP_INVITE_COOLDOWN_SECONDS = 300  # keeps "Позвать игрока" from spamming PUBLIC_CHAT
 
 
 def is_in_open_pvp_round(user_id: int) -> bool:
@@ -4223,7 +5004,8 @@ def get_pvp_history(limit: int = 50) -> list[dict]:
     with get_conn() as conn:
         rounds = conn.execute(
             """
-            SELECT pr.id, pr.winner_id, pr.resolved_at, w.username AS winner_username, w.first_name AS winner_first_name
+            SELECT pr.id, pr.winner_id, pr.resolved_at, pr.winner_win_pct,
+                   w.username AS winner_username, w.first_name AS winner_first_name
             FROM pvp_rounds pr
             LEFT JOIN users w ON w.telegram_id = pr.winner_id
             WHERE pr.status = 'resolved' AND pr.winner_id IS NOT NULL
@@ -4250,6 +5032,7 @@ def get_pvp_history(limit: int = 50) -> list[dict]:
                 "winner_name": winner_name,
                 "total_cards": total_cards,
                 "total_players": total_players,
+                "winner_win_pct": r["winner_win_pct"],
             })
     return out
 
@@ -4367,6 +5150,29 @@ def get_pvp_win_leaderboard(limit: int = 10, exclude_id: int | None = None) -> l
             query += " AND pr.winner_id != ?"
             params.append(exclude_id)
         query += " GROUP BY pr.winner_id ORDER BY wins DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
+
+def get_top_stakers(limit: int = 10, exclude_id: int | None = None) -> list[dict]:
+    """Top players by lifetime gems earned specifically from staking (staking_gems_earned
+    -- separate from the general gems_earned, which mixes in every other gem source).
+    Only reflects staking income credited after this counter was added. Same
+    LEADERBOARD_EXCLUDED_USERNAMES convention as every other leaderboard."""
+    with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        query = f"""
+            SELECT telegram_id, username, first_name, staking_gems_earned
+            FROM users
+            WHERE staking_gems_earned > 0
+            AND LOWER(COALESCE(username, '')) NOT IN ({excl_placeholders})
+        """
+        params: list = list(LEADERBOARD_EXCLUDED_USERNAMES)
+        if exclude_id is not None:
+            query += " AND telegram_id != ?"
+            params.append(exclude_id)
+        query += " ORDER BY staking_gems_earned DESC LIMIT ?"
         params.append(limit)
         rows = conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
@@ -4501,6 +5307,10 @@ def resolve_due_pvp_rounds() -> list[dict]:
                     break
             if winner_id is None:
                 winner_id = list(weights_by_user.keys())[-1]
+            # Winner's actual odds going into the draw (their weight / total weight),
+            # rounded to a whole percent -- shown in the "История" log so it reads like
+            # "rzabeyda забрал банк с 94% — 13 карт" instead of just the raw card count.
+            winner_win_pct = round(weights_by_user[winner_id] / total * 100) if total else 0
 
             card_ids = [e["user_card_id"] for e in entries]
             for cid in card_ids:
@@ -4510,8 +5320,8 @@ def resolve_due_pvp_rounds() -> list[dict]:
                 [(winner_id, cid) for cid in card_ids],
             )
             conn.execute(
-                "UPDATE pvp_rounds SET status = 'resolved', winner_id = ?, resolved_at = ? WHERE id = ?",
-                (winner_id, now_iso, round_id),
+                "UPDATE pvp_rounds SET status = 'resolved', winner_id = ?, resolved_at = ?, winner_win_pct = ? WHERE id = ?",
+                (winner_id, now_iso, winner_win_pct, round_id),
             )
 
             by_participant: dict[int, dict] = {}
@@ -4586,7 +5396,8 @@ def get_card_by_id(card_id: int) -> sqlite3.Row | None:
 # already sent); "Отменить" un-voids exactly those cards, restoring them.
 # ---------------------------------------------------------------------------
 
-GRAM_CARDS_PER_UNIT = 10  # 10 Diamond cards = 1 GRAM — the fixed exchange rate
+GRAM_CARDS_PER_UNIT = 10  # 10 Diamond cards = 1 payout unit
+STARS_PER_UNIT = 100  # each unit now pays 100 Telegram Stars (was 1 GRAM back when this paid crypto)
 
 
 class CryptoWithdrawalError(Exception):
@@ -4638,7 +5449,7 @@ def request_crypto_withdrawal(user_id: int, user_card_ids: list[int], wallet_add
         if len(rows) != count:
             raise CryptoWithdrawalError("some selected cards aren't your own eligible Diamond cards")
 
-        gram_amount = count // GRAM_CARDS_PER_UNIT
+        gram_amount = (count // GRAM_CARDS_PER_UNIT) * STARS_PER_UNIT
         now = _now()
         cur = conn.execute(
             "INSERT INTO crypto_withdrawals (user_id, card_count, gram_amount, wallet_address, status, created_at) "
@@ -4652,7 +5463,7 @@ def request_crypto_withdrawal(user_id: int, user_card_ids: list[int], wallet_add
         )
         conn.execute(
             f"UPDATE user_cards SET voided = 1, listed_price = NULL, swap_listed = 0, "
-            f"staked_at = NULL, pvp_round_id = NULL WHERE id IN ({placeholders})",
+            f"staked_at = NULL, pvp_round_id = NULL, custom_name = NULL, custom_rarity = NULL WHERE id IN ({placeholders})",
             user_card_ids,
         )
 
