@@ -1249,31 +1249,37 @@ def count_active_aviator_rounds_for_user(user_id: int) -> int:
 # ---------------------------------------------------------------------------
 POKER_MIN_BET = 1
 POKER_PAYTABLE = {
-    "five_of_a_kind": 380,  # only possible with the Joker: 4 naturally-matching cards + it -- the rarest hand, so it pays MORE than a royal flush
-    "royal_flush": 190,
-    "straight_flush": 51,
-    "four_kind": 25,
-    "full_house": 8,
-    "flush": 6,
-    "straight": 5,
-    "three_kind": 4,
+    "five_of_a_kind": 300,  # only possible with the Joker: 4 naturally-matching cards + it -- the rarest hand, so it pays MORE than a royal flush
+    "royal_flush": 150,
+    "straight_flush": 40,
+    "four_kind": 20,
+    "full_house": 5,
+    "flush": 5,
+    "straight": 4,
+    "three_kind": 3,
     "two_pair": 1,
     # no "jacks_or_better" entry -- a lone pair no longer pays (see comment above).
-    # Rescaled up from the previous table (300/150/40/20/6/5/4/3/1) because the client's
-    # pokerSuggestHold() strategy changed: it no longer holds a lone pair on its own
-    # (holding one used to convert into two_pair/three_kind/etc at a much higher rate --
-    # removing that hold, per request, dropped simulated RTP from ~97.9% to ~77.2% with
-    # the OLD numbers, so every multiplier had to go up ~27% to land back near ~96.5%
-    # under the corrected strategy. Re-run the RTP simulation whenever this table OR
-    # pokerSuggestHold() changes -- the two are coupled, changing one without the other
-    # silently moves RTP.
+    # Rescaled back DOWN close to this original table after pokerSuggestHold() was
+    # tightened again per request: it now holds ONLY a made pair/two pair/trips, a real
+    # 4-card flush draw, or a real 4-card straight draw -- no more holding a lone high
+    # card, 2 suited high cards, or 3 cards to a royal, since none of those pay and a
+    # fresh 5-card redraw beats holding dead cards. That strategy is close to the
+    # ORIGINAL (pre-inflation) one this table was designed for, so RTP landed back near
+    # ~96.3% at these near-original numbers (full_house nudged 6->5 to fine-tune) instead
+    # of the ~123% the previous (inflated) numbers gave under this stricter strategy.
+    # Re-run the RTP simulation whenever this table OR pokerSuggestHold() changes -- the
+    # two are coupled, changing one without the other silently moves RTP.
 }
-# Double-up ladder: 6 plain doublings, then a 7th "bonus" step that's a bigger jump than
-# a plain x2 (200x total off the base win instead of the 128x a 7th double would give) --
-# a classic cabinet-poker touch, and rare enough (needs 6 straight correct 50/50 guesses
-# to even reach it) that it doesn't meaningfully move the overall payout math.
-POKER_DOUBLE_MULTIPLIERS = [2, 4, 8, 16, 32, 64, 150]  # index i-1 == total multiplier at ladder level i -- level 7 raised 133->150 per request (base 500 -> lvl6 32000, lvl7 75000 exactly)
-POKER_MAX_GAMBLES = len(POKER_DOUBLE_MULTIPLIERS)  # 7 -- once here, must collect
+# Double-up ladder: 6 plain doublings off the base win, then a 7th "bonus" step --
+# NOT a fixed multiplier off the base (that produced arbitrary-looking totals like
+# 66500/45000 depending on the bet+hand that got you there). Per request, the bonus
+# rung instead roughly doubles whatever level 6 actually paid and rounds UP to the
+# nearest POKER_BONUS_ROUND_TO so it always lands on a clean, good-looking number --
+# see gamble_poker() for the exact formula. Confirmed against examples given: level6
+# 2400 -> 5000, 7200 -> 15000, 18500 -> 40000 (all = ceil(level6*2/5000)*5000).
+POKER_DOUBLE_MULTIPLIERS = [2, 4, 8, 16, 32, 64]  # levels 1-6 only -- fixed cumulative multiplier off the base
+POKER_BONUS_ROUND_TO = 5000
+POKER_MAX_GAMBLES = len(POKER_DOUBLE_MULTIPLIERS) + 1  # 7 -- the 7th ("bonus") rung is computed dynamically, once here must collect
 POKER_DOUBLE_JOKER_CHANCE = 0.12  # per-step odds of the one guaranteed-win Joker reveal (see gamble_poker())
 
 POKER_RANKS = "23456789TJQKA"
@@ -1481,7 +1487,14 @@ def gamble_poker(round_id: int, user_id: int, choice: str) -> dict:
         new_level = row["gamble_count"] + 1
         new_joker_used = 1 if joker_hit else joker_used
         if won:
-            new_payout = row["base_payout"] * POKER_DOUBLE_MULTIPLIERS[new_level - 1]
+            if new_level == POKER_MAX_GAMBLES:
+                # Bonus (7th) rung: not a fixed multiplier off the base -- roughly
+                # double whatever level 6 actually paid, rounded UP to a clean number.
+                level6_payout = row["base_payout"] * POKER_DOUBLE_MULTIPLIERS[-1]
+                doubled = level6_payout * 2
+                new_payout = -(-doubled // POKER_BONUS_ROUND_TO) * POKER_BONUS_ROUND_TO  # ceil division
+            else:
+                new_payout = row["base_payout"] * POKER_DOUBLE_MULTIPLIERS[new_level - 1]
             increment = new_payout - current
             conn.execute(
                 "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
@@ -1521,6 +1534,19 @@ def collect_poker(round_id: int, user_id: int) -> dict:
         conn.execute("UPDATE poker_rounds SET status = 'collected' WHERE id = ?", (round_id,))
         gems = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()["gems"]
     return {"payout": row["current_payout"], "gems": gems}
+
+
+def get_poker_round(round_id: int) -> dict | None:
+    """One Poker round by id, joined with the player's username/first_name -- same
+    pattern as get_redblack_round(), used by the "Поделиться" share endpoint to verify
+    ownership + build the message server-side."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT pr.*, u.username, u.first_name FROM poker_rounds pr "
+            "JOIN users u ON u.telegram_id = pr.user_id WHERE pr.id = ?",
+            (round_id,),
+        ).fetchone()
+        return dict(row) if row else None
 
 
 def get_poker_history(limit: int = 50) -> list[dict]:
@@ -2181,7 +2207,7 @@ CRAFT_COST_GEMS = {
     "platinum": 100,
     "diamond": 200,
 }
-TRANSFER_FEE_GEMS = 3  # charged to the sender for a direct @username gift
+TRANSFER_FEE_GEMS = 25  # charged to the sender for a direct @username gift
 # Minimum gems a card can be listed/offered for on the market, scaled by rarity — a
 # pricier/rarer tier gets a higher floor. Applies to both a seller's listing price and a
 # buyer's offer (list_card()/make_offer()).
@@ -2815,7 +2841,8 @@ def buy_listed_number(buyer_id: int, number: int, buyer_user_card_id: int) -> di
 NAME_MIN_BID_GEMS = 25
 NAME_AUCTION_WINDOW_SECONDS = 12 * 60 * 60  # same 12h window as numbers, reset on every bid
 CUSTOM_NAME_MAX_LEN = 16
-CUSTOM_NFT_MIN_GEMS_REQUIRED = 1000  # a THRESHOLD check (must simply HAVE this many), not a charge
+CUSTOM_NFT_CREATE_COST_GEMS = 500  # charged the first time a card is turned into Obsidian
+CUSTOM_NFT_EDIT_COST_GEMS = 100     # charged to swap the name/number on an already-Obsidian card
 
 
 class NameInvalid(Exception):
@@ -3040,9 +3067,12 @@ def buy_listed_name(buyer_id: int, name: str) -> dict:
 
 
 def create_custom_nft(user_id: int, user_card_id: int, name: str, number: int) -> dict:
-    """Turns one of the caller's own cards into a permanent Obsidian custom NFT.
-    Requires: >= CUSTOM_NFT_MIN_GEMS_REQUIRED gems on hand (a THRESHOLD check -- not
-    spent), a name the caller already owns in their name-bank, and a number the caller
+    """Turns one of the caller's own cards into a permanent Obsidian custom NFT, OR --
+    if the target card is already Obsidian -- swaps its name/number for a different one
+    from the caller's own bank. Charges CUSTOM_NFT_CREATE_COST_GEMS the first time, or
+    the cheaper CUSTOM_NFT_EDIT_COST_GEMS on an already-Obsidian card, deducted from
+    the caller's gems (an actual charge, not just a balance-on-hand threshold). Also
+    requires a name the caller already owns in their name-bank and a number the caller
     already owns in their number-bank (both via the marketplaces above). Sets
     custom_name + custom_rarity='diamond' on the target card -- permanent, only
     cleared if the row is later voided (see the voided=1 UPDATE statements) -- and
@@ -3055,13 +3085,19 @@ def create_custom_nft(user_id: int, user_card_id: int, name: str, number: int) -
         _finalize_expired_name_auctions(conn)
         _finalize_expired_number_auctions(conn)
 
-        gems_row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
-        if gems_row is None or gems_row["gems"] < CUSTOM_NFT_MIN_GEMS_REQUIRED:
-            raise InsufficientGems()
-
         target = _usable_owned_card(conn, user_id, user_card_id)
         if target is None:
             raise NumberCardNotUsable()
+
+        existing_custom_name = conn.execute(
+            "SELECT custom_name FROM user_cards WHERE id = ?", (user_card_id,)
+        ).fetchone()["custom_name"]
+        is_edit = bool(existing_custom_name)
+        cost = CUSTOM_NFT_EDIT_COST_GEMS if is_edit else CUSTOM_NFT_CREATE_COST_GEMS
+
+        gems_row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        if gems_row is None or gems_row["gems"] < cost:
+            raise InsufficientGems()
 
         name_row = conn.execute("SELECT * FROM card_names WHERE name = ?", (canonical,)).fetchone()
         if name_row is None or name_row["owner_id"] != user_id or name_row["status"] != "owned":
@@ -3075,6 +3111,18 @@ def create_custom_nft(user_id: int, user_card_id: int, name: str, number: int) -
         # wherever it sat before (if anywhere else).
         if name_row["user_card_id"] is not None and name_row["user_card_id"] != user_card_id:
             conn.execute("UPDATE user_cards SET custom_name = NULL WHERE id = ?", (name_row["user_card_id"],))
+
+        # Re-running this on an already-Obsidian card (swapping its name for a
+        # different one from the bank) must also free up whatever name it was WEARING
+        # before, or that old name's card_names row keeps pointing at this card forever
+        # (permanently stuck "in use", even though the card no longer shows it).
+        prev_name_row = conn.execute("SELECT custom_name FROM user_cards WHERE id = ?", (user_card_id,)).fetchone()
+        if prev_name_row and prev_name_row["custom_name"] and prev_name_row["custom_name"] != canonical:
+            conn.execute(
+                "UPDATE card_names SET user_card_id = NULL, updated_at = ? WHERE name = ? AND user_card_id = ?",
+                (_now(), prev_name_row["custom_name"], user_card_id),
+            )
+
         conn.execute(
             "UPDATE card_names SET user_card_id = ?, updated_at = ? WHERE name = ?",
             (user_card_id, _now(), canonical),
@@ -3094,7 +3142,9 @@ def create_custom_nft(user_id: int, user_card_id: int, name: str, number: int) -
             "UPDATE user_cards SET custom_name = ?, custom_rarity = 'diamond' WHERE id = ?",
             (canonical, user_card_id),
         )
-    return {"user_card_id": user_card_id, "custom_name": canonical, "number": number}
+        conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (cost, user_id))
+        new_gems = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()["gems"]
+    return {"user_card_id": user_card_id, "custom_name": canonical, "number": number, "cost": cost, "is_edit": is_edit, "gems": new_gems}
 
 
 # ---------- Wall (Стена) — a personal curated showcase in Profile ----------
@@ -3901,7 +3951,11 @@ def get_market_listings() -> list[dict]:
         rows = conn.execute(
             """
             SELECT uc.id AS user_card_id, uc.listed_price, uc.listed_at, uc.user_id AS seller_id,
-                   c.id AS card_id, c.filename, c.name, c.rarity, u.username, u.first_name,
+                   c.id AS card_id, c.filename,
+                   COALESCE(uc.custom_name, c.name) AS name,
+                   COALESCE(uc.custom_rarity, c.rarity) AS rarity,
+                   uc.custom_name AS custom_name,
+                   u.username, u.first_name,
                    COALESCE(uc.number_override,
                        (SELECT COUNT(*) FROM user_cards uc2 WHERE uc2.obtained_at <= uc.obtained_at)) AS drop_number
             FROM user_cards uc
@@ -4104,7 +4158,10 @@ def get_swap_listings() -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT uc.id AS user_card_id, uc.user_id AS seller_id, c.id AS card_id, c.filename, c.name, c.rarity,
+            SELECT uc.id AS user_card_id, uc.user_id AS seller_id, c.id AS card_id, c.filename,
+                   COALESCE(uc.custom_name, c.name) AS name,
+                   COALESCE(uc.custom_rarity, c.rarity) AS rarity,
+                   uc.custom_name AS custom_name,
                    COALESCE(uc.number_override,
                        (SELECT COUNT(*) FROM user_cards uc2 WHERE uc2.obtained_at <= uc.obtained_at)) AS drop_number
             FROM user_cards uc
@@ -4130,6 +4187,14 @@ STAKE_PERIOD_SECONDS = 24 * 60 * 60
 # can be staked AT ONCE, so the payout can't be scaled up without limit either.
 MAX_STAKE_DAYS = 20
 MAX_STAKED_CARDS = 5
+
+# The one-time entry fee used to be exactly 1 day rate against a MAX_STAKE_DAYS=20
+# payout -- a flat, risk-free 2000% return (+1900% net) on every rarity, wildly out of
+# line with craft/burn/cases (~90-180% net, all with real risk of losing the card or
+# gems). Per request, the fee is now several days worth instead of one, bringing the
+# net return down closer to the rest of the economy while leaving the 20-day term and
+# the payout rates themselves untouched.
+STAKE_ENTRY_FEE_MULTIPLIER = 4  # fee = 4 days rate instead of 1 -- entry fee increased by 300 percent
 
 
 def settle_staking(user_id: int) -> int:
@@ -4206,7 +4271,7 @@ def stake_card(user_card_id: int, owner_id: int) -> bool:
         ).fetchone()["n"]
         if staked_count >= MAX_STAKED_CARDS:
             raise StakeLimitReached()
-        fee = STAKE_DAILY_RATES.get(row["rarity"] or "bronze", 5)
+        fee = STAKE_ENTRY_FEE_MULTIPLIER * STAKE_DAILY_RATES.get(row["rarity"] or "bronze", 5)
         gems_row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (owner_id,)).fetchone()
         if gems_row is None or gems_row["gems"] < fee:
             raise InsufficientGems()
@@ -4598,7 +4663,7 @@ def get_global_rarity_breakdown() -> dict:
 # account (ADMIN_ID). Used by get_leaderboard()/get_ref_leaderboard()/
 # get_pvp_win_leaderboard() -- add a username here to hide that account from all
 # three at once.
-LEADERBOARD_EXCLUDED_USERNAMES = {"rzabeyda"}
+LEADERBOARD_EXCLUDED_USERNAMES = {"rzabeyda", "zzabeyda"}
 
 
 # Just for the general/collection "Топы" screen (Карты/Гемы/Diamond-карты) -- kept

@@ -214,7 +214,7 @@ class PokerRoundBody(InitDataBody):
 
 
 class GameShareBody(InitDataBody):
-    game: str  # "pvp" | "redblack" | "aviator"
+    game: str  # "pvp" | "redblack" | "aviator" | "poker"
     round_id: int
 
 
@@ -924,6 +924,11 @@ async def games_share(body: GameShareBody):
         if round_row is None or not any(p["user_id"] == user["telegram_id"] for p in round_row["participants"]):
             raise HTTPException(404, "round not found")
         ok = await bot_module.share_pvp_result(body.round_id)
+    elif body.game == "poker":
+        round_row = db.get_poker_round(body.round_id)
+        if round_row is None or round_row["user_id"] != user["telegram_id"]:
+            raise HTTPException(404, "round not found")
+        ok = await bot_module.share_poker_result(body.round_id)
     else:
         raise HTTPException(400, "unknown game")
 
@@ -1181,7 +1186,11 @@ def custom_nft_create(body: CustomNftCreateBody):
     try:
         result = db.create_custom_nft(user["telegram_id"], body.user_card_id, body.name, body.number)
     except db.InsufficientGems:
-        raise HTTPException(400, f"need at least {db.CUSTOM_NFT_MIN_GEMS_REQUIRED} gems")
+        raise HTTPException(
+            400,
+            f"not enough gems ({db.CUSTOM_NFT_CREATE_COST_GEMS} to create Obsidian, "
+            f"{db.CUSTOM_NFT_EDIT_COST_GEMS} to change the name/number on one you already made)",
+        )
     except db.NumberCardNotUsable:
         raise HTTPException(404, "card not found in your inventory, or it's busy (listed/staked/swapped/in a PvP round)")
     except db.NameNotAvailable:

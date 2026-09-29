@@ -52,7 +52,28 @@ WEBAPP_URL = os.environ.get("WEBAPP_URL", "https://peeppo.memstroy.app")
 # Telegram/its WebView caches the mini-app HTML by exact URL, same as it cached card
 # images earlier -- bump this on every real webapp/index.html deploy so the "Open app"
 # button forces a fresh fetch instead of reusing a stale cached page.
-WEBAPP_VERSION = "3"
+WEBAPP_VERSION = "4"
+
+# The admin's own real @handle should never leak in anything posted publicly (giveaway/
+# contest winner announcements, share-to-chat results, Aviator chat messages) -- it's
+# shown as a generic "Admin" label there instead. Never applied to private replies
+# (admin commands like /finduser, /addgem) since only the admin themselves sees those.
+ADMIN_USERNAME_MASK = "rzabeyda"
+
+
+def _mask_username(username: str | None) -> str | None:
+    if username and username.lower() == ADMIN_USERNAME_MASK:
+        return "Admin"
+    return username
+
+
+def _who_label(username: str | None, first_name: str | None, telegram_id: int) -> str:
+    """"@handle" (or first_name/id fallback) for a winner/player shown in a public
+    announcement -- masked through _mask_username() first."""
+    username = _mask_username(username)
+    if username == "Admin":
+        return "Admin"
+    return f"@{username}" if username else (first_name or str(telegram_id))
 
 AVIATOR_MAX_CONCURRENT_PER_CHAT = 5  # see database.count_active_aviator_rounds_in_chat -- caps how many /go tickers can hammer edit_text in the same chat at once
 
@@ -297,14 +318,15 @@ async def handle_admin_find_user(message: Message):
 
 GEM_DROP_AMOUNT = 25
 
-# Auto-scheduler: fires roughly once every hour, round the clock (24/7 — used to be
-# limited to 06:00-00:00 Tallinn time, now runs all 24 hours). GEM_DROP_MIN_GAP_SECONDS
-# guards against firing a second drop too soon if the bot process restarts a few times
-# in a row (e.g. during a deploy) — kept a bit below GEM_DROP_INTERVAL_SECONDS so the
-# +/-180s jitter on the sleep below never causes a legitimate hourly drop to be skipped.
+# Auto-scheduler: fires roughly once every hour, only during the active window
+# 06:00-02:00 Tallinn time (quiet 02:00-06:00) -- the window WRAPS past midnight, see
+# the hour check below. GEM_DROP_MIN_GAP_SECONDS guards against firing a second drop
+# too soon if the bot process restarts a few times in a row (e.g. during a deploy) --
+# kept a bit below GEM_DROP_INTERVAL_SECONDS so the +/-180s jitter on the sleep below
+# never causes a legitimate hourly drop to be skipped.
 GEM_DROP_TZ = ZoneInfo("Europe/Tallinn")
-GEM_DROP_START_HOUR = 0
-GEM_DROP_END_HOUR = 24
+GEM_DROP_START_HOUR = 6   # window opens 06:00
+GEM_DROP_END_HOUR = 2     # window closes 02:00 (next day) -- start > end means it wraps
 GEM_DROP_INTERVAL_SECONDS = 3600
 GEM_DROP_MIN_GAP_SECONDS = 3000
 
@@ -343,11 +365,17 @@ async def gem_drop_scheduler():
     """Background loop living for the lifetime of the bot process: roughly once every
     hour, round the clock — if no drop went out too recently — posts an automatic
     GEM_DROP_AMOUNT-gem drop into PUBLIC_CHAT."""
-    logger.info("gem drop scheduler started (24/7, ~every 1h, %d gems)", GEM_DROP_AMOUNT)
+    logger.info("gem drop scheduler started (06:00-02:00 Tallinn, ~every 1h, %d gems)", GEM_DROP_AMOUNT)
     while True:
         try:
             now_local = datetime.now(GEM_DROP_TZ)
-            if GEM_DROP_START_HOUR <= now_local.hour < GEM_DROP_END_HOUR:
+            if GEM_DROP_START_HOUR <= GEM_DROP_END_HOUR:
+                in_window = GEM_DROP_START_HOUR <= now_local.hour < GEM_DROP_END_HOUR
+            else:
+                # Wrapping window (e.g. 06:00-02:00): active from start-hour through
+                # midnight, then from midnight up to (not including) end-hour.
+                in_window = now_local.hour >= GEM_DROP_START_HOUR or now_local.hour < GEM_DROP_END_HOUR
+            if in_window:
                 last = db.get_last_gem_drop_time()
                 due = True
                 if last:
@@ -469,7 +497,7 @@ async def handle_admin_card_giveaway(message: Message):
         return
 
     lines = "\n".join(
-        f"{('@' + w['username']) if w['username'] else (w['first_name'] or str(w['telegram_id']))} — {w['count']} шт."
+        f"{_who_label(w['username'], w['first_name'], w['telegram_id'])} — {w['count']} шт."
         for w in result["winners"]
     )
     text = (
@@ -696,7 +724,7 @@ async def _announce_card_batch_giveaway_result(giveaway: dict, result: dict):
         card = r["card"]
         if r["winner"] and r["transferred"]:
             w = r["winner"]
-            who = f"@{w['username']}" if w["username"] else (w["first_name"] or str(w["telegram_id"]))
+            who = _who_label(w["username"], w["first_name"], w["telegram_id"])
             bucket = by_winner.setdefault(w["telegram_id"], {"who": who, "total": 0, "by_rarity": {}})
             bucket["total"] += 1
             rarity = (card["rarity"] or "?").upper()
@@ -743,7 +771,7 @@ async def _announce_number_giveaway_result(giveaway: dict, result: dict):
     card = result["card"]
     if result["winner"] and result["transferred"]:
         w = result["winner"]
-        who = f"@{w['username']}" if w["username"] else (w["first_name"] or str(w["telegram_id"]))
+        who = _who_label(w["username"], w["first_name"], w["telegram_id"])
         text = (
             f"🎉 Розыгрыш карты №{card['number']} завершён!\n\n"
             f"Участников: {result['total_entries']}\n"
@@ -775,7 +803,7 @@ async def _announce_giveaway_result(giveaway: dict, result: dict):
     winners = result["winners"]
     if winners:
         names = ", ".join(
-            (f"@{w['username']}" if w["username"] else (w["first_name"] or str(w["telegram_id"])))
+            _who_label(w["username"], w["first_name"], w["telegram_id"])
             for w in winners
         )
         text = (
@@ -865,7 +893,7 @@ async def check_hundred_club():
     if result is None:
         return
     names = ", ".join(
-        (f"@{w['username']}" if w["username"] else (w["first_name"] or str(w["telegram_id"])))
+        _who_label(w["username"], w["first_name"], w["telegram_id"])
         for w in result["winners"]
     )
     text = (
@@ -1309,6 +1337,9 @@ async def handle_inline_share(inline_query: InlineQuery):
 # ---------------------------------------------------------------------------
 
 def _display_name(username: str | None, first_name: str | None) -> str:
+    username = _mask_username(username)
+    if username == "Admin":
+        return "Admin"
     return f"@{username}" if username else (first_name or "Игрок")
 
 
@@ -1328,6 +1359,36 @@ async def share_redblack_result(round_id: int) -> bool:
         return True
     except Exception:
         logger.warning("could not share redblack round %s", round_id)
+        return False
+
+
+_POKER_CATEGORY_LABEL = {
+    "royal_flush": "ROYAL FLUSH", "five_of_a_kind": "5 OF A KIND", "straight_flush": "STR FLUSH",
+    "four_kind": "4 OF A KIND", "full_house": "FULL HOUSE", "flush": "FLUSH", "straight": "STRAIGHT",
+    "three_kind": "3 OF A KIND", "two_pair": "2 PAIRS", "jacks_or_better": "JACKS OR BETTER", "nothing": "MISS",
+}  # mirrors webapp/index.html's POKER_CATEGORY_LABEL
+
+
+async def share_poker_result(round_id: int) -> bool:
+    round_row = db.get_poker_round(round_id)
+    # "won" is included (not just "collected") so the player can share straight from the
+    # double-up screen before tapping "Забрать" -- gems are already credited live at
+    # draw/gamble time regardless, so the numbers are accurate either way.
+    if round_row is None or round_row["status"] not in ("won", "collected", "busted"):
+        return False
+    name = _display_name(round_row.get("username"), round_row.get("first_name"))
+    label = _POKER_CATEGORY_LABEL.get(round_row["category"], round_row["category"] or "MISS")
+    net = (round_row["current_payout"] or 0) - round_row["bet"]
+    if round_row["status"] in ("won", "collected") and net >= 0:
+        ladder_note = f" (лесенка x{round_row['gamble_count']})" if round_row["gamble_count"] else ""
+        text = f"🃏 {name} сыграл в Покер — {label}{ladder_note}, забрал +{net} 💎!"
+    else:
+        text = f"🃏 {name} сыграл в Покер — {label}, сгорело {round_row['bet']} 💎"
+    try:
+        await bot.send_message(PUBLIC_CHAT, text)
+        return True
+    except Exception:
+        logger.warning("could not share poker round %s", round_id)
         return False
 
 
@@ -1646,7 +1707,7 @@ def _player_label(username: str | None, first_name: str | None, telegram_id: int
     """Display name for the Aviator chat messages -- username WITHOUT the @ prefix
     (unlike notify_admin_new_user's "@username" DM style) so it's readable as plain
     text in a group chat, falling back to first_name then the bare id."""
-    return username or first_name or str(telegram_id)
+    return _mask_username(username) or first_name or str(telegram_id)
 
 
 @dp.message(Command("go"))

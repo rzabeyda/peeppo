@@ -1111,6 +1111,10 @@
   #poker-rules-text{margin-bottom:10px;}
   #poker-rules-text2{font-size:13px; color:#ccc; line-height:1.5; margin:14px 0 10px;}
   #poker-rules-footnote{font-size:11.5px; color:#888; line-height:1.5; margin-top:10px;}
+  #poker-rules-card.compact #poker-rules-text,
+  #poker-rules-card.compact #poker-rules-text2,
+  #poker-rules-card.compact .poker-ladder,
+  #poker-rules-card.compact #poker-rules-footnote{display:none;}
 
   /* ---------- Poker paytable (colored rows, top-tier warmest) ---------- */
   .poker-paytable{display:flex; flex-direction:column; gap:5px;}
@@ -1157,6 +1161,9 @@
     padding:16px; display:flex; flex-direction:column; gap:12px;
   }
   .poker-title{font-weight:800; font-size:16px; color:#fff;}
+  .game-title-row{display:flex; align-items:center; justify-content:space-between; margin-bottom:2px;}
+  .game-info-btn{width:24px; height:24px; border-radius:50%; border:1px solid #444; background:rgba(255,255,255,.06); color:#ccc; font-weight:800; font-size:13px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .game-info-btn:active{transform:scale(.92);}
   .poker-idle{display:flex; flex-direction:column; gap:12px;}
   .poker-bet-row{display:flex; align-items:center; gap:8px; background:#161616; border:1px solid var(--card-border); border-radius:12px; padding:10px 12px;}
   .poker-bet-label{font-size:12.5px; color:#ccc; font-weight:700;}
@@ -1170,7 +1177,7 @@
   .poker-presets button.active{background:var(--accent2); color:#241d00; border-color:var(--accent2);}
   .poker-deal-btn, .poker-draw-btn{
     width:100%; padding:14px 0; border-radius:14px; border:none;
-    background:#000; color:#fff; font-weight:800; font-size:15px; cursor:pointer;
+    background:linear-gradient(135deg,#3b82f6,#1d4ed8); color:#fff; font-weight:800; font-size:15px; cursor:pointer;
   }
   .poker-deal-btn:disabled, .poker-draw-btn:disabled{opacity:.5; cursor:not-allowed;}
   .poker-hand-wrap{display:flex; flex-direction:column; gap:10px;}
@@ -1328,7 +1335,7 @@
   .pvp-picker-rarity-btn.platinum{background:linear-gradient(135deg,#7c3aed,#c4b5fd); color:#fff;}
   .pvp-picker-rarity-btn.diamond{background:linear-gradient(135deg,#ff2fb0,#ffb3ec); color:#3a0022;}
   .pvp-picker-rarity-btn:active{transform:scale(.95);}
-  #pvp-picker-select-all{
+  #pvp-picker-select-all, #burn-picker-select-all{
     width:100%;
     background:#000; color:#fff;
     border:1px solid #333;
@@ -1338,7 +1345,7 @@
     cursor:pointer;
     margin-bottom:10px;
   }
-  #pvp-picker-select-all:active{transform:scale(.98);}
+  #pvp-picker-select-all:active, #burn-picker-select-all:active{transform:scale(.98);}
   #pvp-picker-card{
     width:100%; max-width:340px; max-height:80vh;
     background:var(--card-bg);
@@ -1831,10 +1838,10 @@
   .grid-item.rarity-border-diamond, img.rarity-border-diamond, .history-row.rarity-border-diamond{border-color:#ff2fb0; box-shadow:0 0 8px rgba(255,47,176,.5);}
   .grid-item.obsidian-border, img.obsidian-border, .history-row.obsidian-border{border-color:#000 !important;}
   .grid-item.obsidian-border, img.obsidian-border{animation:obsidian-pulse 2.2s ease-in-out infinite !important;}
-  .history-row.obsidian-border{box-shadow:0 0 10px rgba(139,92,246,.55) !important;}
+  .history-row.obsidian-border{box-shadow:0 0 10px rgba(255,255,255,.55) !important;}
   @keyframes obsidian-pulse{
-    0%, 100%{ box-shadow:0 0 8px rgba(139,92,246,.45); }
-    50%{ box-shadow:0 0 18px rgba(168,85,247,.9); }
+    0%, 100%{ box-shadow:0 0 8px rgba(255,255,255,.45); }
+    50%{ box-shadow:0 0 18px rgba(255,255,255,.95); }
   }
   @keyframes obsidian-shimmer{
     0%{ transform:translateX(-160%) rotate(20deg); }
@@ -2015,8 +2022,8 @@
     pointer-events:none; z-index:2;
   }
   @keyframes obsidian-pulse-modal{
-    0%, 100%{ box-shadow:0 0 12px 3px rgba(139,92,246,.5); }
-    50%{ box-shadow:0 0 22px 5px rgba(168,85,247,.95); }
+    0%, 100%{ box-shadow:0 0 12px 3px rgba(255,255,255,.5); }
+    50%{ box-shadow:0 0 22px 5px rgba(255,255,255,1); }
   }
   #modal-img-wrap .modal-drop-number{
     position:absolute; bottom:10px; left:10px;
@@ -2327,6 +2334,7 @@
   }
   #chance-title{font-size:16px; font-weight:800; margin-bottom:4px;}
   #chance-sub{font-size:11.5px; color:#888; margin-bottom:14px;}
+  #chance-total{font-size:15px; font-weight:800; color:#fff; margin-bottom:10px;}
   .chance-row{display:flex; align-items:center; justify-content:space-between; padding:10px 4px; border-bottom:1px solid var(--card-border);}
   .chance-row:last-child{border-bottom:none;}
   .chance-row .rarity-tag{position:static; font-size:10px; padding:4px 8px;}
@@ -2410,8 +2418,10 @@
           <button type="button" id="av-history-btn" class="history-btn">История</button>
         </div>
         <div class="av-card">
-          <div class="av-title">Ракетка</div>
-          <div class="av-sub">Ставь гемы — множитель растёт. Жми "Забрать" пока не улетела — не успел, ставка сгорает.</div>
+          <div class="game-title-row">
+            <div class="av-title">Ракетка</div>
+            <button type="button" id="av-info-btn" class="game-info-btn">?</button>
+          </div>
 
           <div id="av-idle" class="av-idle">
             <div class="av-bet-row">
@@ -2448,8 +2458,10 @@
           <button type="button" id="rb-history-btn" class="history-btn">История</button>
         </div>
         <div class="rb-card">
-          <div class="rb-title">Red&amp;Black</div>
-          <div class="rb-sub">Ставь гемы и угадай цвет. Угадал — забираешь x2, не угадал — ставка сгорает.</div>
+          <div class="game-title-row">
+            <div class="rb-title">Red&amp;Black</div>
+            <button type="button" id="rb-info-btn" class="game-info-btn">?</button>
+          </div>
           <div class="rb-bet-row">
             <span class="rb-bet-label">Ставка:</span>
             <span class="rb-bet-value" id="rb-bet-value">25</span>
@@ -2480,7 +2492,10 @@
           <button type="button" id="poker-history-btn" class="history-btn">История</button>
         </div>
         <div class="poker-card">
-          <div class="poker-title">Американский покер</div>
+          <div class="game-title-row">
+            <div class="poker-title">Американский покер</div>
+            <button type="button" id="poker-info-btn" class="game-info-btn">?</button>
+          </div>
 
           <div class="poker-bet-row">
             <span class="poker-bet-label">Ставка:</span>
@@ -2868,6 +2883,7 @@
       <button class="btn-close-inline" id="chance-close">✕</button>
       <div id="chance-title">Твоя коллекция</div>
       <div id="chance-sub">Разбивка по редкости — только твои карты</div>
+      <div id="chance-total"></div>
       <div class="chance-row"><span class="rarity-tag diamond">diamond</span><span class="chance-pct" id="farmed-diamond">0</span></div>
       <div class="chance-row"><span class="rarity-tag platinum">platinum</span><span class="chance-pct" id="farmed-platinum">0</span></div>
       <div class="chance-row"><span class="rarity-tag gold">gold</span><span class="chance-pct" id="farmed-gold">0</span></div>
@@ -2977,6 +2993,7 @@
   <div id="burn-picker-overlay">
     <div id="burn-picker-card">
       <div id="burn-picker-title">Выбери карты для эволюции</div>
+      <button id="burn-picker-select-all">Выбрать все</button>
       <div class="grid" id="burn-picker-grid"></div>
       <div id="input-actions">
         <button id="burn-picker-confirm">Эволюция</button>
@@ -3184,21 +3201,21 @@
         Ставишь гемы, получаешь 5 карт. Выбираешь какие оставить (жми на карту), остальные меняются на новые. В колоду добавлен Джокер 🃏 — он всегда лучшая карта и дополняет любую комбинацию, а вместе с четырьмя одинаковыми даёт 5 одинаковых. Комбинация от двух пар и выше приносит выигрыш по таблице:
       </div>
       <div class="poker-paytable">
-        <div class="poker-paytable-row tier-joker"><span class="combo">5 одинаковых 🃏</span><span class="mult">x380</span></div>
-        <div class="poker-paytable-row tier-1"><span class="combo">Роял-флеш</span><span class="mult">x190</span></div>
-        <div class="poker-paytable-row tier-2"><span class="combo">Стрит-флеш</span><span class="mult">x51</span></div>
-        <div class="poker-paytable-row tier-3"><span class="combo">Каре</span><span class="mult">x25</span></div>
-        <div class="poker-paytable-row tier-4"><span class="combo">Фулл-хаус</span><span class="mult">x8</span></div>
-        <div class="poker-paytable-row tier-5"><span class="combo">Флеш</span><span class="mult">x6</span></div>
-        <div class="poker-paytable-row tier-6"><span class="combo">Стрит</span><span class="mult">x5</span></div>
-        <div class="poker-paytable-row tier-7"><span class="combo">Сет (тройка)</span><span class="mult">x4</span></div>
-        <div class="poker-paytable-row tier-8"><span class="combo">Две пары</span><span class="mult">x1</span></div>
+        <div class="poker-paytable-row tier-joker"><span class="combo">Five of a Kind</span><span class="mult">x300</span></div>
+        <div class="poker-paytable-row tier-1"><span class="combo">Royal Flush</span><span class="mult">x150</span></div>
+        <div class="poker-paytable-row tier-2"><span class="combo">Straight Flush</span><span class="mult">x40</span></div>
+        <div class="poker-paytable-row tier-3"><span class="combo">Four of a Kind</span><span class="mult">x20</span></div>
+        <div class="poker-paytable-row tier-4"><span class="combo">Full House</span><span class="mult">x5</span></div>
+        <div class="poker-paytable-row tier-5"><span class="combo">Flush</span><span class="mult">x5</span></div>
+        <div class="poker-paytable-row tier-6"><span class="combo">Straight</span><span class="mult">x4</span></div>
+        <div class="poker-paytable-row tier-7"><span class="combo">Three of a Kind</span><span class="mult">x3</span></div>
+        <div class="poker-paytable-row tier-8"><span class="combo">Two Pair</span><span class="mult">x1</span></div>
       </div>
       <div id="poker-rules-text2">
         После выигрыша можно забрать сразу или рискнуть — удвоить в Красное/Чёрное (честная монетка 50/50). Не угадал — сгорает весь текущий выигрыш, а не только ставка. Пробить лесенку можно до 7 ступеней подряд, последняя — бонусная:
       </div>
       <div class="poker-ladder">
-        <div class="ladder-row lvl7 bonus-level"><span class="mult">x200</span></div>
+        <div class="ladder-row lvl7 bonus-level"><span class="mult">БОНУС</span></div>
         <div class="ladder-row lvl6"><span class="mult">x64</span></div>
         <div class="ladder-row lvl5"><span class="mult">x32</span></div>
         <div class="ladder-row lvl4"><span class="mult">x16</span></div>
@@ -3206,7 +3223,7 @@
         <div class="ladder-row lvl2"><span class="mult">x4</span></div>
         <div class="ladder-row lvl1"><span class="mult">x2</span></div>
       </div>
-      <div id="poker-rules-footnote">Каждый шаг — честная монетка 50/50: угадал цвет — поднимаешься на ступень выше, ошибся — сгорает весь текущий выигрыш. 7-я ступень — не обычное удвоение, а бонус x200 от исходного выигрыша.</div>
+      <div id="poker-rules-footnote">Каждый шаг — честная монетка 50/50: угадал цвет — поднимаешься на ступень выше, ошибся — сгорает весь текущий выигрыш. 7-я ступень — не обычное удвоение: она примерно удваивает выигрыш 6-й ступени и округляет вверх до красивого круглого числа.</div>
     </div>
   </div>
 
@@ -3223,6 +3240,7 @@
         <button class="poker-gamble-btn poker-gamble-red" id="poker-double-red">🔴 RED</button>
         <button class="poker-gamble-btn poker-gamble-black" id="poker-double-black">⚫ BLACK</button>
       </div>
+      <button class="poker-collect-btn" id="poker-double-share" style="display:none; background:#000; border:1px solid #333; margin-top:8px;">Поделиться в чат</button>
       <button class="poker-collect-btn" id="poker-double-collect">Забрать</button>
     </div>
   </div>
@@ -3606,6 +3624,7 @@ document.getElementById("daily-bonus-ok").addEventListener("click", ()=>{
 function showCardsBreakdown(){
   document.getElementById("chance-title").textContent = "Твоя коллекция";
   document.getElementById("chance-sub").textContent = "Разбивка по редкости — только твои карты";
+  document.getElementById("chance-total").textContent = `Всего: ${inventory.length}`;
   document.getElementById("farmed-diamond").textContent = inventory.filter(c=>c.rarity==="diamond").length;
   document.getElementById("farmed-platinum").textContent = inventory.filter(c=>c.rarity==="platinum").length;
   document.getElementById("farmed-gold").textContent = inventory.filter(c=>c.rarity==="gold").length;
@@ -3624,6 +3643,8 @@ async function showGlobalCardsBreakdown(){
     document.getElementById("farmed-gold").textContent = data.gold ?? 0;
     document.getElementById("farmed-silver").textContent = data.silver ?? 0;
     document.getElementById("farmed-bronze").textContent = data.bronze ?? 0;
+    const total = (data.diamond ?? 0) + (data.platinum ?? 0) + (data.gold ?? 0) + (data.silver ?? 0) + (data.bronze ?? 0);
+    document.getElementById("chance-total").textContent = `Всего: ${total}`;
   }catch(e){ /* non-critical, just leave whatever was there */ }
   document.getElementById("chance-overlay").classList.add("active");
 }
@@ -3830,9 +3851,9 @@ function renderMarket(){
 
   list.className = "grid";
   list.innerHTML = sorted.map(l => `
-      <div class="grid-item rarity-border-${l.rarity}" data-uc="${l.user_card_id}">
+      <div class="grid-item rarity-border-${l.rarity}${l.custom_name ? " obsidian-border" : ""}" data-uc="${l.user_card_id}">
         <img src="/static/cards/${l.filename}?v=${CARD_IMG_VERSION}" alt="${l.name||''}">
-        <div class="rarity-tag ${l.rarity}">${l.rarity}</div>
+        <div class="rarity-tag ${l.custom_name ? "obsidian" : l.rarity}">${l.custom_name ? "OBSIDIAN" : l.rarity}</div>
         <div class="market-number-tag">#${l.drop_number}</div>
         <div class="market-price-tag"><img src="/static/icons/diamond.png" alt="">${l.listed_price}</div>
         ${l.is_mine ? `<div class="market-mine-badge">Твой</div>` : ""}
@@ -3968,7 +3989,7 @@ function renderMarketHistory(trades){
     <div class="history-row market-history-row rarity-border-${t.rarity}">
       <div class="thumbs"><img class="rarity-border-${t.rarity}" src="/static/cards/${t.filename}?v=${CARD_IMG_VERSION}" alt=""></div>
       <div class="info">
-        <div class="line1">${t.name || "Без названия"}</div>
+        <div class="line1">${capName(t.name) || "Без названия"}</div>
         <div class="line2">${fmtHistoryDate(t.completed_at)}</div>
       </div>
       <div class="price">${t.price_gems} <img src="/static/icons/diamond.png" alt="" style="width:12px;height:12px;vertical-align:-1px;"></div>
@@ -3993,7 +4014,7 @@ function renderSwapHistory(trades){
       <div class="history-row rarity-border-${t.listed_card.rarity}">
         <div class="thumbs"><img class="rarity-border-${t.listed_card.rarity}" src="/static/cards/${t.listed_card.filename}?v=${CARD_IMG_VERSION}" alt="">${offeredThumb}</div>
         <div class="info">
-          <div class="line1">${t.listed_card.name || "Без названия"} ⇄ ${offeredLabel}</div>
+          <div class="line1">${capName(t.listed_card.name) || "Без названия"} ⇄ ${offeredLabel}</div>
           <div class="line2">${fmtHistoryDate(t.accepted_at)}</div>
         </div>
       </div>
@@ -4022,6 +4043,20 @@ function renderPvpHistory(rounds){
   }).join("");
 }
 
+// Anywhere another player's handle is shown publicly (history feeds, leaderboards,
+// market/swap listings, PvP), the admin's own real @username is hidden behind a
+// generic "Admin" label -- never applied to the player's OWN profile screen, where
+// they see their own real username as usual.
+function maskedName(u){
+  return (u && u.toLowerCase() === "rzabeyda") ? "Admin" : u;
+}
+// Custom names (the "Имена" bank, and any card wearing one) are stored/matched in
+// lowercase canonical form server-side, but always DISPLAYED with a capitalized first
+// letter (durov -> Durov, pepe -> Pepe) -- never touches data-name attrs, which must
+// stay the exact lowercase value the API expects.
+function capName(n){
+  return n ? n[0].toUpperCase() + n.slice(1) : n;
+}
 function renderRedBlackHistoryList(rounds){
   const list = document.getElementById("history-list");
   if(!rounds.length){
@@ -4029,7 +4064,7 @@ function renderRedBlackHistoryList(rounds){
     return;
   }
   list.innerHTML = rounds.map(r => {
-    const name = r.username ? r.username : (r.first_name || "Игрок");
+    const name = r.username ? maskedName(r.username) : (r.first_name || "Игрок");
     const colorEmoji = r.result === "red" ? "🔴" : "⚫";
     const sign = r.won ? `+${r.payout - r.bet}` : `-${r.bet}`;
     return `
@@ -4049,7 +4084,7 @@ function renderPokerHistoryList(rounds){
     return;
   }
   list.innerHTML = rounds.map(r => {
-    const name = r.username ? r.username : (r.first_name || "Игрок");
+    const name = r.username ? maskedName(r.username) : (r.first_name || "Игрок");
     const label = POKER_CATEGORY_LABEL[r.category] || r.category || "Пусто";
     const net = r.current_payout - r.bet;
     const sign = net >= 0 ? `+${net}` : `${net}`;
@@ -4071,7 +4106,7 @@ function renderAviatorHistoryList(rounds){
     return;
   }
   list.innerHTML = rounds.map(r => {
-    const name = r.username ? r.username : (r.first_name || "Игрок");
+    const name = r.username ? maskedName(r.username) : (r.first_name || "Игрок");
     const won = r.status === "won";
     const mult = won ? r.cashout_multiplier : r.crash_point;
     const payout = won ? Math.round(r.bet * r.cashout_multiplier) : 0;
@@ -4104,16 +4139,30 @@ document.getElementById("pvp-rules-close").addEventListener("click", ()=>{
 document.getElementById("av-rules-btn").addEventListener("click", ()=>{
   document.getElementById("av-rules-overlay").classList.add("active");
 });
+document.getElementById("av-info-btn").addEventListener("click", ()=>{
+  document.getElementById("av-rules-overlay").classList.add("active");
+});
 document.getElementById("av-rules-close").addEventListener("click", ()=>{
   document.getElementById("av-rules-overlay").classList.remove("active");
 });
 document.getElementById("rb-rules-btn").addEventListener("click", ()=>{
   document.getElementById("rb-rules-overlay").classList.add("active");
 });
+document.getElementById("rb-info-btn").addEventListener("click", ()=>{
+  document.getElementById("rb-rules-overlay").classList.add("active");
+});
 document.getElementById("rb-rules-close").addEventListener("click", ()=>{
   document.getElementById("rb-rules-overlay").classList.remove("active");
 });
 document.getElementById("poker-rules-btn").addEventListener("click", ()=>{
+  document.getElementById("poker-rules-card").classList.remove("compact");
+  document.getElementById("poker-rules-title").textContent = "Правила Американского покера";
+  document.getElementById("poker-rules-overlay").classList.add("active");
+});
+document.getElementById("poker-info-btn").addEventListener("click", ()=>{
+  // Just the combinations/paytable -- none of the double-up-ladder rules text or diagram.
+  document.getElementById("poker-rules-card").classList.add("compact");
+  document.getElementById("poker-rules-title").textContent = "Комбинации";
   document.getElementById("poker-rules-overlay").classList.add("active");
 });
 document.getElementById("poker-rules-close").addEventListener("click", ()=>{
@@ -4156,7 +4205,7 @@ async function renderPvpTopRows(cfg, mode){
     }
     const medals = ["🥇","🥈","🥉"];
     rowsEl.innerHTML = rows.map((r, i)=>{
-      const name = r.username ? r.username : (r.first_name || `Игрок ${r.telegram_id}`);
+      const name = r.username ? maskedName(r.username) : (r.first_name || `Игрок ${r.telegram_id}`);
       const rank = medals[i] || `${i + 1}.`;
       const valueLabel = mode === "pvp"
         ? `${cfg.signed && r[cfg.valueKey] >= 0 ? "+" : ""}${r[cfg.valueKey]}${cfg.suffix}`
@@ -4231,9 +4280,9 @@ function renderSwapListings(){
 
   list.className = "grid";
   list.innerHTML = swapListings.map(l => `
-      <div class="grid-item rarity-border-${l.rarity}" data-uc="${l.user_card_id}">
+      <div class="grid-item rarity-border-${l.rarity}${l.custom_name ? " obsidian-border" : ""}" data-uc="${l.user_card_id}">
         <img src="/static/cards/${l.filename}?v=${CARD_IMG_VERSION}" alt="${l.name||''}">
-        <div class="rarity-tag ${l.rarity}">${l.rarity}</div>
+        <div class="rarity-tag ${l.custom_name ? "obsidian" : l.rarity}">${l.custom_name ? "OBSIDIAN" : l.rarity}</div>
         <div class="drop-number">#${l.drop_number}</div>
         ${l.is_mine ? `<div class="market-mine-badge">Твой</div>` : ""}
       </div>
@@ -4264,7 +4313,8 @@ function openMarketItem(ucId, mode){
   const marketItemImgEl = document.getElementById("market-item-img");
   marketItemImgEl.src = `/static/cards/${item.filename}?v=${CARD_IMG_VERSION}`;
   setRarityBorder(marketItemImgEl, item.rarity);
-  document.getElementById("market-item-name").textContent = (item.name || "Без названия") + (item.drop_number != null ? ` #${item.drop_number}` : "");
+  marketItemImgEl.classList.toggle("obsidian-border", !!item.custom_name);
+  document.getElementById("market-item-name").textContent = (capName(item.name) || "Без названия") + (item.drop_number != null ? ` #${item.drop_number}` : "");
   const priceRow = document.getElementById("market-item-price-row");
   const actions = document.getElementById("market-item-actions");
 
@@ -4593,9 +4643,20 @@ let pokerHold = [false, false, false, false, false];
 let pokerPhase = "idle"; // idle | dealt | drawn (won, gamble/collect available)
 let pokerBaseWin = 0; // the payout at level 0 (right after Draw), before any doubling
 let pokerGambleLevel = 0; // how many successful doublings so far (0..POKER_LADDER_LEVELS)
-// Mirrors database.py's POKER_DOUBLE_MULTIPLIERS: 6 plain doublings, then a bonus final rung.
-const POKER_DOUBLE_MULTIPLIERS = [2, 4, 8, 16, 32, 64, 133];
-const POKER_LADDER_LEVELS = POKER_DOUBLE_MULTIPLIERS.length;
+// Mirrors database.py's POKER_DOUBLE_MULTIPLIERS: 6 plain doublings off the base, then a
+// bonus final rung that's NOT a fixed multiplier -- it roughly doubles whatever level 6
+// paid and rounds UP to the nearest POKER_BONUS_ROUND_TO, see pokerBonusPayout() below.
+const POKER_DOUBLE_MULTIPLIERS = [2, 4, 8, 16, 32, 64];
+const POKER_BONUS_ROUND_TO = 5000;
+const POKER_LADDER_LEVELS = POKER_DOUBLE_MULTIPLIERS.length + 1;
+function pokerBonusPayout(level6Payout){
+  return Math.ceil((level6Payout * 2) / POKER_BONUS_ROUND_TO) * POKER_BONUS_ROUND_TO;
+}
+function pokerLadderAmount(lvl){
+  return lvl === POKER_LADDER_LEVELS
+    ? pokerBonusPayout(pokerBaseWin * POKER_DOUBLE_MULTIPLIERS[POKER_DOUBLE_MULTIPLIERS.length - 1])
+    : pokerBaseWin * POKER_DOUBLE_MULTIPLIERS[lvl - 1];
+}
 
 function renderPokerBet(){
   document.getElementById("poker-bet-value").textContent = pokerBet;
@@ -4667,10 +4728,34 @@ function pokerSuggestHold(cards){
         return holds;
       }
     }
-    // No pair, no straight, no 3+ suited -- a lone high card no longer pays anything
-    // (see the paytable comment above draw_poker()), so holding one is pointless now.
-    // Chase a flush instead if 2 of the 4 already share a suit (joker makes 3, only 2
-    // more draws needed); otherwise nothing here is worth keeping beyond the joker.
+    // A straight draw doesn't need to use all 4 non-joker cards -- if dropping just
+    // ONE of them leaves 3 real ranks the joker can bridge (span <= 4, same threshold
+    // as the complete-straight check above), hold the joker + those 3 and discard the
+    // odd one out, rather than falling through to a much weaker suited-pair chase.
+    // e.g. 10,K,Joker,8,Q -> keep 10,Q,K + joker (fills J), discard the 8.
+    let bestStraightDrawCombo = null;
+    let bestStraightDrawSpan = Infinity;
+    for(let skip = 0; skip < others.length; skip++){
+      const combo = others.filter((_, idx) => idx !== skip);
+      const comboRanks = [...new Set(combo.map(o => o.rank))];
+      if(comboRanks.length !== 3) continue; // the dropped card must be what made a 4th distinct rank, not a duplicate
+      const span = (ranks) => Math.max(...ranks) - Math.min(...ranks);
+      const wheelRanks = comboRanks.map(r => r === 14 ? 1 : r);
+      const s = Math.min(span(comboRanks), span(wheelRanks));
+      if(s <= 4 && s < bestStraightDrawSpan){
+        bestStraightDrawSpan = s;
+        bestStraightDrawCombo = combo;
+      }
+    }
+    if(bestStraightDrawCombo){
+      bestStraightDrawCombo.forEach(o => { holds[o.i] = true; });
+      return holds;
+    }
+    // No pair, no straight (made or draw), no 3+ suited -- a lone high card no longer
+    // pays anything (see the paytable comment above draw_poker()), so holding one is
+    // pointless now. Chase a flush instead if 2 of the 4 already share a suit (joker
+    // makes 3, only 2 more draws needed); otherwise nothing here is worth keeping
+    // beyond the joker.
     const suitGroups = {};
     others.forEach(o => { (suitGroups[o.suit] = suitGroups[o.suit] || []).push(o); });
     const bestSuitGroup = Object.values(suitGroups).sort((a, b) => b.length - a.length)[0];
@@ -4739,19 +4824,13 @@ function pokerSuggestHold(cards){
     }
     return holds;
   }
-  const royalRanks = new Set([10,11,12,13,14]);
-  for(const s in suitCounts){
-    const royalCards = parsed.filter(c => c.suit === s && royalRanks.has(c.rank));
-    if(royalCards.length >= 3) return parsed.map(c => c.suit === s && royalRanks.has(c.rank));
-  }
-  const highRanks = new Set([11,12,13,14]);
-  for(const s in suitCounts){
-    const hc = parsed.filter(c => c.suit === s && highRanks.has(c.rank));
-    if(hc.length >= 2) return parsed.map(c => c.suit === s && highRanks.has(c.rank));
-  }
-  const highs = parsed.filter(c => highRanks.has(c.rank));
-  if(highs.length === 1){
-    return parsed.map(c => c.rank === highs[0].rank && c.suit === highs[0].suit);
+  // Only ever hold: a pair, two pair, trips, a made straight/flush (handled above),
+  // a 4-card flush draw, or a 4-card straight draw (all handled above). A bare high
+  // card or two suited high cards no longer pay anything (see paytable) and are
+  // strictly worse equity than a fresh 5-card redraw, so nothing else gets held.
+  if(counts[0] === 2){
+    const pairRank = Number(Object.keys(rankCounts).find(r => rankCounts[r] === 2));
+    return parsed.map(c => c.rank === pairRank);
   }
   return [false, false, false, false, false];
 }
@@ -4806,7 +4885,7 @@ function renderPokerDoubleLadder(){
   const ladder = document.getElementById("poker-double-ladder");
   let html = "";
   for(let lvl = POKER_LADDER_LEVELS; lvl >= 1; lvl--){
-    const amount = pokerBaseWin * POKER_DOUBLE_MULTIPLIERS[lvl - 1];
+    const amount = pokerLadderAmount(lvl);
     let cls = "";
     if(lvl <= pokerGambleLevel) cls = "cleared";
     else if(lvl === pokerGambleLevel + 1) cls = "next-level";
@@ -4814,7 +4893,7 @@ function renderPokerDoubleLadder(){
     html += `<div class="ladder-row lvl${lvl} ${cls}"><span class="mult">${amount}</span></div>`;
   }
   ladder.innerHTML = html;
-  const currentAmount = pokerGambleLevel === 0 ? pokerBaseWin : pokerBaseWin * POKER_DOUBLE_MULTIPLIERS[pokerGambleLevel - 1];
+  const currentAmount = pokerGambleLevel === 0 ? pokerBaseWin : pokerLadderAmount(pokerGambleLevel);
   document.getElementById("poker-double-current").textContent = currentAmount;
 }
 
@@ -4853,6 +4932,7 @@ function openPokerDouble(){
   renderPokerDoubleCardsRow(true);
   document.getElementById("poker-double-red").disabled = false;
   document.getElementById("poker-double-black").disabled = false;
+  document.getElementById("poker-double-share").style.display = "none";
   document.getElementById("poker-double-overlay").classList.add("active");
 }
 function closePokerDouble(){
@@ -4967,8 +5047,8 @@ async function gamblePokerChoice(choice){
         document.getElementById("poker-double-black").disabled = false;
       }else{
         renderPokerDoubleCardsRow(false); // chain is done — no more face-down card
-        toast("Максимум удвоений — выигрыш зачислен");
-        setTimeout(collectPokerWinnings, 700);
+        toast("Лесенка пробита полностью — забери выигрыш!");
+        document.getElementById("poker-double-share").style.display = "";
       }
     }else{
       renderPokerDoubleCardsRow(false); // busted — revealed card stays, chain is over
@@ -5006,6 +5086,7 @@ async function collectPokerWinnings(){
 }
 document.getElementById("poker-collect-btn").addEventListener("click", collectPokerWinnings);
 document.getElementById("poker-double-collect").addEventListener("click", collectPokerWinnings);
+document.getElementById("poker-double-share").addEventListener("click", (e)=>shareGameResult("poker", pokerRoundId, e.currentTarget));
 
 // ---------- Aviator (in-app, fully independent from the chat /go game) ----------
 const AVIATOR_MIN_BET = 25; // mirrors database.py's AVIATOR_MIN_BET -- client-side pre-check only, server enforces for real
@@ -5226,7 +5307,7 @@ function renderPvp(){
   const { gradient, segments } = pvpBuildWheel(participants);
 
   const legendRows = segments.map(p=>{
-    const name = p.username || p.first_name || "Игрок";
+    const name = maskedName(p.username) || p.first_name || "Игрок";
     const you = p.user_id === myTelegramId ? " you" : "";
     const cards = pvpFormatParticipantCards(p.cards);
     return `
@@ -5290,19 +5371,12 @@ function renderPvp(){
     }
   });
 
-  // Reveal the previous round's outcome exactly once per player — the server tells us
-  // via unseen_result (and marks it seen the moment it hands it to us), since there's
-  // nowhere on the client to remember this across reloads in a Telegram WebApp. This
-  // now drives an actual spin-the-wheel animation instead of a plain text alert.
+  // Per request, entering PvP no longer replays the PREVIOUS round's outcome via the
+  // spin-the-wheel animation -- the player wants to see what's happening RIGHT NOW,
+  // not a reveal of something already finished. unseen_result is still marked seen
+  // server-side the moment /pvp/state hands it back (regardless of what the client
+  // does with it), so this is safe to simply not act on.
   if(unseen_result){
-    // Don't yank the player out of whatever else they're doing in the Игры tab (e.g.
-    // mid-hand in Poker) to show this -- only pop it up when Cards is what they're
-    // actually looking at right now; otherwise queue it for when they switch there.
-    if(pvpMode === "cards"){
-      openPvpReveal(unseen_result);
-    }else{
-      pendingPvpReveal = unseen_result;
-    }
     // A round just resolved -- if the round was won, the winning cards are already
     // transferred server-side, but the client's local `inventory` array is stale
     // until the next full profile load. Without this, a just-won card silently
@@ -5335,7 +5409,7 @@ function openPvpReveal(result){
     : "#2a2a2a 0deg 360deg";
 
   legend.innerHTML = segments.map(p=>{
-    const name = p.username || p.first_name || "Игрок";
+    const name = maskedName(p.username) || p.first_name || "Игрок";
     const isWinner = p.user_id === result.winner_id;
     return `
       <div class="pvp-reveal-row${isWinner ? ' winner' : ''}">
@@ -5700,7 +5774,6 @@ document.getElementById("pvp-picker-confirm").addEventListener("click", async ()
     }catch(e){ /* non-critical — next profile visit will pick it up anyway */ }
     renderPvp();
     document.getElementById("pvp-picker-overlay").classList.remove("active");
-    toast("Карты поставлены в банк");
   }catch(e){
     toast("Не получилось: " + e.message);
   }
@@ -5730,7 +5803,7 @@ function renderZoom(){
   const zoomImgEl = document.getElementById("zoom-img");
   zoomImgEl.src = `/static/cards/${c.filename}?v=${CARD_IMG_VERSION}`;
   setRarityBorder(zoomImgEl, c.rarity);
-  document.getElementById("zoom-name").textContent = c.name || "";
+  document.getElementById("zoom-name").textContent = capName(c.name) || "";
 }
 
 function openZoom(list, index){
@@ -5848,8 +5921,8 @@ function renderTops(){
   list.innerHTML = sorted.map((p, i) => `
     <div class="tops-row">
       <div class="tops-rank ${i===0?'top1':i===1?'top2':i===2?'top3':''}">${i+1}</div>
-      <div class="tops-avatar">${p.photo_url ? `<img src="${p.photo_url}" alt="">` : (p.username || p.first_name || "?")[0].toUpperCase()}</div>
-      <div class="tops-name">${p.username || p.first_name || "Игрок"}</div>
+      <div class="tops-avatar">${p.photo_url ? `<img src="${p.photo_url}" alt="">` : (maskedName(p.username) || p.first_name || "?")[0].toUpperCase()}</div>
+      <div class="tops-name">${maskedName(p.username) || p.first_name || "Игрок"}</div>
       <div class="tops-count">${topsMetric === "gems" ? `<img src="/static/icons/diamond.png" alt="">${p.current_gems}` : topsMetric === "diamond" ? `<img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">${p.diamond_cards}` : p.total_cards}</div>
     </div>
   `).join("");
@@ -6169,7 +6242,7 @@ function openModalAt(index){
   const isObsidian = !!item.custom_name;
   modalImgEl.classList.toggle("obsidian-border", isObsidian);
   document.getElementById("modal-img-wrap").classList.toggle("obsidian", isObsidian);
-  document.getElementById("modal-name").textContent = `${item.name || "Без названия"} #${item.drop_number}`;
+  document.getElementById("modal-name").textContent = `${capName(item.name) || "Без названия"} #${item.drop_number}`;
   const modalRarityBadge = document.getElementById("modal-rarity-tag");
   modalRarityBadge.textContent = isObsidian ? "OBSIDIAN" : item.rarity;
   modalRarityBadge.className = `modal-rarity-tag ${isObsidian ? "obsidian" : item.rarity}`;
@@ -6190,7 +6263,7 @@ function updateCustomButton(item){
   const busy = !!(item.staked_at || item.listed_price || item.swap_listed || item.pvp_round_id || item.pinned_at || item.in_giveaway);
   btn.disabled = busy;
   btn.classList.toggle("disabled", busy);
-  btn.textContent = item.custom_name ? "Кастом (Obsidian)" : "Кастом";
+  btn.textContent = "Кастом";
 }
 
 // Player rank (time-played tier, NOT card rarity) — colors the avatar ring + profile
@@ -6466,7 +6539,7 @@ document.getElementById("modal-share").addEventListener("click", async ()=>{
       selectedItem.drop_number = res.new_number;
       selectedItem.number_override = res.new_number;
       updateShareButton(selectedItem);
-      document.getElementById("modal-name").textContent = `${selectedItem.name || "Без названия"} #${selectedItem.drop_number}`;
+      document.getElementById("modal-name").textContent = `${capName(selectedItem.name) || "Без названия"} #${selectedItem.drop_number}`;
       document.getElementById("modal-drop-number").textContent = `#${selectedItem.drop_number}`;
       if(typeof res.gems === "number") setGemsDisplay(res.gems);
       sortInventoryAndRender();
@@ -6504,7 +6577,7 @@ document.getElementById("modal-share").addEventListener("click", async ()=>{
   }
 });
 
-const TRANSFER_FEE_GEMS = 3;
+const TRANSFER_FEE_GEMS = 25;
 document.getElementById("modal-give").addEventListener("click", async ()=>{
   const currentGems = gemsBalance;
   if(currentGems < TRANSFER_FEE_GEMS){
@@ -6636,7 +6709,7 @@ document.getElementById("modal-stake").addEventListener("click", async ()=>{
     return;
   }
   if(selectedItem.staked_at){
-    const unstakeFee = STAKE_DAILY_RATES[selectedItem.rarity] ?? 5;
+    const unstakeFee = STAKE_ENTRY_FEE_MULTIPLIER * (STAKE_DAILY_RATES[selectedItem.rarity] ?? 5);
     const unstakeConfirmed = await confirmAction(`Точно убрать карту из стейкинга? Уплаченные ${unstakeFee} гемов за вход не возвращаются.`);
     if(!unstakeConfirmed) return;
     try{
@@ -6656,7 +6729,8 @@ document.getElementById("modal-stake").addEventListener("click", async ()=>{
       toast("Сначала снимите карту с продажи/обмена");
       return;
     }
-    const fee = STAKE_DAILY_RATES[selectedItem.rarity] ?? 5;
+    const dailyRate = STAKE_DAILY_RATES[selectedItem.rarity] ?? 5;
+    const fee = STAKE_ENTRY_FEE_MULTIPLIER * dailyRate;
     const currentGems = gemsBalance;
     if(currentGems < fee){
       toastHTML(`Не хватает гемов — нужно ${fee} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
@@ -6672,7 +6746,7 @@ document.getElementById("modal-stake").addEventListener("click", async ()=>{
       updateSwapButton(selectedItem);
       if(res && typeof res.gems === "number") setGemsDisplay(res.gems);
       renderProfileGrid();
-      toast(`В стейкинге! +${fee} гемов в сутки за карту`);
+      toast(`В стейкинге! +${dailyRate} гемов в сутки за карту`);
     }catch(e){
       if(String(e.message).includes("not enough gems")){
         toastHTML(`Не хватает гемов — нужно ${fee} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
@@ -6960,7 +7034,7 @@ function renderNumbersList(){
       return;
     }
     list.innerHTML = numbersBoard.listings.map(l=>{
-      const seller = l.username ? `@${l.username}` : (l.first_name || "Игрок");
+      const seller = l.username ? (maskedName(l.username) === "Admin" ? "Admin" : `@${l.username}`) : (l.first_name || "Игрок");
       return `
         <div class="number-row" data-number="${l.number}">
           <div class="num">#${l.number}</div>
@@ -7009,7 +7083,7 @@ function renderNumbersList(){
       return;
     }
     list.innerHTML = numbersOwners.map(n=>{
-      const owner = n.username ? `@${n.username}` : (n.first_name || "Игрок");
+      const owner = n.username ? (maskedName(n.username) === "Admin" ? "Admin" : `@${n.username}`) : (n.first_name || "Игрок");
       const status = n.user_card_id
         ? "закреплён за картой"
         : (n.list_price ? `продаётся за ${n.list_price} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">` : "не закреплён");
@@ -7191,7 +7265,7 @@ function renderNamesList(){
     }else{
       list.innerHTML = namesBoard.auctions.map(a => `
         <div class="number-row" data-name="${a.name}">
-          <div class="num">${a.name}</div>
+          <div class="num">${capName(a.name)}</div>
           <div class="info"><div class="lbl">Ставка (${numberTimeLeftLabel(a.bid_expires_at)})</div><div class="val">${a.highest_bid} <img src="/static/icons/diamond.png" alt=""></div></div>
           <button class="act bid" data-name="${a.name}" data-min="${Math.max(namesBoard.min_bid || 25, (a.highest_bid||0)+1)}">Ставка</button>
         </div>`).join("");
@@ -7205,10 +7279,10 @@ function renderNamesList(){
       list.innerHTML = `<div class="empty-state">Пока никто ничего не продаёт</div>`;
     }else{
       list.innerHTML = namesBoard.listings.map(l=>{
-        const seller = l.username ? `@${l.username}` : (l.first_name || "Игрок");
+        const seller = l.username ? (maskedName(l.username) === "Admin" ? "Admin" : `@${l.username}`) : (l.first_name || "Игрок");
         return `
         <div class="number-row" data-name="${l.name}">
-          <div class="num">${l.name}</div>
+          <div class="num">${capName(l.name)}</div>
           <div class="info"><div class="lbl">${seller}</div><div class="val">${l.list_price} <img src="/static/icons/diamond.png" alt=""></div></div>
           <button class="act buy" data-name="${l.name}">Купить</button>
         </div>`;
@@ -7232,7 +7306,7 @@ function renderNamesList(){
         return `
         <div class="number-row number-row-mine" data-name="${n.name}">
           <div class="row-top">
-            <div class="num">${n.name}</div>
+            <div class="num">${capName(n.name)}</div>
             <div class="info">${status}</div>
           </div>
           <div class="row-actions">${actions}</div>
@@ -7251,13 +7325,13 @@ function renderNamesList(){
       list.innerHTML = `<div class="empty-state">Пока ни одно имя никому не принадлежит</div>`;
     }else{
       list.innerHTML = namesOwners.map(n=>{
-        const owner = n.username ? `@${n.username}` : (n.first_name || "Игрок");
+        const owner = n.username ? (maskedName(n.username) === "Admin" ? "Admin" : `@${n.username}`) : (n.first_name || "Игрок");
         const status = n.user_card_id
           ? "используется на карте"
           : (n.list_price ? `продаётся за ${n.list_price} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">` : "в банке, не используется");
         return `
         <div class="number-row" data-name="${n.name}">
-          <div class="num">${n.name}</div>
+          <div class="num">${capName(n.name)}</div>
           <div class="info"><div class="lbl">${owner}</div><div class="val">${status}</div></div>
         </div>`;
       }).join("");
@@ -7271,7 +7345,7 @@ async function createNameFlow(){
   try{
     const result = await api("/names/create", { name: raw });
     setGemsDisplay(result.gems);
-    toast(`Имя "${result.name}" создано и выставлено на аукцион на 12ч`);
+    toast(`Имя "${capName(result.name)}" создано и выставлено на аукцион на 12ч`);
     await loadNames();
   }catch(e){
     toast("Не получилось: " + e.message);
@@ -7393,12 +7467,18 @@ document.getElementById("simple-picker-cancel").addEventListener("click", ()=>{
 });
 
 // ---------- Custom NFT ("Кастом" -> Obsidian) ----------
-// Requires (checked server-side too): >= 1000 gems on hand, a free name from your own
-// name-bank, a free number from your own number-bank, and the target card must not be
-// busy (listed/staked/swapped/in a PvP round/giveaway) -- same as craft/burn.
+// Charged in gems (checked server-side too): CUSTOM_NFT_CREATE_COST_GEMS the first
+// time a card becomes Obsidian, or the cheaper CUSTOM_NFT_EDIT_COST_GEMS to swap the
+// name/number on one that already is -- plus a free name from your own name-bank, a
+// free number from your own number-bank, and the target card must not be busy
+// (listed/staked/swapped/in a PvP round/giveaway) -- same as craft/burn.
+const CUSTOM_NFT_CREATE_COST_GEMS = 500;
+const CUSTOM_NFT_EDIT_COST_GEMS = 100;
 async function openCustomNftFlow(){
   if(!selectedItem) return;
   const targetCardId = selectedItem.user_card_id;
+  const isEdit = !!selectedItem.custom_name;
+  const cost = isEdit ? CUSTOM_NFT_EDIT_COST_GEMS : CUSTOM_NFT_CREATE_COST_GEMS;
   try{
     const namesRes = await api("/names/mine");
     const freeNames = namesRes.names.filter(n => !n.user_card_id || n.user_card_id === targetCardId);
@@ -7416,8 +7496,14 @@ async function openCustomNftFlow(){
     if(!chosenName) return;
     const chosenNumber = await openSimplePicker("Выбери номер", freeNumbers, n => "#" + n.number);
     if(!chosenNumber) return;
+    const confirmMsg = isEdit
+      ? `Замена имени/номера на уже Obsidian-карте стоит ${cost} гемов. Продолжить?`
+      : `Создание Obsidian-карты стоит ${cost} гемов. Продолжить?`;
+    const confirmed = await confirmAction(confirmMsg);
+    if(!confirmed) return;
     const result = await api("/custom_nft/create", { user_card_id: targetCardId, name: chosenName.name, number: chosenNumber.number });
-    toast(`Готово! Карта теперь Obsidian: ${result.custom_name}`);
+    setGemsDisplay(result.gems);
+    toast(`Готово! Карта теперь Obsidian: ${capName(result.custom_name)} (−${result.cost} гемов)`);
     document.getElementById("modal-overlay").classList.remove("active");
     try{
       const data = await api("/profile");
@@ -7452,7 +7538,7 @@ function renderBurnGrid(){
     const have = countEligibleCards(r.rarity);
     const ready = have >= r.count;
     return `
-      <div class="burn-item">
+      <div class="burn-item" data-rarity="${r.rarity}" style="cursor:pointer;">
         <div class="burn-item-icon" style="background:${RARITY_COLOR[r.rarity]};"></div>
         <div class="burn-item-info">
           <div class="burn-item-title">${r.count} ${RARITY_LABEL[r.rarity]} → 1 ${RARITY_LABEL[r.target]}</div>
@@ -7462,10 +7548,26 @@ function renderBurnGrid(){
       </div>
     `;
   }).join("");
+  // Tapping the button itself, OR anywhere else on the row (icon/title/count), both open
+  // the picker -- the button alone is a small target on mobile, so the whole row is a
+  // tap target too. The button's own click is stopped from bubbling so this never fires twice.
   grid.querySelectorAll(".burn-btn:not([disabled])").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
+    btn.addEventListener("click", (e)=>{
+      e.stopPropagation();
       const recipe = BURN_RECIPES.find(r => r.rarity === btn.dataset.rarity);
       if(recipe) openBurnPicker(recipe);
+    });
+  });
+  grid.querySelectorAll(".burn-item").forEach(item=>{
+    item.addEventListener("click", ()=>{
+      const recipe = BURN_RECIPES.find(r => r.rarity === item.dataset.rarity);
+      if(!recipe) return;
+      const have = countEligibleCards(recipe.rarity);
+      if(have < recipe.count){
+        toast(`Не хватает карт — нужно ${recipe.count} ${RARITY_LABEL[recipe.rarity]} (есть ${have})`);
+        return;
+      }
+      openBurnPicker(recipe);
     });
   });
 }
@@ -7527,6 +7629,21 @@ function renderBurnPickerGrid(){
 
 document.getElementById("burn-picker-cancel").addEventListener("click", ()=>{
   document.getElementById("burn-picker-overlay").classList.remove("active");
+});
+// One tap fills the whole selection (up to the recipe's required count) instead of
+// clicking each card by hand -- a second tap while already full clears it back to zero.
+document.getElementById("burn-picker-select-all").addEventListener("click", ()=>{
+  const eligible = inventory.filter(c => c.rarity === burnPickerRarity && !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.pinned_at && !c.in_giveaway);
+  if(burnPickerSelected.size >= burnPickerCount){
+    burnPickerSelected = new Set();
+  }else{
+    for(const c of eligible){
+      if(burnPickerSelected.size >= burnPickerCount) break;
+      burnPickerSelected.add(c.user_card_id);
+    }
+  }
+  burnPickerUpdateTitle();
+  renderBurnPickerGrid();
 });
 
 document.getElementById("burn-picker-confirm").addEventListener("click", async ()=>{
