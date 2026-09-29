@@ -514,6 +514,71 @@
     background:#000; color:#fff; border:none; border-radius:12px;
     padding:12px; font-size:13px; font-weight:700; cursor:pointer;
   }
+
+  /* ---------- Collections ("Альбомы") -- button next to "Коллекция", two
+     stacked modals: the list of collections, then one collection's slot grid. ---------- */
+  .collections-label-btn{
+    background:none; border:none; padding:0; margin:0; cursor:pointer;
+    font:inherit; text-transform:inherit; letter-spacing:inherit; color:inherit;
+  }
+  .collections-label-btn:active{opacity:.6;}
+  #collections-overlay, #collection-detail-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.92);
+    display:none; align-items:center; justify-content:center;
+    z-index:80; padding:24px;
+  }
+  #collections-overlay.active, #collection-detail-overlay.active{display:flex;}
+  #collections-modal-card, #collection-detail-modal-card{
+    position:relative;
+    width:100%; max-width:340px; max-height:86vh; overflow-y:auto;
+    background:var(--card-bg); border:1px solid var(--card-border); border-radius:20px;
+    padding:22px 18px 18px; box-sizing:border-box; text-align:left;
+  }
+  #collections-title, #collection-detail-title{
+    font-size:16px; font-weight:800; margin-bottom:4px;
+    background:linear-gradient(135deg,#facc15,#fb923c);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    display:inline-block;
+  }
+  #collections-sub{font-size:11.5px; color:#888; line-height:1.5; margin-bottom:12px;}
+  #collections-close-bottom, #collection-detail-close-bottom{
+    margin-top:16px; width:100%;
+    background:#000; color:#fff; border:none; border-radius:12px;
+    padding:12px; font-size:13px; font-weight:700; cursor:pointer;
+  }
+  .collection-row{
+    display:flex; align-items:center; gap:10px;
+    background:rgba(255,255,255,.03); border:1px solid var(--card-border); border-radius:14px;
+    padding:10px 12px; margin-bottom:8px; cursor:pointer;
+  }
+  .collection-row:active{transform:scale(.98);}
+  .collection-row .icon{font-size:24px; flex-shrink:0;}
+  .collection-row .info{flex:1 1 auto; min-width:0;}
+  .collection-row .name{font-size:13px; font-weight:700; display:flex; align-items:center; gap:5px;}
+  .collection-row .progress{font-size:11px; color:#888; margin-top:2px;}
+  .collection-row .bar{
+    height:5px; border-radius:3px; background:rgba(255,255,255,.08); margin-top:5px; overflow:hidden;
+  }
+  .collection-row .bar-fill{height:100%; background:linear-gradient(90deg,#facc15,#fb923c);}
+  .collection-row.completed{border-color:#facc15; box-shadow:0 0 0 1px rgba(250,204,21,.4);}
+  .collection-row .badge{font-size:9.5px; color:#1a1400; background:#facc15; padding:2px 7px; border-radius:999px; font-weight:800; flex-shrink:0;}
+  #collection-detail-back{
+    background:none; border:none; color:#888; font-size:12px; font-weight:700; cursor:pointer;
+    padding:0; margin-bottom:10px; display:block;
+  }
+  #collection-detail-progress{font-size:11.5px; color:#888; margin-bottom:12px;}
+  .collection-slot img{transition:filter .25s ease;}
+  .collection-slot.not-owned{cursor:default;}
+  .collection-slot.not-owned img{filter:grayscale(1) brightness(.35);}
+  .collection-slot.owned:not(.placed) img{filter:grayscale(.85) brightness(.55);}
+  .collection-slot-plus{
+    position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    font-size:26px; font-weight:800; color:#4ade80; text-shadow:0 0 10px rgba(74,222,128,.8);
+    animation:collectionPlusPulse 1.3s ease-in-out infinite;
+  }
+  .collection-slot.owned:not(.placed) .collection-slot-plus{display:flex;}
+  @keyframes collectionPlusPulse{0%,100%{opacity:.7; transform:scale(1);} 50%{opacity:1; transform:scale(1.12);}}
   .grid-item.pinned{
     border-color:#ec4899;
     box-shadow:0 0 0 2px rgba(236,72,153,.5);
@@ -2760,7 +2825,7 @@
         </div>
       </div>
       <div class="section-label-row">
-        <div class="section-label">Коллекция</div>
+        <button class="section-label collections-label-btn" id="collections-open-btn">Коллекция ›</button>
         <div class="profile-sort-buttons">
           <button id="wall-open-btn" class="wall-open-btn">Стена</button>
           <button id="burn-open-btn" class="burn-open-btn">Эволюция</button>
@@ -3302,6 +3367,27 @@
       <div id="wall-sub"></div>
       <div class="grid" id="wall-grid"></div>
       <button id="wall-close-bottom">Закрыть</button>
+    </div>
+  </div>
+
+  <div id="collections-overlay">
+    <div id="collections-modal-card">
+      <button class="btn-close-inline" id="collections-close">✕</button>
+      <div id="collections-title">📚 Коллекции</div>
+      <div id="collections-sub">Собери все карты одной темы и получи ачивку.</div>
+      <div id="collections-list"></div>
+      <button id="collections-close-bottom">Закрыть</button>
+    </div>
+  </div>
+
+  <div id="collection-detail-overlay">
+    <div id="collection-detail-modal-card">
+      <button class="btn-close-inline" id="collection-detail-close">✕</button>
+      <button id="collection-detail-back">‹ Все коллекции</button>
+      <div id="collection-detail-title"></div>
+      <div id="collection-detail-progress"></div>
+      <div class="grid" id="collection-detail-grid"></div>
+      <button id="collection-detail-close-bottom">Закрыть</button>
     </div>
   </div>
 
@@ -6786,6 +6872,111 @@ document.getElementById("wall-close").addEventListener("click", ()=>{
 });
 document.getElementById("wall-close-bottom").addEventListener("click", ()=>{
   document.getElementById("wall-overlay").classList.remove("active");
+});
+
+// ---------- Collections ("Альбомы") -- opened from the "Коллекция" button in
+// Профиль. List view -> tap a collection -> detail view (per-slot grid). Placing a
+// card is a pure completion check server-side -- the card itself is never
+// touched/locked, so this never needs to refetch `inventory`.
+let currentCollectionId = null;
+
+async function renderCollectionsList(){
+  const list = document.getElementById("collections-list");
+  list.innerHTML = `<div class="empty-state">Загружаю...</div>`;
+  let collections;
+  try{
+    ({ collections } = await api("/collections"));
+  }catch(err){
+    list.innerHTML = `<div class="empty-state">Не удалось загрузить: ${err.message}</div>`;
+    return;
+  }
+  if(!collections.length){
+    list.innerHTML = `<div class="empty-state">Пока нет ни одной коллекции</div>`;
+    return;
+  }
+  list.innerHTML = collections.map(c => {
+    const pct = c.total ? Math.round((c.placed / c.total) * 100) : 0;
+    return `
+      <div class="collection-row${c.completed ? " completed" : ""}" data-id="${c.id}">
+        <div class="icon">${c.icon || "📁"}</div>
+        <div class="info">
+          <div class="name">${c.name}${c.completed ? '<span class="badge">ГОТОВО</span>' : ""}</div>
+          <div class="progress">${c.placed}/${c.total} собрано</div>
+          <div class="bar"><div class="bar-fill" style="width:${pct}%"></div></div>
+        </div>
+      </div>`;
+  }).join("");
+  list.querySelectorAll(".collection-row").forEach(el=>{
+    el.addEventListener("click", ()=> openCollectionDetail(parseInt(el.dataset.id)));
+  });
+}
+
+async function openCollectionDetail(collectionId){
+  currentCollectionId = collectionId;
+  document.getElementById("collections-overlay").classList.remove("active");
+  document.getElementById("collection-detail-overlay").classList.add("active");
+  await renderCollectionDetail();
+}
+
+async function renderCollectionDetail(){
+  const grid = document.getElementById("collection-detail-grid");
+  const title = document.getElementById("collection-detail-title");
+  const progress = document.getElementById("collection-detail-progress");
+  grid.innerHTML = `<div class="empty-state">Загружаю...</div>`;
+  let detail;
+  try{
+    detail = await api("/collections/detail", { collection_id: currentCollectionId });
+  }catch(err){
+    grid.innerHTML = `<div class="empty-state">Не удалось загрузить: ${err.message}</div>`;
+    return;
+  }
+  const placedCount = detail.cards.filter(c => c.placed).length;
+  title.innerHTML = `${detail.icon || ""} ${detail.name}${detail.completed ? ' <span class="badge">ГОТОВО</span>' : ""}`;
+  progress.textContent = `${placedCount}/${detail.cards.length} собрано`;
+  grid.innerHTML = detail.cards.map(c => {
+    const state = c.placed ? "placed" : (c.owned ? "owned" : "not-owned");
+    return `
+      <div class="grid-item collection-slot ${state}" data-card-id="${c.card_id}">
+        <img src="/static/cards/${c.filename}?v=${CARD_IMG_VERSION}" alt="${c.name||''}">
+        <div class="collection-slot-plus">+</div>
+      </div>`;
+  }).join("");
+  grid.querySelectorAll(".collection-slot.owned:not(.placed)").forEach(el=>{
+    el.addEventListener("click", async ()=>{
+      const cardId = parseInt(el.dataset.cardId);
+      try{
+        const res = await api("/collections/place", { collection_id: currentCollectionId, card_id: cardId });
+        if(res.newly_completed){
+          toast(`🏆 Коллекция «${detail.name}» собрана!`);
+        }
+        await renderCollectionDetail();
+      }catch(err){
+        toast("Не получилось: " + err.message);
+      }
+    });
+  });
+}
+
+document.getElementById("collections-open-btn").addEventListener("click", ()=>{
+  document.getElementById("collections-overlay").classList.add("active");
+  renderCollectionsList();
+});
+document.getElementById("collections-close").addEventListener("click", ()=>{
+  document.getElementById("collections-overlay").classList.remove("active");
+});
+document.getElementById("collections-close-bottom").addEventListener("click", ()=>{
+  document.getElementById("collections-overlay").classList.remove("active");
+});
+document.getElementById("collection-detail-close").addEventListener("click", ()=>{
+  document.getElementById("collection-detail-overlay").classList.remove("active");
+});
+document.getElementById("collection-detail-close-bottom").addEventListener("click", ()=>{
+  document.getElementById("collection-detail-overlay").classList.remove("active");
+});
+document.getElementById("collection-detail-back").addEventListener("click", ()=>{
+  document.getElementById("collection-detail-overlay").classList.remove("active");
+  document.getElementById("collections-overlay").classList.add("active");
+  renderCollectionsList();
 });
 
 let modalIndex = -1;

@@ -384,6 +384,42 @@ BEGIN
     UPDATE users SET gems = gems + 25
     WHERE telegram_id IN (SELECT user_id FROM user_cards WHERE card_id = NEW.id);
 END;
+
+-- Collections ("Альбомы") -- themed subsets of the existing card catalog the
+-- player fills in one slot at a time. Placing a card in a slot never locks/consumes
+-- it (it stays fully usable for market/PvP/staking) -- this is a pure completion
+-- tracker, not an inventory mechanic. See _seed_collections() in database.py.
+CREATE TABLE IF NOT EXISTS collections (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    key           TEXT NOT NULL UNIQUE,
+    name          TEXT NOT NULL,
+    icon          TEXT,
+    created_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS collection_cards (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    collection_id  INTEGER NOT NULL REFERENCES collections(id),
+    card_id        INTEGER NOT NULL REFERENCES cards(id),
+    UNIQUE(collection_id, card_id)
+);
+
+CREATE TABLE IF NOT EXISTS user_collection_cards (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL REFERENCES users(telegram_id),
+    collection_id  INTEGER NOT NULL REFERENCES collections(id),
+    card_id        INTEGER NOT NULL REFERENCES cards(id),
+    placed_at      TEXT NOT NULL,
+    UNIQUE(user_id, collection_id, card_id)
+);
+
+CREATE TABLE IF NOT EXISTS user_collection_completions (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL REFERENCES users(telegram_id),
+    collection_id  INTEGER NOT NULL REFERENCES collections(id),
+    completed_at   TEXT NOT NULL,
+    UNIQUE(user_id, collection_id)
+);
 """
 
 
@@ -2174,6 +2210,226 @@ def add_card_to_catalog(filename: str, name: str | None = None, rarity: str = "s
             (filename, name, rarity, _now()),
         )
         return cur.lastrowid
+
+
+
+# ---------- Collections ("Альбомы") ----------
+# Each entry is one themed collection: a name/icon plus the exact card filenames
+# (matched against cards.filename) that make it up. A filename with no matching
+# catalog row is silently skipped by _seed_collections() rather than raising, so
+# this list can be edited freely without risk of crashing on a typo.
+COLLECTIONS_SEED = [
+    {
+        "key": "car_lover",
+        "name": "Автолюбитель",
+        "icon": "🚗",
+        "filenames": [
+            "audi_cabriolet.jpg", "audi_rs6_avant.jpg",
+            "bmw_e36.jpg", "bmw_m3.jpg", "bmw_m5.jpg",
+            "bugati_chiron.jpg", "bugatti_brouillard.jpg", "bugatti_la_noire.jpg",
+            "car_restomod.jpg", "carmagedon.jpg",
+            "cybertruck.jpg", "ford_mustang_gt.jpg", "gelandewagen.jpg",
+            "honda_civic.jpg", "low_rider.jpg", "mercedes.jpg",
+            "nissan_skyline.jpg", "pagani_barchetta.jpg", "porsche_911.jpg",
+            "rr_amethyst.jpg", "rr_arcadia.jpg", "rr_boat_tail.jpg",
+            "rr_la_rose.jpg", "rr_sweptail.jpg",
+            "tesla model 3.jpg", "toyota_supra.jpg",
+            # removed as off-theme (not actually cars, despite the filename):
+            # cadillacs_dino.jpg (a "Cadillacs and Dinosaurs" ARCADE CABINET),
+            # retro_cars.jpg (a group of 3 toy cars, not a single car),
+            # tesla_mini.jpg (a "Tesla Mini" amplifier/gadget, not a car)
+        ],
+    },
+    {
+        "key": "cs_weapons",
+        "name": "Оружие из CS",
+        "icon": "🔫",
+        # Every filename here was opened and visually checked (not just name-matched) --
+        # several "obvious" candidates turned out to be characters/unrelated items and
+        # were left out: cs.jpg/terrorist.jpg/standoff.jpg (player figures, not weapons),
+        # scoprion.jpg (Mortal Kombat's Scorpion), spike.jpg (a cactus mascot),
+        # colt.jpg (a Brawl Stars character), interchange.jpg (a textile pillow),
+        # desert_eye.jpg (an Egyptian amulet), marengo_sword.jpg (a Napoleonic sabre,
+        # no CS branding), custom_blade.jpg/firearm_engrave.jpg (real-world hunting
+        # knife/shotgun, no CS styling), revolver.jpg (a generic old-west revolver, not
+        # CS's R8), vice.jpg/crimson_kimono.jpg (CS glove skins -- not weapons).
+        "filenames": [
+            "ak-47.jpg", "ak_47.jpg",
+            "awp.jpg", "awp_asiimov.jpg", "awp_gungnir.jpg", "awp_medusa.jpg",
+            "beretta.jpg", "blaze.jpg", "case_hardened.jpg",
+            "desert_eagle.jpg", "dragon_lore.jpg", "fire_serpent.jpg",
+            "glock.jpg", "glock_18_fade.jpg", "hyper_beast.jpg", "kerambit.jpg",
+            "kill_confirmed.jpg", "knife_1.5.jpg", "m16.jpg", "m4a1_s.jpg", "m4a4.jpg",
+            "mp5.jpg", "neo_noir.jpg", "printstream.jpg", "redline.jpg", "uzi.jpg",
+            "wild_lotus.jpg",
+            # removed: balisong.jpg -- not actually right for this collection
+        ],
+    },
+]
+
+
+def _seed_collections(conn: sqlite3.Connection) -> None:
+    """Idempotent (INSERT OR IGNORE on unique keys) -- safe to call on every
+    request. Cards are matched by filename against the live catalog. Also prunes
+    any previously-seeded card that's no longer in a collection's filename list
+    (e.g. one that turned out to be off-theme and got removed) -- along with any
+    player placements pointing at it, so a stale slot never lingers."""
+    for coll in COLLECTIONS_SEED:
+        conn.execute(
+            "INSERT OR IGNORE INTO collections (key, name, icon, created_at) VALUES (?, ?, ?, ?)",
+            (coll["key"], coll["name"], coll["icon"], _now()),
+        )
+        coll_row = conn.execute("SELECT id FROM collections WHERE key = ?", (coll["key"],)).fetchone()
+        coll_id = coll_row["id"]
+        wanted_card_ids = set()
+        for fn in coll["filenames"]:
+            card_row = conn.execute("SELECT id FROM cards WHERE filename = ?", (fn,)).fetchone()
+            if card_row is None:
+                continue
+            wanted_card_ids.add(card_row["id"])
+            conn.execute(
+                "INSERT OR IGNORE INTO collection_cards (collection_id, card_id) VALUES (?, ?)",
+                (coll_id, card_row["id"]),
+            )
+        existing_ids = {
+            row["card_id"] for row in conn.execute(
+                "SELECT card_id FROM collection_cards WHERE collection_id = ?", (coll_id,)
+            ).fetchall()
+        }
+        for stale_id in existing_ids - wanted_card_ids:
+            conn.execute(
+                "DELETE FROM collection_cards WHERE collection_id = ? AND card_id = ?",
+                (coll_id, stale_id),
+            )
+            conn.execute(
+                "DELETE FROM user_collection_cards WHERE collection_id = ? AND card_id = ?",
+                (coll_id, stale_id),
+            )
+
+
+def _maybe_complete_collection(conn: sqlite3.Connection, user_id: int, collection_id: int) -> bool:
+    """Returns True if every slot is now placed and this call is what just
+    recorded the completion achievement for the first time."""
+    already = conn.execute(
+        "SELECT id FROM user_collection_completions WHERE user_id = ? AND collection_id = ?",
+        (user_id, collection_id),
+    ).fetchone()
+    if already is not None:
+        return False
+    total = conn.execute(
+        "SELECT COUNT(*) AS n FROM collection_cards WHERE collection_id = ?", (collection_id,)
+    ).fetchone()["n"]
+    placed = conn.execute(
+        "SELECT COUNT(*) AS n FROM user_collection_cards WHERE user_id = ? AND collection_id = ?",
+        (user_id, collection_id),
+    ).fetchone()["n"]
+    if total > 0 and placed >= total:
+        conn.execute(
+            "INSERT OR IGNORE INTO user_collection_completions (user_id, collection_id, completed_at) VALUES (?, ?, ?)",
+            (user_id, collection_id, _now()),
+        )
+        return True
+    return False
+
+
+def get_collections_overview(user_id: int) -> list[dict]:
+    """List of every defined collection with this player's progress -- for the
+    collections list screen opened from the "Коллекция" button in Профиль."""
+    with get_conn() as conn:
+        _seed_collections(conn)
+        colls = conn.execute("SELECT id, key, name, icon FROM collections ORDER BY id").fetchall()
+        out = []
+        for c in colls:
+            total = conn.execute(
+                "SELECT COUNT(*) AS n FROM collection_cards WHERE collection_id = ?", (c["id"],)
+            ).fetchone()["n"]
+            placed = conn.execute(
+                "SELECT COUNT(*) AS n FROM user_collection_cards WHERE user_id = ? AND collection_id = ?",
+                (user_id, c["id"]),
+            ).fetchone()["n"]
+            completed_row = conn.execute(
+                "SELECT completed_at FROM user_collection_completions WHERE user_id = ? AND collection_id = ?",
+                (user_id, c["id"]),
+            ).fetchone()
+            out.append({
+                "id": c["id"], "key": c["key"], "name": c["name"], "icon": c["icon"],
+                "total": total, "placed": placed,
+                "completed": completed_row is not None,
+            })
+        return out
+
+
+def get_collection_detail(user_id: int, collection_id: int) -> dict:
+    """Per-slot detail for one collection: for each member card, whether this
+    player owns at least one copy (unlocks the "+" to place it) and whether
+    they've already placed it (fills the slot permanently)."""
+    with get_conn() as conn:
+        _seed_collections(conn)
+        coll = conn.execute("SELECT id, key, name, icon FROM collections WHERE id = ?", (collection_id,)).fetchone()
+        if coll is None:
+            raise ValueError("collection not found")
+        card_rows = conn.execute(
+            "SELECT c.id, c.filename, c.name, c.rarity FROM collection_cards cc "
+            "JOIN cards c ON c.id = cc.card_id WHERE cc.collection_id = ? ORDER BY c.id",
+            (collection_id,),
+        ).fetchall()
+        owned_ids = {
+            row["card_id"] for row in conn.execute(
+                "SELECT DISTINCT cc.card_id AS card_id FROM collection_cards cc "
+                "JOIN user_cards uc ON uc.card_id = cc.card_id AND uc.user_id = ? "
+                "WHERE cc.collection_id = ?",
+                (user_id, collection_id),
+            ).fetchall()
+        }
+        placed_ids = {
+            row["card_id"] for row in conn.execute(
+                "SELECT card_id FROM user_collection_cards WHERE user_id = ? AND collection_id = ?",
+                (user_id, collection_id),
+            ).fetchall()
+        }
+        cards = [
+            {
+                "card_id": r["id"], "filename": r["filename"], "name": r["name"],
+                "rarity": r["rarity"], "owned": r["id"] in owned_ids, "placed": r["id"] in placed_ids,
+            }
+            for r in card_rows
+        ]
+        _maybe_complete_collection(conn, user_id, collection_id)
+        completed_row = conn.execute(
+            "SELECT completed_at FROM user_collection_completions WHERE user_id = ? AND collection_id = ?",
+            (user_id, collection_id),
+        ).fetchone()
+        return {
+            "id": coll["id"], "key": coll["key"], "name": coll["name"], "icon": coll["icon"],
+            "cards": cards, "completed": completed_row is not None,
+        }
+
+
+def place_collection_card(user_id: int, collection_id: int, card_id: int) -> dict:
+    """Marks one collection slot as filled -- purely a completion-tracking action,
+    the card itself is never touched/locked/consumed (the same copy stays fully
+    usable for market/PvP/staking). Requires owning at least one copy of the card.
+    Idempotent -- placing an already-placed slot again is a harmless no-op."""
+    with get_conn() as conn:
+        member = conn.execute(
+            "SELECT 1 FROM collection_cards WHERE collection_id = ? AND card_id = ?",
+            (collection_id, card_id),
+        ).fetchone()
+        if member is None:
+            raise ValueError("card is not part of this collection")
+        owns = conn.execute(
+            "SELECT 1 FROM user_cards WHERE user_id = ? AND card_id = ? LIMIT 1",
+            (user_id, card_id),
+        ).fetchone()
+        if owns is None:
+            raise ValueError("you don't own this card")
+        conn.execute(
+            "INSERT OR IGNORE INTO user_collection_cards (user_id, collection_id, card_id, placed_at) "
+            "VALUES (?, ?, ?, ?)",
+            (user_id, collection_id, card_id, _now()),
+        )
+        newly_completed = _maybe_complete_collection(conn, user_id, collection_id)
+        return {"placed": True, "newly_completed": newly_completed}
 
 
 def get_all_cards() -> list[dict]:

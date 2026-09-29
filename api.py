@@ -209,6 +209,15 @@ class MinesRevealBody(InitDataBody):
     tile: int
 
 
+class CollectionDetailBody(InitDataBody):
+    collection_id: int
+
+
+class CollectionPlaceBody(InitDataBody):
+    collection_id: int
+    card_id: int
+
+
 class PokerDealBody(InitDataBody):
     bet: int
 
@@ -1053,6 +1062,38 @@ def crypto_status(body: InitDataBody):
     "заявка на рассмотрении" instead of the picker."""
     user = _authenticate(body.initData)
     return {"pending": db.get_pending_withdrawal(user["telegram_id"])}
+
+
+# ---------------------------------------------------------------------------
+# Collections ("Альбомы") -- themed sub-sets of the card catalog the player
+# fills in one slot at a time. Placing a card never locks/consumes it (same copy
+# stays fully usable for market/PvP/staking) -- pure completion tracking, with an
+# achievement recorded the first time every slot in a collection is filled. See
+# database.py's get_collections_overview()/get_collection_detail()/place_collection_card().
+# ---------------------------------------------------------------------------
+
+@app.post("/api/collections")
+def collections_overview(body: InitDataBody):
+    user = _authenticate(body.initData)
+    return {"collections": db.get_collections_overview(user["telegram_id"])}
+
+
+@app.post("/api/collections/detail")
+def collections_detail(body: CollectionDetailBody):
+    user = _authenticate(body.initData)
+    try:
+        return db.get_collection_detail(user["telegram_id"], body.collection_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.post("/api/collections/place")
+def collections_place(body: CollectionPlaceBody):
+    user = _authenticate(body.initData)
+    try:
+        return db.place_collection_card(user["telegram_id"], body.collection_id, body.card_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.post("/api/crypto/withdraw")
