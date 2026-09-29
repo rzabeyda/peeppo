@@ -202,6 +202,24 @@ CREATE TABLE IF NOT EXISTS aviator_rounds (
     created_at        TEXT NOT NULL
 );
 
+-- Minefields (Минные поля) -- one row per board. mine_positions/revealed are JSON
+-- arrays of tile indices (0..MINES_GRID_TILES-1); mine_positions is only ever read
+-- server-side while status='active' (see database.py's Minefields section for the
+-- full game logic/RTP formula).
+CREATE TABLE IF NOT EXISTS mines_rounds (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id             INTEGER NOT NULL REFERENCES users(telegram_id),
+    bet                 INTEGER NOT NULL,
+    mine_count          INTEGER NOT NULL,
+    mine_positions      TEXT NOT NULL,
+    revealed            TEXT NOT NULL DEFAULT '[]',
+    status              TEXT NOT NULL DEFAULT 'active',  -- active | won | lost
+    cashout_multiplier  REAL,
+    payout              INTEGER,
+    created_at          TEXT NOT NULL,
+    resolved_at         TEXT
+);
+
 -- Every Red&Black round ever played, newest first via created_at -- unlike PvP or
 -- Aviator (which already had a rounds table for other reasons), play_redblack() used
 -- to just mutate gems and forget the round entirely. Added purely to power the
@@ -385,12 +403,18 @@ def _bump_counter(conn: sqlite3.Connection, action: str, by: int = 1) -> None:
 
 
 def _free_number(conn: sqlite3.Connection, user_card_id: int) -> None:
-    """Captures the number a row CURRENTLY shows — its number_override if it has one
-    (also covers a number cycling free -> bought -> free again), otherwise the live
-    count formula — into card_numbers as 'free', right before that row stops showing it
-    (voided, or about to be reused for a different card). A number can pass through this
-    many times over the game's life, so this is an upsert, not a one-shot insert. No-op
-    if the row doesn't exist."""
+    """Unpins whatever number a row CURRENTLY shows -- its number_override if it has
+    one (also covers a number cycling free -> bought -> free again), otherwise the
+    live count formula -- right before that row stops showing it (voided, evolved
+    away, or about to be reused for a different card/number). A number can pass
+    through this many times over the game's life.
+
+    If that number is a real, previously-purchased one someone actually owns (status
+    'owned' with an owner_id), it goes back into ITS OWNER's own bank (still owned,
+    just unpinned) -- same rule as _detach_number_on_card_transfer() -- never released
+    into the public free/auction pool just because the card that happened to be
+    showing it went away. Only a genuinely natural/never-owned number (no owner on
+    record) gets tracked as 'free' here."""
     row = conn.execute(
         "SELECT obtained_at, number_override FROM user_cards WHERE id = ?", (user_card_id,)
     ).fetchone()
@@ -410,11 +434,19 @@ def _free_number(conn: sqlite3.Connection, user_card_id: int) -> None:
     # exact number is already tracked as owned/auction AND it isn't actually the
     # one pinned on THIS card, someone else's real ownership must never be wiped.
     existing = conn.execute(
-        "SELECT status, user_card_id FROM card_numbers WHERE number = ?", (number,)
+        "SELECT status, owner_id, user_card_id FROM card_numbers WHERE number = ?", (number,)
     ).fetchone()
     if existing is not None and existing["status"] in ("owned", "auction") and existing["user_card_id"] != user_card_id:
         return
     now = _now()
+    if existing is not None and existing["status"] == "owned" and existing["owner_id"] is not None:
+        # A real owner already holds this number (they're the one who just had it
+        # unpinned) -- keep it theirs, just detach it from the card.
+        conn.execute(
+            "UPDATE card_numbers SET user_card_id = NULL, updated_at = ? WHERE number = ?",
+            (now, number),
+        )
+        return
     conn.execute(
         """
         INSERT INTO card_numbers (number, status, updated_at)
@@ -438,6 +470,22 @@ def _detach_number_on_card_transfer(conn: sqlite3.Connection, user_card_id: int)
     row currently points at this card."""
     conn.execute(
         "UPDATE card_numbers SET user_card_id = NULL, updated_at = ? WHERE user_card_id = ?",
+        (_now(), user_card_id),
+    )
+
+
+def _release_name_on_card_void(conn: sqlite3.Connection, user_card_id: int) -> None:
+    """When a card wearing a custom name stops existing or showing it (burned as
+    evolve fuel, a failed Diamond craft, a crypto withdrawal), the name itself stays
+    owned by whoever owned it -- just unpinned back into their own name bank ("Мои
+    имена"), same rule as _detach_number_on_card_transfer()/the equivalent fix in
+    _free_number() for numbers. Without this, the card_names row kept pointing at a
+    card that no longer wears the name, leaving it permanently stuck showing as "in
+    use" (Заюзан) with no way to free it up. No-op if no card_names row currently
+    points at this card. Must be called BEFORE the card's own custom_name is cleared
+    (order doesn't matter here since this only reads card_names, not user_cards)."""
+    conn.execute(
+        "UPDATE card_names SET user_card_id = NULL, updated_at = ? WHERE user_card_id = ?",
         (_now(), user_card_id),
     )
 
@@ -1229,6 +1277,330 @@ def count_active_aviator_rounds_for_user(user_id: int) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Minefields (Минные поля) -- classic "Mines" pick-a-tile game. Player stakes `bet`
+# gems and picks how many mines sit hidden among MINES_GRID_TILES tiles; the mine
+# positions are drawn ONCE, atomically, the instant the round starts (start_mines()),
+# same "decided the instant the bet is placed" philosophy as play_redblack()'s coin
+# flip and start_aviator()'s crash point -- never recomputed later. Each safe tile the
+# player reveals raises the multiplier; they can cash out any time, or keep pushing
+# their luck until either a mine ends the round (stake lost) or every safe tile is
+# revealed (forced auto-cashout -- nothing left to gain by continuing).
+#
+# multiplier(k) = MINES_RTP * prod_{i=0}^{k-1} (N - i) / (N - mines - i)  for N =
+# MINES_GRID_TILES, k = tiles safely revealed so far. The un-scaled product is the
+# "fair" (0% house edge) multiplier -- it's exactly the one that makes
+# P(surviving k reveals) * multiplier(k) == 1, i.e. a break-even game. Scaling every
+# multiplier by the same constant MINES_RTP therefore makes the expected payout from
+# cashing out at ANY reveal count k work out to exactly bet * MINES_RTP -- same trick
+# start_aviator() uses, just combinatorial instead of the crash-point formula.
+# ---------------------------------------------------------------------------
+
+MINES_GRID_TILES = 25
+MINES_DEFAULT_BET = 25
+MINES_MIN_BET = 25
+MINES_RTP = 0.97  # RTP 97%
+MINES_ALLOWED_MINE_COUNTS = [3, 5, 10]
+
+
+class MinesError(Exception):
+    """Raised by start_mines()/reveal_mines_tile()/cashout_mines() for a malformed
+    bet/mine_count/tile, or a round that's missing/not this player's/already
+    resolved -- not a balance problem (that's InsufficientGems)."""
+
+
+def _mines_multiplier(mine_count: int, revealed_count: int) -> float:
+    """Pure function -- see module-level comment above for the formula. revealed_count=0
+    is always exactly 1.0 (nothing revealed yet, nothing risked)."""
+    if revealed_count <= 0:
+        return 1.0
+    n = MINES_GRID_TILES
+    fair = 1.0
+    for i in range(revealed_count):
+        fair *= (n - i) / (n - mine_count - i)
+    return int(fair * MINES_RTP * 100) / 100
+
+
+def count_active_mines_rounds_for_user(user_id: int) -> int:
+    """One open board at a time per player, same convention as
+    count_active_aviator_rounds_for_user()."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM mines_rounds WHERE status = 'active' AND user_id = ?",
+            (user_id,),
+        ).fetchone()
+    return row["n"] if row else 0
+
+
+def start_mines(user_id: int, bet: int, mine_count: int) -> dict:
+    """Atomically deducts the bet and draws mine_count hidden mine positions among
+    MINES_GRID_TILES tiles, then opens a new mines_rounds row ('active'). Raises
+    InsufficientGems if the balance can't cover the bet, MinesError for a bad bet or
+    mine_count. Returns {"round_id", "mine_count", "grid_tiles", "multiplier": 1.0,
+    "revealed": []} -- mine positions are SERVER-SIDE ONLY, never sent to the client
+    until the round ends (lost or cashed out)."""
+    if not isinstance(bet, int) or bet < MINES_MIN_BET:
+        raise MinesError(f"bet must be a whole number >= {MINES_MIN_BET}")
+    if mine_count not in MINES_ALLOWED_MINE_COUNTS:
+        raise MinesError(f"mine_count must be one of {MINES_ALLOWED_MINE_COUNTS}")
+    mine_positions = random.sample(range(MINES_GRID_TILES), mine_count)
+    with get_conn() as conn:
+        row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        if row is None or row["gems"] < bet:
+            raise InsufficientGems()
+        conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (bet, user_id))
+        cur = conn.execute(
+            "INSERT INTO mines_rounds (user_id, bet, mine_count, mine_positions, revealed, status, created_at) "
+            "VALUES (?, ?, ?, ?, '[]', 'active', ?)",
+            (user_id, bet, mine_count, json.dumps(mine_positions), _now()),
+        )
+        round_id = cur.lastrowid
+    return {
+        "round_id": round_id, "mine_count": mine_count, "grid_tiles": MINES_GRID_TILES,
+        "multiplier": 1.0, "revealed": [],
+    }
+
+
+def _settle_mines_won(conn: sqlite3.Connection, row: sqlite3.Row, multiplier: float) -> dict:
+    """Shared settle step for both an explicit cash-out and the forced auto-cashout
+    when every safe tile has been revealed. Caller already holds the open connection
+    and has confirmed the round is still 'active'."""
+    payout = int(round(row["bet"] * multiplier))
+    conn.execute(
+        "UPDATE mines_rounds SET status = 'won', cashout_multiplier = ?, payout = ?, resolved_at = ? WHERE id = ?",
+        (multiplier, payout, _now(), row["id"]),
+    )
+    conn.execute(
+        "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
+        (payout, payout, row["user_id"]),
+    )
+    new_gems = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (row["user_id"],)).fetchone()["gems"]
+    return {
+        "status": "won", "payout": payout, "multiplier": multiplier, "gems": new_gems,
+        "mine_positions": json.loads(row["mine_positions"]),
+    }
+
+
+def reveal_mines_tile(round_id: int, user_id: int, tile: int) -> dict:
+    """Opens one tile. A mine ends the round right there (stake already spent at
+    start_mines() -- nothing more to deduct); a safe tile raises the multiplier and,
+    if that was the LAST safe tile on the board, auto-cashes-out immediately (nothing
+    left to gain by continuing, and no more tiles to offer). Raises MinesError for an
+    out-of-range/already-revealed tile, or a round that's missing/not this player's/
+    already resolved."""
+    if not isinstance(tile, int) or not (0 <= tile < MINES_GRID_TILES):
+        raise MinesError("tile out of range")
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM mines_rounds WHERE id = ?", (round_id,)).fetchone()
+        if row is None or row["user_id"] != user_id:
+            raise MinesError("раунд не найден")
+        if row["status"] != "active":
+            raise MinesError("раунд уже завершён")
+        mine_positions = json.loads(row["mine_positions"])
+        revealed = json.loads(row["revealed"])
+        if tile in revealed:
+            raise MinesError("эта клетка уже открыта")
+        if tile in mine_positions:
+            conn.execute(
+                "UPDATE mines_rounds SET status = 'lost', payout = 0, resolved_at = ? WHERE id = ?",
+                (_now(), round_id),
+            )
+            return {"status": "lost", "mine_positions": mine_positions, "tile": tile}
+        revealed.append(tile)
+        multiplier = _mines_multiplier(row["mine_count"], len(revealed))
+        if len(revealed) >= MINES_GRID_TILES - row["mine_count"]:
+            # Every safe tile is now open -- nothing left to reveal, force the cashout.
+            result = _settle_mines_won(conn, row, multiplier)
+            result["revealed"] = revealed
+            return result
+        conn.execute(
+            "UPDATE mines_rounds SET revealed = ? WHERE id = ?",
+            (json.dumps(revealed), round_id),
+        )
+    return {"status": "active", "multiplier": multiplier, "revealed": revealed}
+
+
+def cashout_mines(round_id: int, user_id: int) -> dict:
+    """Cashes out at whatever multiplier the player's current reveals are worth.
+    Raises MinesError if nothing has been revealed yet (nothing to cash out at 1.00x),
+    or the round is missing/not this player's/already resolved."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM mines_rounds WHERE id = ?", (round_id,)).fetchone()
+        if row is None or row["user_id"] != user_id:
+            raise MinesError("раунд не найден")
+        if row["status"] != "active":
+            raise MinesError("раунд уже завершён")
+        revealed = json.loads(row["revealed"])
+        if not revealed:
+            raise MinesError("сначала открой хотя бы одну клетку")
+        multiplier = _mines_multiplier(row["mine_count"], len(revealed))
+        result = _settle_mines_won(conn, row, multiplier)
+        result["revealed"] = revealed
+    return result
+
+
+def get_mines_state(round_id: int, user_id: int) -> dict:
+    """For a client reload mid-round -- returns exactly what the board should be
+    showing right now. Resolved rounds include mine_positions (board reveal)."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM mines_rounds WHERE id = ?", (round_id,)).fetchone()
+    if row is None or row["user_id"] != user_id:
+        raise MinesError("раунд не найден")
+    revealed = json.loads(row["revealed"])
+    if row["status"] != "active":
+        return {
+            "status": row["status"], "bet": row["bet"], "mine_count": row["mine_count"],
+            "revealed": revealed, "multiplier": row["cashout_multiplier"],
+            "mine_positions": json.loads(row["mine_positions"]),
+        }
+    return {
+        "status": "active", "bet": row["bet"], "mine_count": row["mine_count"],
+        "revealed": revealed, "multiplier": _mines_multiplier(row["mine_count"], len(revealed)),
+    }
+
+
+def get_active_mines_round_for_user(user_id: int) -> dict | None:
+    """For app reload/reconnect recovery: returns this player's currently-open
+    ('active') Mines board, in the same shape as get_mines_state()'s active branch,
+    or None if they have no active round. The frontend calls this once when
+    switching into the Mines tab so a round orphaned by a crash/reload/backgrounded
+    app is never permanently stuck -- previously ONLY in-memory JS state tracked the
+    active round_id, so losing that state client-side (app fully closed/reopened,
+    JS error, etc.) left the server thinking a board was still open forever, which
+    silently blocked every future /mines/start with "already have an active board"
+    and zero way for the player to recover short of an admin fixing the DB by hand."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM mines_rounds WHERE user_id = ? AND status = 'active' "
+            "ORDER BY id DESC LIMIT 1",
+            (user_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    revealed = json.loads(row["revealed"])
+    return {
+        "round_id": row["id"], "bet": row["bet"], "mine_count": row["mine_count"],
+        "revealed": revealed, "multiplier": _mines_multiplier(row["mine_count"], len(revealed)),
+    }
+
+
+def get_mines_round(round_id: int) -> dict | None:
+    """One Mines round by id, joined with the player's username/first_name -- same
+    convention as get_redblack_round()/get_aviator_round() (used by the "Поделиться"
+    share endpoint, and could back a per-round lookup elsewhere later)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT mr.*, u.username, u.first_name FROM mines_rounds mr "
+            "JOIN users u ON u.telegram_id = mr.user_id WHERE mr.id = ?",
+            (round_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_mines_history(limit: int = 50) -> list[dict]:
+    """Every resolved Mines round (won or lost -- 'active' ones are still in
+    progress and excluded), newest first, for the "История" panel. Same convention
+    as get_redblack_history()/get_aviator_history()."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT mr.id, mr.user_id, mr.bet, mr.mine_count, mr.status, mr.cashout_multiplier, "
+            "mr.payout, mr.created_at, u.username, u.first_name "
+            "FROM mines_rounds mr JOIN users u ON u.telegram_id = mr.user_id "
+            "WHERE mr.status IN ('won', 'lost') "
+            "ORDER BY mr.id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def _house_stats_row(rounds: int, wagered: int, paid: int) -> dict:
+    return {
+        "rounds": rounds, "wagered": wagered, "paid": paid, "profit": wagered - paid,
+        "effective_rtp": round(paid / wagered * 100, 2) if wagered else None,
+    }
+
+
+def get_redblack_house_stats() -> dict:
+    """Same shape as get_mines_house_stats() -- see there for what each field means."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(bet), 0) AS wagered, COALESCE(SUM(payout), 0) AS paid "
+            "FROM redblack_rounds"
+        ).fetchone()
+    return _house_stats_row(row["n"], row["wagered"], row["paid"])
+
+
+def get_aviator_house_stats() -> dict:
+    """Same shape as get_mines_house_stats(). aviator_rounds has no stored payout
+    column (only cashout_multiplier), so paid is recomputed here the same way
+    cashout_aviator() itself rounds it: ROUND(bet * cashout_multiplier)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(bet), 0) AS wagered, "
+            "COALESCE(SUM(CASE WHEN status = 'won' THEN CAST(ROUND(bet * cashout_multiplier) AS INTEGER) ELSE 0 END), 0) AS paid "
+            "FROM aviator_rounds WHERE status IN ('won', 'lost')"
+        ).fetchone()
+    return _house_stats_row(row["n"], row["wagered"], row["paid"])
+
+
+def get_poker_house_stats() -> dict:
+    """Same shape as get_mines_house_stats(). current_payout is already 0 for a
+    'busted' round and the settled amount for 'collected'/'lost', same field the
+    in-app history/leaderboard use."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(bet), 0) AS wagered, COALESCE(SUM(current_payout), 0) AS paid "
+            "FROM poker_rounds WHERE status IN ('collected', 'busted', 'lost')"
+        ).fetchone()
+    return _house_stats_row(row["n"], row["wagered"], row["paid"])
+
+
+def get_all_house_stats() -> dict:
+    """One-stop combined view for /housestats -- every gems-wagering game's real
+    running wagered/paid/profit, side by side."""
+    return {
+        "mines": get_mines_house_stats(),
+        "redblack": get_redblack_house_stats(),
+        "aviator": get_aviator_house_stats(),
+        "poker": get_poker_house_stats(),
+    }
+
+
+def get_mines_house_stats() -> dict:
+    """Total gems wagered vs. paid out across every resolved Mines round -- the
+    house's actual running profit/loss for this game (not just the theoretical 97%
+    RTP the multiplier formula is built on -- this is what really happened). profit
+    is wagered - paid (positive = house ahead, negative = house is down real gems).
+    Backs /minesstats and /housestats."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(bet), 0) AS wagered, COALESCE(SUM(payout), 0) AS paid "
+            "FROM mines_rounds WHERE status IN ('won', 'lost')"
+        ).fetchone()
+    return _house_stats_row(row["n"], row["wagered"], row["paid"])
+
+
+def get_mines_leaderboard(limit: int = 10) -> list[dict]:
+    """Top players by total net gems won across every resolved Mines round (won:
+    payout - bet, lost: -bet), highest first. Same LEADERBOARD_EXCLUDED_USERNAMES
+    convention as every other leaderboard."""
+    with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        rows = conn.execute(
+            f"""
+            SELECT mr.user_id AS telegram_id, u.username AS username, u.first_name AS first_name,
+                   SUM(CASE WHEN mr.status = 'won' THEN mr.payout - mr.bet ELSE -mr.bet END) AS net_gems
+            FROM mines_rounds mr JOIN users u ON u.telegram_id = mr.user_id
+            WHERE mr.status IN ('won', 'lost')
+            AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})
+            GROUP BY mr.user_id
+            ORDER BY net_gems DESC LIMIT ?
+            """,
+            (*LEADERBOARD_EXCLUDED_USERNAMES, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
 # American Poker '90s -- classic 5-card draw video poker with a double-up (gamble)
 # feature, dealt/played entirely server-side (client only ever sends a bet, a
 # hold_mask, or a red/black gamble choice -- it never sees hidden cards it shouldn't).
@@ -1280,7 +1652,13 @@ POKER_PAYTABLE = {
 POKER_DOUBLE_MULTIPLIERS = [2, 4, 8, 16, 32, 64]  # levels 1-6 only -- fixed cumulative multiplier off the base
 POKER_BONUS_ROUND_TO = 5000
 POKER_MAX_GAMBLES = len(POKER_DOUBLE_MULTIPLIERS) + 1  # 7 -- the 7th ("bonus") rung is computed dynamically, once here must collect
-POKER_DOUBLE_JOKER_CHANCE = 0.12  # per-step odds of the one guaranteed-win Joker reveal (see gamble_poker())
+POKER_DOUBLE_JOKER_CHANCE = 0.0  # disabled 2026-09-29: an independent guaranteed-win
+# chance stacked ON TOP of the fair 50/50 flip gave every un-used gamble step a real
+# 56% win chance for a flat x2 payout -- confirmed via simulation this made "always
+# gamble to the max" worth ~1.89x the base payout in expectation (should be ~1.0x for
+# a fair double-or-nothing). This is what was pushing Poker's real RTP to ~149%. Kept
+# at 0.0 rather than deleted so the joker UI/result plumbing can be reused later if a
+# properly-compensated version is designed.
 
 POKER_RANKS = "23456789TJQKA"
 POKER_SUITS = "SHDC"
@@ -1787,7 +2165,7 @@ def get_all_cards() -> list[dict]:
 
 # Tiers: silver (was rare) < gold (was epic) < platinum (was legend) < diamond (new top tier).
 # Tiers: bronze (junk/memes, sub-$100) < silver ($100-1k) < gold ($1k-10k) < platinum ($10k-100k) < diamond (>$100k).
-RARITY_WEIGHTS = {"bronze": 50, "silver": 29, "gold": 13, "platinum": 7, "diamond": 1}
+RARITY_WEIGHTS = {"bronze": 50, "silver": 29, "gold": 16.5, "platinum": 4, "diamond": 0.5}
 
 
 def draw_random_card() -> sqlite3.Row | None:
@@ -2070,10 +2448,12 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
             remaining_ids = burn_ids
 
         if remaining_ids:
-            # These cards are genuinely destroyed (voided) — their numbers are now free
-            # to bid on, see place_number_bid().
+            # These cards are genuinely destroyed (voided) — their numbers/names go
+            # back to whoever owned them (never left dangling or released to the
+            # public), see _free_number()/_release_name_on_card_void().
             for rid in remaining_ids:
                 _free_number(conn, rid)
+                _release_name_on_card_void(conn, rid)
             placeholders = ",".join("?" for _ in remaining_ids)
             conn.execute(
                 f"UPDATE user_cards SET voided = 1, listed_price = NULL, swap_listed = 0, "
@@ -2119,27 +2499,15 @@ class InsufficientGems(Exception):
     """Raised by farm() when the user's balance is below FARM_COST_GEMS."""
 
 
-# Secret onboarding hook: a brand new player's first NEW_PLAYER_BOOST_FARMS farms draw
-# from a friendlier table instead of RARITY_WEIGHTS, so their very first session has a
-# real shot at something exciting. Deliberately undisclosed anywhere in the UI/copy —
-# it's meant to read as luck, not a stated mechanic.
-NEW_PLAYER_BOOST_FARMS = 2
-NEW_PLAYER_BOOST_WEIGHTS = {"bronze": 17, "silver": 40, "gold": 22, "platinum": 15, "diamond": 6}
-
-
 def farm(user_id: int) -> dict | None:
     """Draw a random card in exchange for FARM_COST_GEMS and grant it to the user, all in
     one transaction. Returns the granted card, or None if the catalog is empty. Raises
     InsufficientGems if the balance check fails (checked and deducted atomically, so two
-    farms fired in quick succession can't both spend the same last few gems). The very
-    first NEW_PLAYER_BOOST_FARMS farms of a brand new account use NEW_PLAYER_BOOST_WEIGHTS
-    instead of RARITY_WEIGHTS — see the comment above."""
-    with get_conn() as conn:
-        farms_so_far = conn.execute(
-            "SELECT COUNT(*) FROM user_cards WHERE user_id = ?", (user_id,)
-        ).fetchone()[0]
-    weights = NEW_PLAYER_BOOST_WEIGHTS if farms_so_far < NEW_PLAYER_BOOST_FARMS else RARITY_WEIGHTS
-    card = _draw_card_weighted(weights)
+    farms fired in quick succession can't both spend the same last few gems). Every farm
+    (including a brand new account's very first ones) draws from the same RARITY_WEIGHTS --
+    the old undisclosed new-player boost on the first 2 farms was removed since it was
+    landing high rarities for newbies too often."""
+    card = _draw_card_weighted(RARITY_WEIGHTS)
     if card is None:
         return None
     with get_conn() as conn:
@@ -2362,9 +2730,10 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
             # Diamond craft failure — card destroyed outright. Same "voided" soft-destroy
             # trick as burn_cards(): never DELETE (would hit the same FK constraint), just
             # flag it out of totals/inventory/leaderboard while keeping the row (and every
-            # historical FK reference to it) intact. Its number is now free to bid on.
+            # historical FK reference to it) intact. Its number/name go back to their owner.
             _free_number(conn, owned["obtained_at"])
             _free_number(conn, user_card_id)
+            _release_name_on_card_void(conn, user_card_id)
             conn.execute(
                 "UPDATE user_cards SET voided = 1, listed_price = NULL, swap_listed = 0, staked_at = NULL, pvp_round_id = NULL, number_override = NULL, pinned_at = NULL, "
                 "custom_name = NULL, custom_rarity = NULL WHERE id = ?",
@@ -2689,8 +3058,8 @@ def attach_number(user_id: int, number: int, user_card_id: int) -> dict:
         _free_number(conn, user_card_id)
         conn.execute("UPDATE user_cards SET number_override = ? WHERE id = ?", (number, user_card_id))
         conn.execute(
-            "UPDATE card_numbers SET user_card_id = ?, updated_at = ? WHERE number = ?",
-            (user_card_id, _now(), number),
+            "UPDATE card_numbers SET user_card_id = ?, status = 'owned', owner_id = ?, updated_at = ? WHERE number = ?",
+            (user_card_id, user_id, _now(), number),
         )
     return {"number": number}
 
@@ -2766,15 +3135,18 @@ def extract_card_number(user_id: int, user_card_id: int) -> dict:
 
 
 def list_number_for_sale(user_id: int, number: int, price_gems: int) -> None:
-    """Puts a number you own up for sale to another player, without taking it off your
-    card if it's currently attached — it keeps showing on your card until it actually
-    sells."""
+    """Puts a number you own up for sale to another player -- only a FREE number
+    (not currently pinned to any of your cards) can be listed; unpin it first
+    (attach a different number to that card, which bumps this one back into your own
+    bank -- see _free_number()) before it's sellable."""
     if price_gems <= 0:
         raise ListingPriceTooLow(1)
     with get_conn() as conn:
         _finalize_expired_number_auctions(conn)
         row = conn.execute("SELECT * FROM card_numbers WHERE number = ?", (number,)).fetchone()
         if row is None or row["owner_id"] != user_id or row["status"] != "owned":
+            raise NumberNotAvailable()
+        if row["user_card_id"] is not None:
             raise NumberNotAvailable()
         conn.execute(
             "UPDATE card_numbers SET list_price = ?, updated_at = ? WHERE number = ?",
@@ -2841,6 +3213,7 @@ def buy_listed_number(buyer_id: int, number: int, buyer_user_card_id: int) -> di
 NAME_MIN_BID_GEMS = 25
 NAME_AUCTION_WINDOW_SECONDS = 12 * 60 * 60  # same 12h window as numbers, reset on every bid
 CUSTOM_NAME_MAX_LEN = 16
+CUSTOM_NAME_MIN_LEN = 3
 CUSTOM_NFT_CREATE_COST_GEMS = 500  # charged the first time a card is turned into Obsidian
 CUSTOM_NFT_EDIT_COST_GEMS = 100     # charged to swap the name/number on an already-Obsidian card
 
@@ -2870,11 +3243,11 @@ class NameBidTooLow(Exception):
 
 
 def validate_custom_name(name: str) -> str:
-    """Trims, checks length (<=CUSTOM_NAME_MAX_LEN) and charset (English letters/digits
-    only), and returns the canonical lowercase form used as the card_names primary key.
-    Raises NameInvalid on any failure."""
+    """Trims, checks length (CUSTOM_NAME_MIN_LEN..CUSTOM_NAME_MAX_LEN) and charset
+    (English letters/digits only), and returns the canonical lowercase form used as the
+    card_names primary key. Raises NameInvalid on any failure."""
     trimmed = (name or "").strip()
-    if not trimmed or len(trimmed) > CUSTOM_NAME_MAX_LEN:
+    if len(trimmed) < CUSTOM_NAME_MIN_LEN or len(trimmed) > CUSTOM_NAME_MAX_LEN:
         raise NameInvalid()
     if not all(("a" <= ch.lower() <= "z") or ch.isdigit() for ch in trimmed):
         raise NameInvalid()
@@ -2900,12 +3273,34 @@ def _finalize_expired_name_auctions(conn: sqlite3.Connection) -> None:
         )
 
 
+# The admin's own real @handle should never leak in anything a player can see (PvP
+# "История" log, the round-conclusion reveal, the public-chat PvP announcement) --
+# shown as a generic "Бот" label there instead. Mirrors bot.py's own _mask_username,
+# duplicated here (not imported) since bot.py imports database.py, not the other way
+# around.
+ADMIN_USERNAME_MASK = "rzabeyda"
+
+
+def _mask_username(username: str | None) -> str | None:
+    if username and username.lower() == ADMIN_USERNAME_MASK:
+        return "Бот"
+    return username
+
+
+# Permanently blocked from ever being created as a custom card name (the admin's own
+# real handle and its variants) -- checked in create_name_auction() below, which is the
+# only place a name starts existing, so this is the single choke point for the block.
+RESERVED_NAMES = {"rzabeyda", "zabeyda", "zzabeyda"}
+
+
 def create_name_auction(user_id: int, name: str) -> dict:
     """Registers a brand-new name and opens its NAME_AUCTION_WINDOW_SECONDS-long auction
     with the creator's own NAME_MIN_BID_GEMS bid already placed -- unlike numbers, a name
     only starts existing the moment someone creates it, so creation IS the first bid,
     gems escrowed immediately (refunded in full if someone outbids the creator later)."""
     canonical = validate_custom_name(name)
+    if canonical in RESERVED_NAMES:
+        raise NameTaken()
     with get_conn() as conn:
         _finalize_expired_name_auctions(conn)
         existing = conn.execute("SELECT 1 FROM card_names WHERE name = ?", (canonical,)).fetchone()
@@ -3134,8 +3529,8 @@ def create_custom_nft(user_id: int, user_card_id: int, name: str, number: int) -
         _free_number(conn, user_card_id)  # free whatever number the target card currently shows
         conn.execute("UPDATE user_cards SET number_override = ? WHERE id = ?", (number, user_card_id))
         conn.execute(
-            "UPDATE card_numbers SET user_card_id = ?, updated_at = ? WHERE number = ?",
-            (user_card_id, _now(), number),
+            "UPDATE card_numbers SET user_card_id = ?, status = 'owned', owner_id = ?, updated_at = ? WHERE number = ?",
+            (user_card_id, user_id, _now(), number),
         )
 
         conn.execute(
@@ -3145,6 +3540,28 @@ def create_custom_nft(user_id: int, user_card_id: int, name: str, number: int) -
         conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (cost, user_id))
         new_gems = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()["gems"]
     return {"user_card_id": user_card_id, "custom_name": canonical, "number": number, "cost": cost, "is_edit": is_edit, "gems": new_gems}
+
+
+def get_all_obsidian_cards() -> list[dict]:
+    """Every card, across ALL players, that has been turned into an Obsidian card via
+    create_custom_nft() (custom_name set) -- backs the "OBSIDIAN" browse button under
+    the rarity summary in Модели, showing the full catalog of custom names/numbers the
+    same way the profile grid shows a player's own cards. custom_rarity is always
+    'diamond' for these (see create_custom_nft above), so it's hardcoded here rather
+    than re-selected from the row."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT uc.id AS user_card_id, c.filename, uc.custom_name AS name, 'diamond' AS rarity,
+                   COALESCE(uc.number_override,
+                       (SELECT COUNT(*) FROM user_cards uc2 WHERE uc2.obtained_at <= uc.obtained_at)) AS drop_number
+            FROM user_cards uc
+            JOIN cards c ON c.id = uc.card_id
+            WHERE uc.custom_name IS NOT NULL AND uc.voided = 0
+            ORDER BY uc.obtained_at DESC
+            """
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 # ---------- Wall (Стена) — a personal curated showcase in Profile ----------
@@ -5045,8 +5462,9 @@ def get_last_resolved_pvp_round(round_id: int | None = None) -> dict | None:
     for p in participants:
         p["chance_pct"] = round(p["total_weight"] / total_weight * 100, 1) if total_weight else 0
 
-    if winner is not None and winner["username"]:
-        winner_name = winner["username"]
+    masked_winner_username = _mask_username(winner["username"]) if winner is not None else None
+    if masked_winner_username:
+        winner_name = masked_winner_username
     elif winner is not None and winner["first_name"]:
         winner_name = winner["first_name"]
     else:
@@ -5087,8 +5505,9 @@ def get_pvp_history(limit: int = 50) -> list[dict]:
             total_players = conn.execute(
                 "SELECT COUNT(DISTINCT user_id) FROM pvp_entries WHERE round_id = ?", (r["id"],)
             ).fetchone()[0]
+            masked_winner_username = _mask_username(r["winner_username"])
             winner_name = (
-                r["winner_username"] if r["winner_username"]
+                masked_winner_username if masked_winner_username
                 else (r["winner_first_name"] or "игрок")
             )
             out.append({
@@ -5526,6 +5945,8 @@ def request_crypto_withdrawal(user_id: int, user_card_ids: list[int], wallet_add
             "INSERT INTO crypto_withdrawal_cards (withdrawal_id, user_card_id) VALUES (?, ?)",
             [(withdrawal_id, uc_id) for uc_id in user_card_ids],
         )
+        for uc_id in user_card_ids:
+            _release_name_on_card_void(conn, uc_id)
         conn.execute(
             f"UPDATE user_cards SET voided = 1, listed_price = NULL, swap_listed = 0, "
             f"staked_at = NULL, pvp_round_id = NULL, custom_name = NULL, custom_rarity = NULL WHERE id IN ({placeholders})",

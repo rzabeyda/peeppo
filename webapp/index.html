@@ -1093,21 +1093,21 @@
   .pvp-rules-row .w{font-size:13px; font-weight:800; color:#eee;}
   #pvp-rules-footnote{font-size:11.5px; color:#888; line-height:1.5;}
 
-  #av-rules-overlay, #rb-rules-overlay, #poker-rules-overlay{
+  #av-rules-overlay, #rb-rules-overlay, #mines-rules-overlay, #poker-rules-overlay{
     position:absolute; inset:0;
     background:rgba(0,0,0,.92);
     display:none; align-items:center; justify-content:center;
     z-index:92; padding:24px;
   }
-  #av-rules-overlay.active, #rb-rules-overlay.active, #poker-rules-overlay.active{display:flex;}
-  #av-rules-card, #rb-rules-card, #poker-rules-card{
+  #av-rules-overlay.active, #rb-rules-overlay.active, #mines-rules-overlay.active, #poker-rules-overlay.active{display:flex;}
+  #av-rules-card, #rb-rules-card, #mines-rules-card, #poker-rules-card{
     position:relative;
     width:100%; max-width:320px; max-height:86vh; overflow-y:auto;
     background:var(--card-bg); border:1px solid var(--card-border); border-radius:20px;
     padding:22px 18px 18px; box-sizing:border-box;
   }
-  #av-rules-title, #rb-rules-title, #poker-rules-title{font-size:16px; font-weight:800; margin-bottom:12px;}
-  #av-rules-text, #rb-rules-text, #poker-rules-text{font-size:13px; color:#ccc; line-height:1.5;}
+  #av-rules-title, #rb-rules-title, #mines-rules-title, #poker-rules-title{font-size:16px; font-weight:800; margin-bottom:12px;}
+  #av-rules-text, #rb-rules-text, #mines-rules-text, #poker-rules-text{font-size:13px; color:#ccc; line-height:1.5;}
   #poker-rules-text{margin-bottom:10px;}
   #poker-rules-text2{font-size:13px; color:#ccc; line-height:1.5; margin:14px 0 10px;}
   #poker-rules-footnote{font-size:11.5px; color:#888; line-height:1.5; margin-top:10px;}
@@ -1488,6 +1488,7 @@
   #pvp-mode-switch .mode-switch-btn[data-mode="cards"].active{background:rgba(236,20,144,.18); color:#ec1490;}
   #pvp-mode-switch .mode-switch-btn[data-mode="redblack"].active{background:rgba(239,68,68,.18); color:#ef4444;}
   #pvp-mode-switch .mode-switch-btn[data-mode="aviator"].active{background:rgba(250,204,21,.18); color:#facc15;}
+  #pvp-mode-switch .mode-switch-btn[data-mode="mines"].active{background:rgba(249,115,22,.18); color:#f97316;}
   #pvp-mode-switch .mode-switch-btn[data-mode="poker"].active{background:rgba(59,130,246,.18); color:#3b82f6;}
   .mode-switch-icon{
     width:22px; height:22px; object-fit:contain; display:block; margin:0 auto;
@@ -1526,6 +1527,40 @@
   .rb-result .rb-lose{color:#ef4444;}
   .rb-result.rb-pulse{animation:rbPulse .3s ease;}
   @keyframes rbPulse{0%{transform:scale(1.06);}100%{transform:scale(1);}}
+  /* ---------- Minefields (Минные поля) ---------- */
+  .mines-count-row{display:flex; gap:6px;}
+  .mines-count-row button{
+    flex:1; background:#161616; border:1px solid var(--card-border); color:#aaa; border-radius:10px;
+    padding:8px 0; font-weight:700; font-size:12.5px; cursor:pointer;
+  }
+  .mines-count-row button.active{background:#f97316; color:#1a0900; border-color:#f97316;}
+  .mines-count-row button:disabled{opacity:.5; cursor:not-allowed;}
+  .mines-grid{
+    display:grid; grid-template-columns:repeat(5, 1fr); gap:8px;
+    background:#0d0d0d; border:1px solid var(--card-border); border-radius:14px; padding:10px;
+  }
+  .mines-tile{
+    aspect-ratio:1; border-radius:10px; border:1px solid var(--card-border);
+    background:linear-gradient(180deg,#242424,#171717);
+    display:flex; align-items:center; justify-content:center;
+    font-size:18px; cursor:pointer; user-select:none;
+    transition:transform .1s, background .15s;
+  }
+  .mines-tile:active{transform:scale(.93);}
+  .mines-tile.disabled{cursor:not-allowed;}
+  .mines-tile.safe{background:linear-gradient(180deg,#166534,#14532d); border-color:#22c55e;}
+  .mines-tile.mine{background:linear-gradient(180deg,#7f1d1d,#450a0a); border-color:#ef4444;}
+  .mines-tile.mine-dim{background:linear-gradient(180deg,#3a1f1f,#241414); border-color:#7a2f2f; opacity:.7;}
+  .mines-stats{display:flex; align-items:center; justify-content:space-between; padding:2px 4px;}
+  .mines-mult{font-weight:800; font-size:18px; color:#f97316;}
+  .mines-potential{font-size:12.5px; color:#888;}
+  .mines-start-btn, .mines-cashout-btn{
+    width:100%; padding:14px 0; border-radius:14px; border:none; font-weight:800; font-size:15px; cursor:pointer;
+  }
+  .mines-start-btn{background:linear-gradient(135deg,#f97316,#c2410c); color:#fff;}
+  .mines-cashout-btn{background:linear-gradient(135deg,#22c55e,#15803d); color:#fff;}
+  .mines-start-btn:disabled, .mines-cashout-btn:disabled{opacity:.5; cursor:not-allowed;}
+
   .rb-history{display:flex; flex-wrap:wrap; gap:6px;}
   .rb-history-row{
     font-size:12px; font-weight:700; padding:4px 8px; border-radius:8px; background:#161616; border:1px solid var(--card-border);
@@ -1604,6 +1639,7 @@
   .number-row .act.attach{background:#3b82f6;}
   .number-row .act.sell{background:#22c55e;}
   .number-row .act.cancel{background:#ef4444;}
+  .number-row .act.used{background:#2a2a2a; color:#777; cursor:not-allowed;}
   .number-row .act:active{transform:scale(.95);}
   .number-row-mine{flex-direction:column; align-items:stretch; gap:8px;}
   .number-row-mine .row-top{display:flex; align-items:center; gap:10px; min-width:0;}
@@ -1777,13 +1813,50 @@
     cursor:pointer; white-space:nowrap;
   }
   #models-sort:active{transform:scale(.95);}
-  #models-rarity-summary{display:flex; gap:6px; margin:0 10px 12px 2px; font-size:10.09px; font-weight:800; letter-spacing:.2px; white-space:nowrap;}
+  #models-rarity-summary{display:flex; gap:6px; margin:0 10px 12px 2px; font-size:9.89px; font-weight:800; letter-spacing:.2px; white-space:nowrap;}
   #models-rarity-summary .diamond{color:#ff2fb0;}
   #models-rarity-summary .platinum{color:#a78bfa;}
   #models-rarity-summary .gold{color:#facc15;}
   #models-rarity-summary .silver{color:#9ca3af;}
   #models-rarity-summary .bronze{color:#cd7f32;}
   #models-grid .grid-item{cursor:zoom-in;}
+  #models-obsidian-btn{
+    position:relative; overflow:hidden;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+    width:100%; margin:0 0 14px; padding:10px; box-sizing:border-box;
+    background:linear-gradient(135deg,#000,#4b4b4b); color:#fff;
+    border:1px solid rgba(255,255,255,.15); border-radius:12px;
+    font-size:12px; font-weight:800; letter-spacing:.4px; text-transform:uppercase;
+    cursor:pointer;
+    animation:obsidian-pulse 2.2s ease-in-out infinite;
+  }
+  #models-obsidian-btn:active{transform:scale(.97);}
+  /* Same diagonal light sweep as the Obsidian cards themselves (obsidian-shimmer,
+     defined further down with the card border styles) -- reused here so the button
+     visually matches what it opens. */
+  #models-obsidian-btn::after{
+    content:""; position:absolute; top:-60%; left:-20%;
+    width:35%; height:220%;
+    background:linear-gradient(90deg, transparent, rgba(255,255,255,.4), transparent);
+    animation:obsidian-shimmer 2.8s ease-in-out infinite;
+    pointer-events:none;
+  }
+  #obsidian-overlay{
+    position:absolute; inset:0;
+    background:rgba(0,0,0,.96);
+    display:none;
+    z-index:66;
+  }
+  #obsidian-overlay.active{display:block;}
+  #obsidian-scroll{
+    position:absolute; inset:0;
+    padding:20px 16px calc(20px + env(safe-area-inset-bottom));
+    overflow-y:auto;
+  }
+  #obsidian-card{position:relative;}
+  #obsidian-header-row{display:flex; align-items:center; gap:8px; margin:0 2px 14px;}
+  #obsidian-title{font-size:12px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:.6px; margin:0; flex:1; white-space:nowrap;}
+  #obsidian-grid .grid-item{cursor:zoom-in;}
   .scroll-top-btn{
     position:absolute; bottom:18px; right:18px;
     width:40px; height:40px; border-radius:50%;
@@ -1808,6 +1881,39 @@
   #zoom-content{display:flex; flex-direction:column; align-items:center; gap:12px; max-width:100%; max-height:100%;}
   #zoom-content img{max-width:100%; max-height:78vh; object-fit:contain; border-radius:12px;}
   #zoom-name{color:#fff; font-size:14px; font-weight:700; text-align:center;}
+  #zoom-img-wrap{position:relative; display:inline-block; max-width:100%;}
+  #zoom-img-wrap .zoom-rarity-tag{
+    position:absolute; top:10px; left:10px;
+    font-size:11px; font-weight:800;
+    padding:4px 9px; border-radius:8px;
+    text-transform:uppercase; letter-spacing:.3px;
+  }
+  #zoom-img-wrap .zoom-rarity-tag.bronze{background:linear-gradient(135deg,#8c5a2b,#cd7f32); color:#fff8ee; box-shadow:0 0 8px rgba(140,90,43,.5);}
+  #zoom-img-wrap .zoom-rarity-tag.silver{background:linear-gradient(135deg,#8e97a3,#e5e7eb); color:#1f2530; box-shadow:0 0 8px rgba(156,163,175,.5);}
+  #zoom-img-wrap .zoom-rarity-tag.gold{background:linear-gradient(135deg,#d4a017,#fde68a); color:#4a3500; box-shadow:0 0 8px rgba(250,204,21,.5);}
+  #zoom-img-wrap .zoom-rarity-tag.platinum{background:linear-gradient(135deg,#7c3aed,#c4b5fd); color:#fff; box-shadow:0 0 8px rgba(139,92,246,.5);}
+  #zoom-img-wrap .zoom-rarity-tag.diamond{background:linear-gradient(135deg,#ff2fb0,#ffb3ec); color:#3a0022; box-shadow:0 0 8px rgba(255,47,176,.55);}
+  #zoom-img-wrap .zoom-rarity-tag.obsidian{background:linear-gradient(135deg,#000,#4b4b4b); color:#fff; box-shadow:0 0 8px rgba(0,0,0,.65);}
+  #zoom-img-wrap img.obsidian-border{border-color:#000;}
+  /* The pulsing glow lives on the WRAPPER's own box-shadow, not the <img>'s -- the
+     wrapper also needs overflow:hidden (right below) to contain the shimmer sweep,
+     and that would clip a CHILD's box-shadow at the wrapper's exact edge (invisible).
+     An element's OWN box-shadow is never clipped by its OWN overflow:hidden, so
+     putting the glow here keeps it fully visible while the sweep still stays contained. */
+  #zoom-img-wrap.obsidian{overflow:hidden; border-radius:12px; animation:obsidian-pulse-modal 2.2s ease-in-out infinite;}
+  #zoom-img-wrap.obsidian::after{
+    content:""; position:absolute; top:-60%; left:-20%;
+    width:28%; height:220%;
+    background:linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent);
+    animation:obsidian-shimmer 2.8s ease-in-out infinite;
+    pointer-events:none; z-index:2;
+  }
+  #zoom-img-wrap .zoom-drop-number{
+    position:absolute; bottom:10px; left:10px;
+    background:rgba(0,0,0,.75); color:var(--accent2);
+    font-size:12px; font-weight:700;
+    padding:4px 9px; border-radius:8px;
+  }
   .model-name-tag{
     position:absolute; bottom:0; left:0; right:0;
     background:linear-gradient(transparent, rgba(0,0,0,.85));
@@ -1963,18 +2069,21 @@
   }
   nav button{
     flex:1;
-    background:none; border:none; color:#666;
+    background:none; border:none; color:#9a9a9a;
     display:flex; flex-direction:column; align-items:center; gap:4px;
-    font-size:11px;
+    font-size:12.5px;
+    font-weight:700;
+    letter-spacing:.2px;
     padding:6px 0;
     cursor:pointer;
+    transition:color .15s;
   }
   nav button .icon-img{
     width:26px; height:26px; object-fit:contain;
     opacity:.5; filter:grayscale(100%);
     transition:opacity .15s, filter .15s;
   }
-  nav button.active{color:#fff;}
+  nav button.active{color:#fff; font-weight:800; text-shadow:0 0 10px rgba(139,92,246,.55);}
   nav button.active .icon-img{
     opacity:1; filter:grayscale(0%) drop-shadow(0 0 6px rgba(139,92,246,.6));
   }
@@ -2037,8 +2146,6 @@
   .modal-actions button{
     flex:1; padding:12px; border-radius:12px; border:none; font-weight:700; font-size:13px; cursor:pointer;
   }
-  .btn-share{background:#3b82f6; color:#fff;}
-  .btn-give{background:var(--accent); color:#fff;}
   .btn-sell{
     background:#1f1f1f; color:#666; width:100%;
     display:flex; align-items:center; justify-content:center; gap:4px;
@@ -2062,7 +2169,6 @@
   .btn-stake.staked{background:rgba(239,68,68,.15); color:var(--danger); cursor:pointer;}
   .btn-craft{background:#8c5a2b; color:#fff8ee; cursor:pointer;}
   .btn-craft.disabled{background:#3a3a3a; color:#888; cursor:not-allowed;}
-  .btn-share.number-mode{background:#3b82f6; color:#fff;}
   .nav-pulse-dot{
     position:absolute; top:2px; right:calc(50% - 22px);
     width:10px; height:10px; border-radius:50%;
@@ -2078,8 +2184,9 @@
   }
   .btn-craft:active{transform:scale(.97);}
   .btn-back{background:rgba(255,255,255,.08); color:#ccc; width:100%; border:1px solid var(--card-border);}
-  .btn-custom{background:#000; color:#fff; width:100%; border:1px solid #000;}
+  .btn-custom{background:#000; color:#fff; border:1px solid #000;}
   .btn-custom.disabled{background:#2a2a2a; color:#777; cursor:not-allowed; border-color:#2a2a2a;}
+  .btn-number{background:#3b82f6; color:#fff;}
   .btn-close{
     position:absolute; top:-14px; right:-6px;
     width:32px; height:32px; display:flex; align-items:center; justify-content:center;
@@ -2399,6 +2506,7 @@
         <button class="mode-switch-btn active" data-mode="cards"><img class="mode-switch-icon" src="/static/icons/swords.png" alt="PvP"></button>
         <button class="mode-switch-btn" data-mode="aviator"><img class="mode-switch-icon" src="/static/icons/rocket.png" alt="Ракетка"></button>
         <button class="mode-switch-btn" data-mode="redblack"><img class="mode-switch-icon" src="/static/icons/red.png" alt="R&amp;B"></button>
+        <button class="mode-switch-btn" data-mode="mines"><img class="mode-switch-icon" src="/static/icons/blast.png" alt="Мины"></button>
         <button class="mode-switch-btn" data-mode="poker"><img class="mode-switch-icon" src="/static/icons/joker.png" alt="Покер"></button>
       </div>
 
@@ -2482,6 +2590,47 @@
           <div class="rb-result" id="rb-result"></div>
           <button class="game-share-btn" id="rb-share-btn" style="display:none">Поделиться в чат</button>
           <div class="rb-history" id="rb-history"></div>
+        </div>
+      </div>
+
+      <div id="pvp-mines-block" style="display:none">
+        <div class="market-header-row">
+          <button type="button" id="mines-rules-btn" class="history-btn">Правила</button>
+          <button type="button" id="mines-top-btn" class="history-btn">Топ 10</button>
+          <button type="button" id="mines-history-btn" class="history-btn">История</button>
+        </div>
+        <div class="rb-card">
+          <div class="game-title-row">
+            <div class="rb-title">Минные поля</div>
+            <button type="button" id="mines-info-btn" class="game-info-btn">?</button>
+          </div>
+          <div class="rb-bet-row">
+            <span class="rb-bet-label">Ставка:</span>
+            <span class="rb-bet-value" id="mines-bet-value">25</span>
+            <span class="rb-bet-unit"><img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></span>
+            <button class="rb-bet-edit" id="mines-bet-edit">Изменить</button>
+          </div>
+          <div class="rb-presets" id="mines-bet-presets">
+            <button data-bet="25" class="active">25</button>
+            <button data-bet="50">50</button>
+            <button data-bet="100">100</button>
+            <button data-bet="250">250</button>
+            <button data-bet="500">500</button>
+          </div>
+          <div class="mines-count-row" id="mines-count-row">
+            <button data-mines="3" class="active">3 мины</button>
+            <button data-mines="5">5 мин</button>
+            <button data-mines="10">10 мин</button>
+          </div>
+          <div class="mines-grid" id="mines-grid"></div>
+          <div class="mines-stats" id="mines-stats" style="display:none">
+            <div class="mines-mult" id="mines-mult">x1.00</div>
+            <div class="mines-potential" id="mines-potential"></div>
+          </div>
+          <button class="mines-start-btn" id="mines-start-btn">Начать за <span id="mines-start-bet">25</span> <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></button>
+          <button class="mines-cashout-btn" id="mines-cashout-btn" style="display:none">Забрать</button>
+          <div class="rb-result" id="mines-result"></div>
+          <button class="game-share-btn" id="mines-share-btn" style="display:none">Поделиться в чат</button>
         </div>
       </div>
 
@@ -2894,7 +3043,11 @@
 
   <div id="zoom-overlay">
     <div id="zoom-content">
-      <img id="zoom-img" src="" alt="">
+      <div id="zoom-img-wrap">
+        <img id="zoom-img" src="" alt="">
+        <div class="zoom-rarity-tag" id="zoom-rarity-tag"></div>
+        <div class="zoom-drop-number" id="zoom-drop-number"></div>
+      </div>
       <div id="zoom-name"></div>
     </div>
   </div>
@@ -2933,17 +3086,16 @@
       </div>
       <div class="modal-name" id="modal-name"></div>
       <div class="modal-actions">
-        <div class="modal-actions-row">
-          <button class="btn-share" id="modal-share">Поделиться</button>
-          <button class="btn-give" id="modal-give">Передать</button>
-        </div>
         <button class="btn-sell" id="modal-sell">Продать</button>
         <button class="btn-swap" id="modal-swap">Обмен</button>
+        <div class="modal-actions-row">
+          <button class="btn-custom" id="modal-custom">Кастом</button>
+          <button class="btn-number" id="modal-number">Номер</button>
+        </div>
         <div class="modal-actions-row">
           <button class="btn-stake" id="modal-stake">Застейкать</button>
           <button class="btn-craft" id="modal-craft">Крафт</button>
         </div>
-        <button class="btn-custom" id="modal-custom">Кастом</button>
         <button class="btn-back" id="modal-back">Назад</button>
       </div>
     </div>
@@ -3193,6 +3345,16 @@
     </div>
   </div>
 
+  <div id="mines-rules-overlay">
+    <div id="mines-rules-card">
+      <button class="btn-close-inline" id="mines-rules-close">✕</button>
+      <div id="mines-rules-title">Правила Минных полей</div>
+      <div id="mines-rules-text">
+        Ставишь гемы и выбираешь сколько мин спрятано в поле 5x5 (3, 5 или 10) — чем больше мин, тем выше множитель за каждую клетку, но и риск подорваться сильнее. Открываешь клетки одну за одной: каждая безопасная поднимает множитель ставки. Забрать выигрыш можно в любой момент — или продолжать рисковать дальше. Попал на мину — сгорает вся ставка. Средняя отдача (RTP) — 97%.
+      </div>
+    </div>
+  </div>
+
   <div id="poker-rules-overlay">
     <div id="poker-rules-card">
       <button class="btn-close-inline" id="poker-rules-close">✕</button>
@@ -3254,10 +3416,24 @@
           <button class="panel-close" id="models-close">✕</button>
         </div>
         <div id="models-rarity-summary"></div>
+        <button type="button" id="models-obsidian-btn">👑 OBSIDIAN</button>
         <div class="grid" id="models-grid"></div>
       </div>
     </div>
     <button type="button" id="models-scroll-top" class="scroll-top-btn">↑</button>
+  </div>
+
+  <div id="obsidian-overlay">
+    <div id="obsidian-scroll">
+      <div id="obsidian-card">
+        <div id="obsidian-header-row">
+          <div id="obsidian-title">Obsidian карты (<span id="obsidian-count">0</span>)</div>
+          <button class="panel-close" id="obsidian-close">✕</button>
+        </div>
+        <div class="grid" id="obsidian-grid"></div>
+      </div>
+    </div>
+    <button type="button" id="obsidian-scroll-top" class="scroll-top-btn">↑</button>
   </div>
 
   <div id="case-overlay">
@@ -3524,7 +3700,7 @@ function switchScreen(screenId){
   if(screenId === "farm-screen") loadStats(); // re-sync "Всего" — it drifts stale otherwise, since it only updates from THIS player's own farm/craft/case/burn actions
   if(screenId === "profile-screen") loadProfile();
   if(screenId === "market-screen") refreshMarketScreen();
-  if(screenId === "pvp-screen"){ loadPvpState(); setPvpPulse(false); }
+  if(screenId === "pvp-screen"){ pvpTabJustOpened = true; loadPvpState(); setPvpPulse(false); }
 }
 
 // Ambient PvP check — runs regardless of which tab is open, so a round starting
@@ -3970,6 +4146,12 @@ async function openHistory(explicitMode){
       const data = await api("/poker/history");
       renderPokerHistoryList(data.rounds || []);
     }catch(e){ list.innerHTML = `<div class="empty-state">Не удалось загрузить историю</div>`; }
+  }else if(mode === "mines"){
+    title.textContent = "История Минных полей";
+    try{
+      const data = await api("/mines/history");
+      renderMinesHistoryList(data.rounds || []);
+    }catch(e){ list.innerHTML = `<div class="empty-state">Не удалось загрузить историю</div>`; }
   }else{
     title.textContent = "История продаж";
     try{
@@ -4045,10 +4227,10 @@ function renderPvpHistory(rounds){
 
 // Anywhere another player's handle is shown publicly (history feeds, leaderboards,
 // market/swap listings, PvP), the admin's own real @username is hidden behind a
-// generic "Admin" label -- never applied to the player's OWN profile screen, where
+// generic "Бот" label -- never applied to the player's OWN profile screen, where
 // they see their own real username as usual.
 function maskedName(u){
-  return (u && u.toLowerCase() === "rzabeyda") ? "Admin" : u;
+  return (u && u.toLowerCase() === "rzabeyda") ? "Бот" : u;
 }
 // Custom names (the "Имена" bank, and any card wearing one) are stored/matched in
 // lowercase canonical form server-side, but always DISPLAYED with a capitalized first
@@ -4071,6 +4253,27 @@ function renderRedBlackHistoryList(rounds){
       <div class="history-row pvp-history-row">
         <div class="info">
           <div class="line1">${colorEmoji} ${name} — ${r.won ? "выиграл" : "проиграл"} ${sign} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></div>
+          <div class="line2">ставка ${r.bet} · ${fmtHistoryDate(r.created_at)}</div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function renderMinesHistoryList(rounds){
+  const list = document.getElementById("history-list");
+  if(!rounds.length){
+    list.innerHTML = `<div class="empty-state"><span class="emoji">💣</span>Раундов пока не было.</div>`;
+    return;
+  }
+  list.innerHTML = rounds.map(r => {
+    const name = r.username ? maskedName(r.username) : (r.first_name || "Игрок");
+    const won = r.status === "won";
+    const sign = won ? `+${r.payout - r.bet}` : `-${r.bet}`;
+    const multLabel = won ? ` (x${r.cashout_multiplier.toFixed(2)})` : "";
+    return `
+      <div class="history-row pvp-history-row">
+        <div class="info">
+          <div class="line1">💣 ${name} (${r.mine_count} мин) — ${won ? "забрал" : "подорвался"} ${sign}${multLabel} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></div>
           <div class="line2">ставка ${r.bet} · ${fmtHistoryDate(r.created_at)}</div>
         </div>
       </div>`;
@@ -4154,6 +4357,15 @@ document.getElementById("rb-info-btn").addEventListener("click", ()=>{
 document.getElementById("rb-rules-close").addEventListener("click", ()=>{
   document.getElementById("rb-rules-overlay").classList.remove("active");
 });
+document.getElementById("mines-rules-btn").addEventListener("click", ()=>{
+  document.getElementById("mines-rules-overlay").classList.add("active");
+});
+document.getElementById("mines-info-btn").addEventListener("click", ()=>{
+  document.getElementById("mines-rules-overlay").classList.add("active");
+});
+document.getElementById("mines-rules-close").addEventListener("click", ()=>{
+  document.getElementById("mines-rules-overlay").classList.remove("active");
+});
 document.getElementById("poker-rules-btn").addEventListener("click", ()=>{
   document.getElementById("poker-rules-card").classList.remove("compact");
   document.getElementById("poker-rules-title").textContent = "Правила Американского покера";
@@ -4176,6 +4388,8 @@ const GAME_TOP_CONFIG = {
               title: "🏆 Топ 10 Ракетки", sub: "Больше всего выигранных гемов" },
   poker:    { endpoint: "/poker/leaderboard",    empty: "Пока никто не сыграл ни одной раздачи.",  empty_emoji: "🃏",
               title: "🏆 Топ 10 Покера", sub: "Больше всего выигранных гемов" },
+  mines:    { endpoint: "/mines/leaderboard",    empty: "Пока никто не сыграл ни одного раунда.",  empty_emoji: "💣",
+              title: "🏆 Топ 10 Минных полей", sub: "Больше всего выигранных гемов" },
 };
 
 const PVP_TOP_SUBMODES = {
@@ -4243,6 +4457,7 @@ document.getElementById("pvp-top-btn").addEventListener("click", ()=>openGameTop
 document.getElementById("rb-top-btn").addEventListener("click", ()=>openGameTop("redblack"));
 document.getElementById("av-top-btn").addEventListener("click", ()=>openGameTop("aviator"));
 document.getElementById("poker-top-btn").addEventListener("click", ()=>openGameTop("poker"));
+document.getElementById("mines-top-btn").addEventListener("click", ()=>openGameTop("mines"));
 document.getElementById("pvp-top-close").addEventListener("click", ()=>{
   document.getElementById("pvp-top-overlay").classList.remove("active");
 });
@@ -4523,6 +4738,13 @@ async function loadPvpState(){
 // ---------- PvP sub-tab switch (cards / Red&Black / [Ракетка later]) ----------
 let pvpMode = "cards";
 let pendingPvpReveal = null; // an unseen_result that arrived while the player was on a different sub-tab
+// True for exactly the FIRST renderPvp() after switching onto the PvP screen -- that
+// first /pvp/state fetch can carry an unseen_result left over from a round that
+// concluded while the player was elsewhere, and they explicitly don't want a replay of
+// something already finished just from walking in. Reset right after that one render,
+// so a round that concludes while they're actually sitting here watching (a later poll,
+// still on this same screen visit) still gets the live reveal as normal.
+let pvpTabJustOpened = false;
 document.getElementById("pvp-mode-switch").addEventListener("click", (e)=>{
   const btn = e.target.closest(".mode-switch-btn");
   if(!btn) return;
@@ -4533,7 +4755,9 @@ document.getElementById("pvp-mode-switch").addEventListener("click", (e)=>{
   document.getElementById("pvp-cards-block").style.display = pvpMode === "cards" ? "" : "none";
   document.getElementById("pvp-aviator-block").style.display = pvpMode === "aviator" ? "" : "none";
   document.getElementById("pvp-redblack-block").style.display = pvpMode === "redblack" ? "" : "none";
+  document.getElementById("pvp-mines-block").style.display = pvpMode === "mines" ? "" : "none";
   document.getElementById("pvp-poker-block").style.display = pvpMode === "poker" ? "" : "none";
+  if(pvpMode === "mines"){ resumeMinesRound(); syncMinesActiveRound(); }
   if(pvpMode === "cards" && pendingPvpReveal){
     openPvpReveal(pendingPvpReveal);
     pendingPvpReveal = null;
@@ -4620,6 +4844,215 @@ async function playRedBlack(choice){
 }
 document.getElementById("rb-pick-red").addEventListener("click", ()=>playRedBlack("red"));
 document.getElementById("rb-pick-black").addEventListener("click", ()=>playRedBlack("black"));
+
+// ---------- Minefields (Минные поля) ----------
+const MINES_MIN_BET = 25; // mirrors database.py's MINES_MIN_BET
+const MINES_GRID_TILES = 25; // mirrors database.py's MINES_GRID_TILES
+let minesBet = 25;
+let minesCount = 3;
+let minesRoundId = null;
+let minesRevealed = [];
+let minesMultiplier = 1.0;
+let minesBusy = false;
+
+function renderMinesBetUI(){
+  // NOTE: deliberately never sets .disabled on these controls -- a disabled button
+  // swallows clicks with zero feedback (no toast, nothing), which read as "broken"
+  // when someone taps Изменить mid-round. Each handler below checks minesRoundId
+  // itself and explains why with a toast instead.
+  document.getElementById("mines-bet-value").textContent = minesBet;
+  document.getElementById("mines-start-bet").textContent = minesBet;
+  document.querySelectorAll("#mines-bet-presets button").forEach(b=>{
+    b.classList.toggle("active", parseInt(b.dataset.bet, 10) === minesBet);
+  });
+  document.querySelectorAll("#mines-count-row button").forEach(b=>{
+    b.classList.toggle("active", parseInt(b.dataset.mines, 10) === minesCount);
+  });
+}
+
+function renderMinesStats(){
+  const stats = document.getElementById("mines-stats");
+  if(minesRoundId === null || !minesRevealed.length){
+    stats.style.display = "none";
+    return;
+  }
+  stats.style.display = "flex";
+  document.getElementById("mines-mult").textContent = "x" + minesMultiplier.toFixed(2);
+  document.getElementById("mines-potential").textContent = `${Math.round(minesBet * minesMultiplier)} гемов при выводе сейчас`;
+}
+
+function renderMinesGrid(minePositions, hitTile){
+  const grid = document.getElementById("mines-grid");
+  const resolved = minePositions !== undefined;
+  let html = "";
+  for(let i = 0; i < MINES_GRID_TILES; i++){
+    const isSafe = minesRevealed.includes(i);
+    const isMine = resolved && minePositions.includes(i);
+    let cls = "mines-tile";
+    let label = "";
+    if(isSafe){ cls += " safe"; label = "💎"; }
+    else if(isMine){ cls += (i === hitTile ? " mine" : " mine-dim"); label = "💣"; }
+    if(resolved || isSafe) cls += " disabled";
+    html += `<div class="${cls}" data-tile="${i}">${label}</div>`;
+  }
+  grid.innerHTML = html;
+  if(!resolved){
+    grid.querySelectorAll(".mines-tile:not(.disabled)").forEach(el=>{
+      el.addEventListener("click", ()=>revealMinesTile(parseInt(el.dataset.tile, 10)));
+    });
+  }
+}
+
+async function syncMinesActiveRound(){
+  // Recovers a board orphaned by a crash/reload/backgrounded app -- see
+  // get_active_mines_round_for_user() on the server. Previously minesRoundId lived
+  // ONLY in memory, so losing it client-side left the server thinking a board was
+  // still open forever, silently blocking every future "Начать" with
+  // "already have an active board" and no way out short of an admin DB fix. Called
+  // once every time the Mines tab is opened; a no-op if we're already tracking a
+  // round in memory (normal case, keeps this from ever fighting a live round).
+  if(minesRoundId !== null || minesBusy) return;
+  try{
+    const active = await api("/mines/my_active", {});
+    if(active){
+      minesRoundId = active.round_id;
+      minesBet = active.bet;
+      minesCount = active.mine_count;
+      minesRevealed = active.revealed;
+      minesMultiplier = active.multiplier;
+      renderMinesGrid();
+      resumeMinesRound();
+    }
+  }catch(e){
+    // best-effort background recovery check -- never surface an error toast for it
+  }
+}
+
+function resumeMinesRound(){
+  // Called on every switch INTO the Mines tab -- state lives in memory (kept in sync
+  // by every reveal/cashout response), no need to hit the server just to redraw.
+  renderMinesBetUI();
+  renderMinesStats();
+  document.getElementById("mines-start-btn").style.display = minesRoundId === null ? "block" : "none";
+  document.getElementById("mines-cashout-btn").style.display = (minesRoundId !== null && minesRevealed.length) ? "block" : "none";
+  if(minesRoundId === null && !document.getElementById("mines-grid").children.length){
+    renderMinesGrid();
+  }
+}
+
+document.getElementById("mines-bet-presets").addEventListener("click", (e)=>{
+  const btn = e.target.closest("button[data-bet]");
+  if(!btn) return;
+  if(minesRoundId !== null){ toast("Сначала заверши текущий раунд"); return; }
+  minesBet = parseInt(btn.dataset.bet, 10);
+  renderMinesBetUI();
+});
+document.getElementById("mines-bet-edit").addEventListener("click", async ()=>{
+  if(minesRoundId !== null){ toast("Сначала заверши текущий раунд"); return; }
+  const val = await promptNumber("Ставка (гемов, минимум " + MINES_MIN_BET + ")");
+  if(val && val >= MINES_MIN_BET){
+    minesBet = val;
+    renderMinesBetUI();
+  }else if(val){
+    toast("Минимальная ставка " + MINES_MIN_BET + " гемов");
+  }
+});
+document.getElementById("mines-count-row").addEventListener("click", (e)=>{
+  const btn = e.target.closest("button[data-mines]");
+  if(!btn) return;
+  if(minesRoundId !== null){ toast("Сначала заверши текущий раунд"); return; }
+  minesCount = parseInt(btn.dataset.mines, 10);
+  renderMinesBetUI();
+});
+
+async function startMinesRound(){
+  if(minesBusy || minesRoundId !== null) return;
+  if(minesBet < MINES_MIN_BET){ toast("Минимальная ставка " + MINES_MIN_BET + " гемов"); return; }
+  if(minesBet > gemsBalance && !isAdminUser){ toast("Не хватает гемов"); return; }
+  minesBusy = true;
+  document.getElementById("mines-start-btn").disabled = true;
+  document.getElementById("mines-share-btn").style.display = "none";
+  document.getElementById("mines-result").innerHTML = "";
+  try{
+    const res = await api("/mines/start", { bet: minesBet, mine_count: minesCount });
+    minesRoundId = res.round_id;
+    minesRevealed = [];
+    minesMultiplier = 1.0;
+    setGemsDisplay(gemsBalance - minesBet);
+    renderMinesGrid();
+    resumeMinesRound();
+  }catch(e){
+    toast("Ошибка: " + e.message);
+  }finally{
+    minesBusy = false;
+    document.getElementById("mines-start-btn").disabled = false;
+  }
+}
+document.getElementById("mines-start-btn").addEventListener("click", startMinesRound);
+
+function finishMinesRound(res, wasCashout){
+  minesRoundId = null;
+  const resultEl = document.getElementById("mines-result");
+  if(res.status === "won"){
+    const profit = res.payout - minesBet;
+    resultEl.innerHTML = `<span class="rb-win">💎 ${wasCashout ? "Забрал" : "Поле зачищено"} — выигрыш +${profit} на x${res.multiplier.toFixed(2)} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></span>`;
+    tg?.HapticFeedback?.notificationOccurred("success");
+    setGemsDisplay(res.gems);
+    const shareBtn = document.getElementById("mines-share-btn");
+    shareBtn.style.display = "block";
+    shareBtn.textContent = "Поделиться в чат";
+    shareBtn.disabled = false;
+    shareBtn.onclick = ()=>shareGameResult("mines", res.round_id, shareBtn);
+  }else{
+    resultEl.innerHTML = `<span class="rb-lose">💣 Подорвался — проигрыш -${minesBet} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></span>`;
+    tg?.HapticFeedback?.notificationOccurred("error");
+  }
+  resultEl.classList.remove("rb-pulse");
+  void resultEl.offsetWidth;
+  resultEl.classList.add("rb-pulse");
+  renderMinesGrid(res.mine_positions, res.tile);
+  minesRevealed = res.revealed || minesRevealed;
+  resumeMinesRound();
+}
+
+async function revealMinesTile(tile){
+  if(minesBusy || minesRoundId === null) return;
+  minesBusy = true;
+  try{
+    const res = await api("/mines/reveal", { round_id: minesRoundId, tile });
+    if(res.status === "lost"){
+      finishMinesRound(res, false);
+    }else if(res.status === "won"){
+      finishMinesRound(res, false);
+    }else{
+      minesRevealed = res.revealed;
+      minesMultiplier = res.multiplier;
+      renderMinesGrid();
+      resumeMinesRound();
+    }
+  }catch(e){
+    toast("Ошибка: " + e.message);
+  }finally{
+    minesBusy = false;
+  }
+}
+
+async function cashoutMinesRound(){
+  if(minesBusy || minesRoundId === null || !minesRevealed.length) return;
+  minesBusy = true;
+  document.getElementById("mines-cashout-btn").disabled = true;
+  try{
+    const res = await api("/mines/cashout", { round_id: minesRoundId });
+    finishMinesRound(res, true);
+  }catch(e){
+    toast("Ошибка: " + e.message);
+  }finally{
+    minesBusy = false;
+    document.getElementById("mines-cashout-btn").disabled = false;
+  }
+}
+document.getElementById("mines-cashout-btn").addEventListener("click", cashoutMinesRound);
+document.getElementById("mines-history-btn").addEventListener("click", ()=>openHistory("mines"));
 
 // ---------- American Poker '90s (in-app, server-authoritative 5-card draw + double-up) ----------
 const POKER_MIN_BET = 1; // mirrors database.py's POKER_MIN_BET -- client-side pre-check only, server enforces for real
@@ -5371,11 +5804,14 @@ function renderPvp(){
     }
   });
 
-  // Per request, entering PvP no longer replays the PREVIOUS round's outcome via the
-  // spin-the-wheel animation -- the player wants to see what's happening RIGHT NOW,
-  // not a reveal of something already finished. unseen_result is still marked seen
-  // server-side the moment /pvp/state hands it back (regardless of what the client
-  // does with it), so this is safe to simply not act on.
+  // Only the FIRST render right after opening/returning to the PvP screen suppresses
+  // the reveal -- that fetch can carry a stale unseen_result left over from a round
+  // that concluded while the player was elsewhere, and they don't want a replay of
+  // something already finished just from walking in. Every render after that one is
+  // treated as "genuinely live": a round concluding while they're actually sitting here
+  // watching still spins to reveal the winner as normal.
+  const isFirstRenderSinceOpen = pvpTabJustOpened;
+  pvpTabJustOpened = false;
   if(unseen_result){
     // A round just resolved -- if the round was won, the winning cards are already
     // transferred server-side, but the client's local `inventory` array is stale
@@ -5386,6 +5822,16 @@ function renderPvp(){
       inventory = data.inventory;
       sortInventoryAndRender();
     }).catch(()=>{ /* non-critical -- next profile visit will pick it up anyway */ });
+
+    if(!isFirstRenderSinceOpen){
+      if(pvpMode === "cards"){
+        openPvpReveal(unseen_result);
+      }else{
+        // Watching a different PvP sub-tab (Ракетка/Red&Black/Poker) when the cards
+        // round concluded -- queue it so switching back to "cards" shows the reveal.
+        pendingPvpReveal = unseen_result;
+      }
+    }
   }
 }
 
@@ -5803,6 +6249,19 @@ function renderZoom(){
   const zoomImgEl = document.getElementById("zoom-img");
   zoomImgEl.src = `/static/cards/${c.filename}?v=${CARD_IMG_VERSION}`;
   setRarityBorder(zoomImgEl, c.rarity);
+  const isObsidian = !!c.custom_name;
+  zoomImgEl.classList.toggle("obsidian-border", isObsidian);
+  document.getElementById("zoom-img-wrap").classList.toggle("obsidian", isObsidian);
+  const zoomRarityBadge = document.getElementById("zoom-rarity-tag");
+  zoomRarityBadge.textContent = isObsidian ? "OBSIDIAN" : (c.rarity || "");
+  zoomRarityBadge.className = `zoom-rarity-tag ${isObsidian ? "obsidian" : (c.rarity || "")}`;
+  const zoomNumEl = document.getElementById("zoom-drop-number");
+  if(c.drop_number){
+    zoomNumEl.textContent = `#${c.drop_number}`;
+    zoomNumEl.style.display = "";
+  }else{
+    zoomNumEl.style.display = "none";
+  }
   document.getElementById("zoom-name").textContent = capName(c.name) || "";
 }
 
@@ -5903,6 +6362,58 @@ document.getElementById("models-overlay").addEventListener("click", (e)=>{
   }
 });
 
+// ---------- Obsidian catalog (button under the rarity summary in Модели) ----------
+// Shows every Obsidian card across ALL players -- name + number -- styled the same way
+// the profile grid shows a player's own cards (rarity border + OBSIDIAN tag + drop
+// number), plus the model-name-tag from the models grid so the custom name is visible
+// without opening each card.
+let obsidianCards = [];
+
+function renderObsidianGrid(){
+  const grid = document.getElementById("obsidian-grid");
+  if(obsidianCards.length === 0){
+    grid.innerHTML = `<div class="empty-state">Пока никто не создал Obsidian-карту</div>`;
+    return;
+  }
+  grid.innerHTML = obsidianCards.map(c => `
+    <div class="grid-item rarity-border-diamond obsidian-border" data-src="/static/cards/${c.filename}?v=${CARD_IMG_VERSION}">
+      <img src="/static/cards/${c.filename}?v=${CARD_IMG_VERSION}" alt="${c.name||''}">
+      <div class="rarity-tag obsidian">OBSIDIAN</div>
+      <div class="drop-number">#${c.drop_number}</div>
+      <div class="model-name-tag">${capName(c.name) || ""}</div>
+    </div>
+  `).join("");
+  grid.querySelectorAll(".grid-item").forEach((el, idx)=>{
+    el.addEventListener("click", ()=>openZoom(obsidianCards, idx));
+  });
+}
+
+document.getElementById("models-obsidian-btn").addEventListener("click", async ()=>{
+  const res = await api("/obsidian/list", {});
+  // custom_name mirrors .name here -- added so the shared zoom/renderZoom() logic
+  // (which everywhere else checks c.custom_name to decide the Obsidian border/tag)
+  // recognizes these as Obsidian without special-casing this one list.
+  obsidianCards = (res.cards || []).map(c => ({...c, custom_name: c.name}));
+  document.getElementById("obsidian-count").textContent = obsidianCards.length;
+  renderObsidianGrid();
+  document.getElementById("obsidian-overlay").classList.add("active");
+});
+document.getElementById("obsidian-close").addEventListener("click", ()=>{
+  document.getElementById("obsidian-overlay").classList.remove("active");
+});
+document.getElementById("obsidian-scroll").addEventListener("scroll", (e)=>{
+  const btn = document.getElementById("obsidian-scroll-top");
+  btn.classList.toggle("visible", e.target.scrollTop > 300);
+});
+document.getElementById("obsidian-scroll-top").addEventListener("click", ()=>{
+  document.getElementById("obsidian-scroll").scrollTo({top:0, behavior:"smooth"});
+});
+document.getElementById("obsidian-overlay").addEventListener("click", (e)=>{
+  if(e.target.id === "obsidian-overlay" || e.target.id === "obsidian-scroll"){
+    document.getElementById("obsidian-overlay").classList.remove("active");
+  }
+});
+
 // ---------- Leaderboard ("Топы") ----------
 let topsPlayers = [];
 let topsMetric = "gems"; // "cards" | "gems" | "diamond"
@@ -5963,7 +6474,7 @@ document.getElementById("tops-overlay").addEventListener("click", (e)=>{
 let farmCycleTimer = null;
 let farmProgressTimer = null;
 
-const FARM_DEFAULT_HINT = '<span class="diamond">DIAMOND 1%</span> · <span class="platinum">PLATINUM 7%</span> · <span class="gold">GOLD 13%</span><br><span class="silver">SILVER 29%</span> · <span class="bronze">BRONZE 50%</span>';
+const FARM_DEFAULT_HINT = '<span class="diamond">DIAMOND 0.5%</span> · <span class="platinum">PLATINUM 4%</span> · <span class="gold">GOLD 16.5%</span><br><span class="silver">SILVER 29%</span> · <span class="bronze">BRONZE 50%</span>';
 function startFarmAnimation(cards, hintHTML){
   const stage = document.getElementById("farm-stage");
   const progressWrap = document.getElementById("farm-progress-wrap");
@@ -6253,7 +6764,7 @@ function openModalAt(index){
   updateSwapButton(item);
   updateStakeButton(item);
   updateCraftButton(item);
-  updateShareButton(item);
+  updateNumberButton(item);
   updateCustomButton(item);
 }
 
@@ -6360,12 +6871,15 @@ const RARE_NUMBERS_SET = new Set([
   6000, 6666, 7000, 7777, 8000, 8888, 9000, 9999, 10000,
 ]);
 
-function updateShareButton(item){
-  const btn = document.getElementById("modal-share");
+function updateNumberButton(item){
+  // "Номер" only ever shows up when the card is sitting on a RARE_NUMBERS_SET number
+  // and isn't busy (listed/staked/swapped/PvP/pinned/giveaway) -- otherwise it's just
+  // hidden, since there's nothing to do with a plain number.
+  const btn = document.getElementById("modal-number");
   const busy = !!(item.listed_price || item.swap_listed || item.staked_at || item.pvp_round_id || item.pinned_at || item.in_giveaway);
   const numberMode = RARE_NUMBERS_SET.has(item.drop_number) && !busy;
-  btn.classList.toggle("number-mode", numberMode);
-  btn.textContent = numberMode ? `Номер #${item.drop_number}` : "Поделиться";
+  btn.style.display = numberMode ? "" : "none";
+  btn.textContent = numberMode ? `Номер #${item.drop_number}` : "";
 }
 
 function updateCraftButton(item){
@@ -6521,87 +7035,32 @@ document.addEventListener("click", (e)=>{
 });
 
 const EXTRACT_NUMBER_COST_GEMS = 100; // mirrors database.py's EXTRACT_NUMBER_COST_GEMS
-document.getElementById("modal-share").addEventListener("click", async ()=>{
-  if(!selectedUserCardId) return;
-  if(document.getElementById("modal-share").classList.contains("number-mode")){
-    if(!selectedItem) return;
-    const oldNumber = selectedItem.drop_number;
-    if(gemsBalance < EXTRACT_NUMBER_COST_GEMS){
+document.getElementById("modal-number").addEventListener("click", async ()=>{
+  if(!selectedUserCardId || !selectedItem) return;
+  const oldNumber = selectedItem.drop_number;
+  if(gemsBalance < EXTRACT_NUMBER_COST_GEMS){
+    toastHTML(`Не хватает гемов — извлечение номера стоит ${EXTRACT_NUMBER_COST_GEMS} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
+    return;
+  }
+  const extractConfirmed = await confirmAction(
+    `Извлечь номер #${oldNumber} из карты за ${EXTRACT_NUMBER_COST_GEMS} гемов? Номер уйдёт в «Номера» (можно будет продать или поставить на другую карту), а эта карта получит новый номер — как будто её только что зафармили.`
+  );
+  if(!extractConfirmed) return;
+  try{
+    const res = await api("/numbers/extract", { user_card_id: selectedUserCardId });
+    selectedItem.drop_number = res.new_number;
+    selectedItem.number_override = res.new_number;
+    updateNumberButton(selectedItem);
+    document.getElementById("modal-name").textContent = `${capName(selectedItem.name) || "Без названия"} #${selectedItem.drop_number}`;
+    document.getElementById("modal-drop-number").textContent = `#${selectedItem.drop_number}`;
+    if(typeof res.gems === "number") setGemsDisplay(res.gems);
+    sortInventoryAndRender();
+    toast(`Номер #${oldNumber} извлечён за ${EXTRACT_NUMBER_COST_GEMS} гемов! Карте присвоен новый номер #${res.new_number}. Смотри «Номера» — там он теперь твой.`);
+  }catch(e){
+    if(String(e.message).includes("not enough gems")){
       toastHTML(`Не хватает гемов — извлечение номера стоит ${EXTRACT_NUMBER_COST_GEMS} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
-      return;
-    }
-    const extractConfirmed = await confirmAction(
-      `Извлечь номер #${oldNumber} из карты за ${EXTRACT_NUMBER_COST_GEMS} гемов? Номер уйдёт в «Номера» (можно будет продать или поставить на другую карту), а эта карта получит новый номер — как будто её только что зафармили.`
-    );
-    if(!extractConfirmed) return;
-    try{
-      const res = await api("/numbers/extract", { user_card_id: selectedUserCardId });
-      selectedItem.drop_number = res.new_number;
-      selectedItem.number_override = res.new_number;
-      updateShareButton(selectedItem);
-      document.getElementById("modal-name").textContent = `${capName(selectedItem.name) || "Без названия"} #${selectedItem.drop_number}`;
-      document.getElementById("modal-drop-number").textContent = `#${selectedItem.drop_number}`;
-      if(typeof res.gems === "number") setGemsDisplay(res.gems);
-      sortInventoryAndRender();
-      toast(`Номер #${oldNumber} извлечён за ${EXTRACT_NUMBER_COST_GEMS} гемов! Карте присвоен новый номер #${res.new_number}. Смотри «Номера» — там он теперь твой.`);
-    }catch(e){
-      if(String(e.message).includes("not enough gems")){
-        toastHTML(`Не хватает гемов — извлечение номера стоит ${EXTRACT_NUMBER_COST_GEMS} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
-      }else{
-        toast("Не получилось: " + e.message);
-      }
-    }
-    return;
-  }
-  // tg.switchInlineQuery only works for Mini Apps launched from the attachment menu;
-  // ours is opened via a normal web_app button, so Telegram throws synchronously here
-  // instead of just doing nothing — catch it and fall back to DMing the photo instead
-  // of leaving the button looking broken.
-  let usedInline = false;
-  if(tg?.switchInlineQuery){
-    try{
-      tg.switchInlineQuery(`share:${selectedUserCardId}`, ["users"]);
-      usedInline = true;
-    }catch(e){ usedInline = false; }
-  }
-  if(usedInline){
-    document.getElementById("modal-overlay").classList.remove("active");
-    return;
-  }
-  try{
-    await api("/share", { user_card_id: selectedUserCardId });
-    document.getElementById("modal-overlay").classList.remove("active");
-    toast("Отправил картинку тебе в чат с ботом — перешли её другу оттуда");
-  }catch(e){
-    toast("Не удалось поделиться: " + e.message);
-  }
-});
-
-const TRANSFER_FEE_GEMS = 25;
-document.getElementById("modal-give").addEventListener("click", async ()=>{
-  const currentGems = gemsBalance;
-  if(currentGems < TRANSFER_FEE_GEMS){
-    toastHTML(`Не хватает гемов — передача стоит ${TRANSFER_FEE_GEMS} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
-    return;
-  }
-  const username = await promptText("Username друга (без @)", "username");
-  if(!username) return;
-  const giveConfirmed = await confirmAction(`Передача карты стоит ${TRANSFER_FEE_GEMS} гемов. Продолжить?`);
-  if(!giveConfirmed) return;
-  try{
-    const res = await api("/transfer/to_username", { user_card_id: selectedUserCardId, username });
-    toast(`Подарено пользователю @${res.to_name}!`);
-    document.getElementById("modal-overlay").classList.remove("active");
-    loadProfile();
-  }catch(e){
-    if(e.message.includes("ещё не запускал бота")){
-      showAlert("Юзера ещё нет в боте — пригласите его сначала!");
-    }else if(e.message.includes("not enough gems")){
-      toastHTML(`Не хватает гемов — передача стоит ${TRANSFER_FEE_GEMS} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
-    }else if(e.message.includes("busy")){
-      toast("Сначала снимите карту с продажи/обмена/стейкинга/PvP");
     }else{
-      toast("Не удалось передать: " + e.message);
+      toast("Не получилось: " + e.message);
     }
   }
 });
@@ -7034,7 +7493,7 @@ function renderNumbersList(){
       return;
     }
     list.innerHTML = numbersBoard.listings.map(l=>{
-      const seller = l.username ? (maskedName(l.username) === "Admin" ? "Admin" : `@${l.username}`) : (l.first_name || "Игрок");
+      const seller = l.username ? (maskedName(l.username) === "Бот" ? "Бот" : `@${l.username}`) : (l.first_name || "Игрок");
       return `
         <div class="number-row" data-number="${l.number}">
           <div class="num">#${l.number}</div>
@@ -7055,9 +7514,15 @@ function renderNumbersList(){
       const status = n.user_card_id
         ? `<div class="lbl">Закреплён за картой</div><div class="val">${n.list_price ? `Продаётся за ${n.list_price}` : "Не продаётся"}</div>`
         : `<div class="lbl">Не закреплён</div><div class="val">${n.list_price ? `Продаётся за ${n.list_price}` : "Свободен для действия"}</div>`;
+      // Only a FREE (unpinned) number can be listed for sale (server enforces this
+      // too, see list_number_for_sale) -- while it's attached to a card, show it as
+      // simply in use, same as the names tab's "Заюзан" -- pin a different number to
+      // that card first to free this one up before it can be sold.
       const actions = n.list_price
         ? `<button class="act cancel" data-number="${n.number}" data-action="cancel">Снять</button>`
-        : `<button class="act attach" data-number="${n.number}" data-action="attach">Закрепить</button><button class="act sell" data-number="${n.number}" data-action="sell">Продать</button>`;
+        : n.user_card_id
+          ? `<button class="act used" disabled>Занят</button>`
+          : `<button class="act attach" data-number="${n.number}" data-action="attach">Закрепить</button><button class="act sell" data-number="${n.number}" data-action="sell">Продать</button>`;
       return `
         <div class="number-row number-row-mine" data-number="${n.number}">
           <div class="row-top">
@@ -7083,7 +7548,7 @@ function renderNumbersList(){
       return;
     }
     list.innerHTML = numbersOwners.map(n=>{
-      const owner = n.username ? (maskedName(n.username) === "Admin" ? "Admin" : `@${n.username}`) : (n.first_name || "Игрок");
+      const owner = n.username ? (maskedName(n.username) === "Бот" ? "Бот" : `@${n.username}`) : (n.first_name || "Игрок");
       const status = n.user_card_id
         ? "закреплён за картой"
         : (n.list_price ? `продаётся за ${n.list_price} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">` : "не закреплён");
@@ -7279,7 +7744,7 @@ function renderNamesList(){
       list.innerHTML = `<div class="empty-state">Пока никто ничего не продаёт</div>`;
     }else{
       list.innerHTML = namesBoard.listings.map(l=>{
-        const seller = l.username ? (maskedName(l.username) === "Admin" ? "Admin" : `@${l.username}`) : (l.first_name || "Игрок");
+        const seller = l.username ? (maskedName(l.username) === "Бот" ? "Бот" : `@${l.username}`) : (l.first_name || "Игрок");
         return `
         <div class="number-row" data-name="${l.name}">
           <div class="num">${capName(l.name)}</div>
@@ -7300,9 +7765,14 @@ function renderNamesList(){
         const status = n.user_card_id
           ? `<div class="lbl">Используется на карте</div><div class="val">${n.list_price ? `Продаётся за ${n.list_price}` : "Не продаётся"}</div>`
           : `<div class="lbl">В банке</div><div class="val">${n.list_price ? `Продаётся за ${n.list_price}` : "Свободно для Кастом"}</div>`;
+        // A name attached to a card can't be listed until it's detached first (put a
+        // different name on that card via Кастом) -- so instead of a "Продать" button
+        // that would need that extra step first, show it as simply in use.
         const actions = n.list_price
           ? `<button class="act cancel" data-name="${n.name}" data-action="cancel">Снять</button>`
-          : `<button class="act sell" data-name="${n.name}" data-action="sell">Продать</button>`;
+          : n.user_card_id
+            ? `<button class="act used" disabled>Заюзан</button>`
+            : `<button class="act sell" data-name="${n.name}" data-action="sell">Продать</button>`;
         return `
         <div class="number-row number-row-mine" data-name="${n.name}">
           <div class="row-top">
@@ -7325,7 +7795,7 @@ function renderNamesList(){
       list.innerHTML = `<div class="empty-state">Пока ни одно имя никому не принадлежит</div>`;
     }else{
       list.innerHTML = namesOwners.map(n=>{
-        const owner = n.username ? (maskedName(n.username) === "Admin" ? "Admin" : `@${n.username}`) : (n.first_name || "Игрок");
+        const owner = n.username ? (maskedName(n.username) === "Бот" ? "Бот" : `@${n.username}`) : (n.first_name || "Игрок");
         const status = n.user_card_id
           ? "используется на карте"
           : (n.list_price ? `продаётся за ${n.list_price} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">` : "в банке, не используется");
@@ -7340,7 +7810,7 @@ function renderNamesList(){
 }
 
 async function createNameFlow(){
-  const raw = await promptText(`Придумай имя (до ${CUSTOM_NAME_MAX_LEN_CLIENT} латинских букв/цифр) — создание стоит ${namesBoard.min_bid || 25} гемов и выставляет имя на 12ч аукцион`, "durov");
+  const raw = await promptText(`Придумай имя (от ${CUSTOM_NAME_MIN_LEN_CLIENT} до ${CUSTOM_NAME_MAX_LEN_CLIENT} латинских букв/цифр) — создание стоит ${namesBoard.min_bid || 25} гемов и выставляет имя на 12ч аукцион`, "durov");
   if(!raw) return;
   try{
     const result = await api("/names/create", { name: raw });
@@ -7351,6 +7821,7 @@ async function createNameFlow(){
     toast("Не получилось: " + e.message);
   }
 }
+const CUSTOM_NAME_MIN_LEN_CLIENT = 3;
 const CUSTOM_NAME_MAX_LEN_CLIENT = 16;
 
 async function bidOnName(name, minBid){
@@ -7579,8 +8050,12 @@ let burnPickerTarget = null;
 let burnPickerSelected = new Set();
 
 function burnPickerUpdateTitle(){
+  const n = burnPickerSelected.size;
+  const batches = Math.floor(n / burnPickerCount);
   document.getElementById("burn-picker-title").textContent =
-    `Выбери ${burnPickerCount} карт(ы) ${RARITY_LABEL[burnPickerRarity]} (${burnPickerSelected.size}/${burnPickerCount})`;
+    (n > 0 && n % burnPickerCount === 0)
+      ? `Выбрано ${n} ${RARITY_LABEL[burnPickerRarity]} (${batches}x эволюция)`
+      : `Выбери карты ${RARITY_LABEL[burnPickerRarity]}, кратно ${burnPickerCount} (сейчас ${n})`;
 }
 
 function openBurnPicker(recipe){
@@ -7615,10 +8090,8 @@ function renderBurnPickerGrid(){
         burnPickerSelected.delete(ucId);
         el.classList.remove("selected");
       }else{
-        if(burnPickerSelected.size >= burnPickerCount){
-          toast(`Уже выбрано ${burnPickerCount} — сними одну, чтобы заменить выбор`);
-          return;
-        }
+        // Fast mode: no cap here -- the player can pick as many eligible cards as they
+        // own, in any multiple of burnPickerCount, so many evolutions fire in one go.
         burnPickerSelected.add(ucId);
         el.classList.add("selected");
       }
@@ -7630,16 +8103,23 @@ function renderBurnPickerGrid(){
 document.getElementById("burn-picker-cancel").addEventListener("click", ()=>{
   document.getElementById("burn-picker-overlay").classList.remove("active");
 });
-// One tap fills the whole selection (up to the recipe's required count) instead of
-// clicking each card by hand -- a second tap while already full clears it back to zero.
+// Fast mode: one tap selects EVERY eligible card, trimmed down to the nearest multiple
+// of burnPickerCount (any remainder can't form a full set and is left unselected) -- so
+// a whole stack evolves in one confirm instead of repeating the 4-card cycle by hand.
+// A second tap while something is already selected clears the selection back to zero.
 document.getElementById("burn-picker-select-all").addEventListener("click", ()=>{
   const eligible = inventory.filter(c => c.rarity === burnPickerRarity && !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.pinned_at && !c.in_giveaway);
-  if(burnPickerSelected.size >= burnPickerCount){
+  if(burnPickerSelected.size > 0){
     burnPickerSelected = new Set();
   }else{
-    for(const c of eligible){
-      if(burnPickerSelected.size >= burnPickerCount) break;
-      burnPickerSelected.add(c.user_card_id);
+    const usable = Math.floor(eligible.length / burnPickerCount) * burnPickerCount;
+    if(usable === 0){
+      toast(`Нужно минимум ${burnPickerCount} карт ${RARITY_LABEL[burnPickerRarity]}, а есть ${eligible.length}`);
+      return;
+    }
+    burnPickerSelected = new Set(eligible.slice(0, usable).map(c => c.user_card_id));
+    if(usable < eligible.length){
+      toast(`Выбрано ${usable} из ${eligible.length} — остаток не кратен ${burnPickerCount}`);
     }
   }
   burnPickerUpdateTitle();
@@ -7647,14 +8127,18 @@ document.getElementById("burn-picker-select-all").addEventListener("click", ()=>
 });
 
 document.getElementById("burn-picker-confirm").addEventListener("click", async ()=>{
-  if(burnPickerSelected.size !== burnPickerCount){
-    toast(`Нужно выбрать ровно ${burnPickerCount}`);
+  const n = burnPickerSelected.size;
+  if(n === 0 || n % burnPickerCount !== 0){
+    toast(`Нужно выбрать кратно ${burnPickerCount} карт (сейчас ${n})`);
     return;
   }
   const burnRecipe = BURN_RECIPES.find(r => r.target === burnPickerTarget);
   const burnFail = burnRecipe ? burnRecipe.fail : 1;
+  const batches = n / burnPickerCount;
   const confirmed = await confirmAction(
-    `Эволюционировать эти ${burnPickerCount} карт(ы)?\n\n${100 - burnFail}% — получишь 1 карту редкости ${RARITY_LABEL[burnPickerTarget]}\n${burnFail}% — всё сгорит без результата\n\nБесплатно, но карты уничтожаются безвозвратно. Продолжить?`
+    batches === 1
+      ? `Эволюционировать эти ${burnPickerCount} карт(ы)?\n\n${100 - burnFail}% — получишь 1 карту редкости ${RARITY_LABEL[burnPickerTarget]}\n${burnFail}% — всё сгорит без результата\n\nБесплатно, но карты уничтожаются безвозвратно. Продолжить?`
+      : `Эволюционировать ${n} карт (${batches} попыток по ${burnPickerCount})?\n\nКаждая попытка: ${100 - burnFail}% — 1 карта ${RARITY_LABEL[burnPickerTarget]}, ${burnFail}% — сгорит без результата\n\nБесплатно, но карты уничтожаются безвозвратно. Продолжить?`
   );
   if(!confirmed) return;
   const rarity = burnPickerRarity;
@@ -7676,11 +8160,56 @@ document.getElementById("burn-overlay").addEventListener("click", (e)=>{
   }
 });
 
+function showBurnSingleResult(result){
+  const stage = document.getElementById("farm-stage");
+  const nameEl = document.getElementById("farm-result-name");
+  const rarityEl = document.getElementById("farm-result-rarity");
+  nameEl.classList.remove("chance-hint");
+  document.getElementById("farm-result-number").textContent = "";
+
+  if(result.success && result.new_card){
+    const card = result.new_card;
+    stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}?v=${CARD_IMG_VERSION}" alt="${card.name || ''}"><div class="rarity-tag ${card.rarity}">${card.rarity}</div>${card.drop_number ? `<div class="drop-number">#${card.drop_number}</div>` : ""}`;
+    nameEl.textContent = card.name || "Новая карта!";
+    document.getElementById("farm-result-number").textContent = card.drop_number ? `№${card.drop_number}` : "";
+    rarityEl.textContent = card.rarity || "";
+    rarityEl.className = card.rarity || "";
+    tg?.HapticFeedback?.notificationOccurred("success");
+  }else{
+    stage.innerHTML = `<div class="placeholder">❌</div>`;
+    nameEl.textContent = "Эволюция не удалась";
+    rarityEl.textContent = "";
+    rarityEl.className = "";
+    tg?.HapticFeedback?.notificationOccurred("error");
+  }
+}
+
+function showBurnBulkResult(recipe, totalBatches, successes, gained){
+  const stage = document.getElementById("farm-stage");
+  const nameEl = document.getElementById("farm-result-name");
+  const rarityEl = document.getElementById("farm-result-rarity");
+  nameEl.classList.remove("chance-hint");
+
+  const gainedLine = Object.entries(gained).map(([r, n]) => `${n}× ${RARITY_LABEL[r] || r}`).join(", ") || "ничего";
+  stage.innerHTML = `<div class="placeholder">${successes > 0 ? "✨" : "❌"}</div>`;
+  nameEl.textContent = `Готово: ${successes}/${totalBatches} успешно`;
+  document.getElementById("farm-result-number").textContent = `Получено: ${gainedLine}`;
+  rarityEl.textContent = recipe.target || "";
+  rarityEl.className = recipe.target || "";
+  tg?.HapticFeedback?.notificationOccurred(successes > 0 ? "success" : "error");
+}
+
 let burnBusy = false;
 async function runBurn(rarity, userCardIds){
   if(burnBusy) return;
   const recipe = BURN_RECIPES.find(r => r.rarity === rarity);
   if(!recipe) return;
+  const count = recipe.count;
+  const batches = [];
+  for(let i = 0; i < userCardIds.length; i += count){
+    batches.push(userCardIds.slice(i, i + count));
+  }
+  if(batches.length === 0) return;
 
   burnBusy = true;
   switchScreen("farm-screen");
@@ -7689,34 +8218,40 @@ async function runBurn(rarity, userCardIds){
   try{
     const cards = await ensureAllCards();
     const hintFail = recipe.fail || 1;
-    const hint = `<span class="${recipe.target}">${100 - hintFail}% — 1 ${RARITY_LABEL[recipe.target].toUpperCase()}</span><br><span class="bronze">${hintFail}% — всё сгорает без результата</span>`;
-    await startFarmAnimation(cards, hint);
-    if(mySeq !== farmRequestSeq) return;
-    const result = await api("/burn", { rarity, user_card_ids: userCardIds });
-    if(mySeq !== farmRequestSeq) return;
 
-    document.getElementById("total-farmed").textContent = result.total_farmed; // burning DELETES cards, so this can go DOWN
-
-    const stage = document.getElementById("farm-stage");
-    const nameEl = document.getElementById("farm-result-name");
-    const rarityEl = document.getElementById("farm-result-rarity");
-    nameEl.classList.remove("chance-hint");
-    document.getElementById("farm-result-number").textContent = "";
-
-    if(result.success && result.new_card){
-      const card = result.new_card;
-      stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}?v=${CARD_IMG_VERSION}" alt="${card.name || ''}"><div class="rarity-tag ${card.rarity}">${card.rarity}</div>${card.drop_number ? `<div class="drop-number">#${card.drop_number}</div>` : ""}`;
-      nameEl.textContent = card.name || "Новая карта!";
-      document.getElementById("farm-result-number").textContent = card.drop_number ? `№${card.drop_number}` : "";
-      rarityEl.textContent = card.rarity || "";
-      rarityEl.className = card.rarity || "";
-      tg?.HapticFeedback?.notificationOccurred("success");
+    if(batches.length === 1){
+      const hint = `<span class="${recipe.target}">${100 - hintFail}% — 1 ${RARITY_LABEL[recipe.target].toUpperCase()}</span><br><span class="bronze">${hintFail}% — всё сгорает без результата</span>`;
+      await startFarmAnimation(cards, hint);
+      if(mySeq !== farmRequestSeq) return;
+      const result = await api("/burn", { rarity, user_card_ids: batches[0] });
+      if(mySeq !== farmRequestSeq) return;
+      document.getElementById("total-farmed").textContent = result.total_farmed; // burning DELETES cards, so this can go DOWN
+      showBurnSingleResult(result);
     }else{
-      stage.innerHTML = `<div class="placeholder">❌</div>`;
-      nameEl.textContent = "Эволюция не удалась";
-      rarityEl.textContent = "";
-      rarityEl.className = "";
-      tg?.HapticFeedback?.notificationOccurred("error");
+      // Fast mode: fire every batch of `count` back-to-back with no per-card flip
+      // animation, then show one aggregated summary -- replaying the full reveal for
+      // every batch would defeat the point of doing it all "разом" (at once).
+      await startFarmAnimation(cards, `Эволюция ×${batches.length}...`);
+      let successes = 0;
+      const gained = {};
+      let lastTotalFarmed = null;
+      for(const chunk of batches){
+        if(mySeq !== farmRequestSeq) return;
+        try{
+          const result = await api("/burn", { rarity, user_card_ids: chunk });
+          lastTotalFarmed = result.total_farmed;
+          if(result.success && result.new_card){
+            successes++;
+            const r = result.new_card.rarity || recipe.target;
+            gained[r] = (gained[r] || 0) + 1;
+          }
+        }catch(e){
+          // one batch failing (card went busy mid-run, etc.) shouldn't abort the rest
+        }
+      }
+      if(mySeq !== farmRequestSeq) return;
+      if(lastTotalFarmed != null) document.getElementById("total-farmed").textContent = lastTotalFarmed;
+      showBurnBulkResult(recipe, batches.length, successes, gained);
     }
   }catch(e){
     if(mySeq !== farmRequestSeq) return;

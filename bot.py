@@ -56,14 +56,14 @@ WEBAPP_VERSION = "4"
 
 # The admin's own real @handle should never leak in anything posted publicly (giveaway/
 # contest winner announcements, share-to-chat results, Aviator chat messages) -- it's
-# shown as a generic "Admin" label there instead. Never applied to private replies
+# shown as a generic "Бот" label there instead. Never applied to private replies
 # (admin commands like /finduser, /addgem) since only the admin themselves sees those.
 ADMIN_USERNAME_MASK = "rzabeyda"
 
 
 def _mask_username(username: str | None) -> str | None:
     if username and username.lower() == ADMIN_USERNAME_MASK:
-        return "Admin"
+        return "Бот"
     return username
 
 
@@ -71,8 +71,8 @@ def _who_label(username: str | None, first_name: str | None, telegram_id: int) -
     """"@handle" (or first_name/id fallback) for a winner/player shown in a public
     announcement -- masked through _mask_username() first."""
     username = _mask_username(username)
-    if username == "Admin":
-        return "Admin"
+    if username == "Бот":
+        return "Бот"
     return f"@{username}" if username else (first_name or str(telegram_id))
 
 AVIATOR_MAX_CONCURRENT_PER_CHAT = 5  # see database.count_active_aviator_rounds_in_chat -- caps how many /go tickers can hammer edit_text in the same chat at once
@@ -231,6 +231,52 @@ async def handle_admin_panel(message: Message):
         "/topstakers — топ-10 по заработку на стейкинге",
         parse_mode="HTML",
     )
+
+
+@dp.message(Command("minesstats"))
+async def handle_mines_stats(message: Message):
+    if not _is_admin(message.from_user.id):
+        return
+    s = db.get_mines_house_stats()
+    if not s["rounds"]:
+        await message.answer("Минные поля ещё никто не играл.")
+        return
+    sign = "🟢 в плюсе" if s["profit"] > 0 else ("🔴 в минусе" if s["profit"] < 0 else "⚪ ровно")
+    await message.answer(
+        "💣 <b>Минные поля — статистика казны</b>\n\n"
+        f"Раундов сыграно: <b>{s['rounds']}</b>\n"
+        f"Поставлено: <b>{s['wagered']}</b> 💎\n"
+        f"Выплачено: <b>{s['paid']}</b> 💎\n"
+        f"Итог: {sign} на <b>{abs(s['profit'])}</b> 💎\n"
+        f"Фактический RTP: <b>{s['effective_rtp']}%</b> (целевой — 97%)",
+        parse_mode="HTML",
+    )
+
+
+_HOUSE_STATS_LABELS = {
+    "mines": ("💣", "Минные поля", 97),
+    "redblack": ("🔴⚫", "Red&Black", 100),
+    "aviator": ("🚀", "Ракетка", 97),
+    "poker": ("🃏", "Покер", None),
+}
+
+
+def _house_stats_line(key: str, s: dict) -> str:
+    emoji, label, target = _HOUSE_STATS_LABELS[key]
+    if not s["rounds"]:
+        return f"{emoji} <b>{label}</b> — ещё не играли"
+    return f"{emoji} <b>{label}</b> — RTP {s['effective_rtp']}%"
+
+
+@dp.message(Command("housestats"))
+async def handle_house_stats(message: Message):
+    if not _is_admin(message.from_user.id):
+        return
+    all_stats = db.get_all_house_stats()
+    lines = ["📊 <b>Статистика казны по всем играм</b>\n"]
+    for key in ("mines", "redblack", "aviator", "poker"):
+        lines.append(_house_stats_line(key, all_stats[key]))
+    await message.answer("\n".join(lines), parse_mode="HTML")
 
 
 @dp.message(Command("topstakers"))
@@ -1338,8 +1384,8 @@ async def handle_inline_share(inline_query: InlineQuery):
 
 def _display_name(username: str | None, first_name: str | None) -> str:
     username = _mask_username(username)
-    if username == "Admin":
-        return "Admin"
+    if username == "Бот":
+        return "Бот"
     return f"@{username}" if username else (first_name or "Игрок")
 
 
@@ -1359,6 +1405,27 @@ async def share_redblack_result(round_id: int) -> bool:
         return True
     except Exception:
         logger.warning("could not share redblack round %s", round_id)
+        return False
+
+
+async def share_mines_result(round_id: int) -> bool:
+    round_row = db.get_mines_round(round_id)
+    if round_row is None or round_row["status"] not in ("won", "lost"):
+        return False
+    name = _display_name(round_row.get("username"), round_row.get("first_name"))
+    if round_row["status"] == "won":
+        profit = round_row["payout"] - round_row["bet"]
+        text = (
+            f"💣 {name} сыграл в Минные поля ({round_row['mine_count']} мин) — забрал на "
+            f"{round_row['cashout_multiplier']:.2f}x, выигрыш +{profit} 💎!"
+        )
+    else:
+        text = f"💣 {name} сыграл в Минные поля ({round_row['mine_count']} мин) — подорвался, проигрыш {round_row['bet']} 💎"
+    try:
+        await bot.send_message(PUBLIC_CHAT, text)
+        return True
+    except Exception:
+        logger.warning("could not share mines round %s", round_id)
         return False
 
 
@@ -1509,7 +1576,7 @@ async def _send_gems_invoice(chat_id: int, user_id: int, gems: int) -> str | Non
     return None
 
 
-@dp.message(Command("buy"), F.chat.type.in_({"group", "supergroup"}))  # только в групповом чате -- в личке с ботом покупка гемов идёт через сам webapp, а не /buy
+@dp.message(Command("buy"), F.chat.type.in_({"group", "supergroup", "private"}))  # теперь работает и в личке с ботом, не только в групповом чате
 async def handle_buy_command(message: Message):
     """/buy [гемы] -- posts a native Telegram Stars invoice right in this chat, same
     pricing/payload convention as the webapp's buy-gems flow (api.py's GEMS_PER_STAR,

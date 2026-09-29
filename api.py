@@ -195,6 +195,20 @@ class AviatorRoundBody(InitDataBody):
     round_id: int
 
 
+class MinesStartBody(InitDataBody):
+    bet: int
+    mine_count: int
+
+
+class MinesRoundBody(InitDataBody):
+    round_id: int
+
+
+class MinesRevealBody(InitDataBody):
+    round_id: int
+    tile: int
+
+
 class PokerDealBody(InitDataBody):
     bet: int
 
@@ -214,7 +228,7 @@ class PokerRoundBody(InitDataBody):
 
 
 class GameShareBody(InitDataBody):
-    game: str  # "pvp" | "redblack" | "aviator" | "poker"
+    game: str  # "pvp" | "redblack" | "aviator" | "poker" | "mines"
     round_id: int
 
 
@@ -819,6 +833,74 @@ def aviator_cashout(body: AviatorRoundBody):
         raise HTTPException(400, str(e))
 
 
+@app.post("/api/mines/start")
+def mines_start(body: MinesStartBody):
+    """One open board at a time per player, same rule as Aviator's one-flying-round
+    cap."""
+    user = _authenticate(body.initData)
+    if db.count_active_mines_rounds_for_user(user["telegram_id"]) > 0:
+        raise HTTPException(409, "already have an active board -- cash out or hit a mine first")
+    try:
+        return db.start_mines(user["telegram_id"], body.bet, body.mine_count)
+    except db.MinesError as e:
+        raise HTTPException(400, str(e))
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
+
+
+@app.post("/api/mines/my_active")
+def mines_my_active(body: InitDataBody):
+    """Lets the client recover an orphaned active board after a reload/crash/backgrounded
+    app -- called once every time the player opens the Mines tab, see
+    get_active_mines_round_for_user(). Returns null if they have no active round."""
+    user = _authenticate(body.initData)
+    return db.get_active_mines_round_for_user(user["telegram_id"])
+
+
+@app.post("/api/mines/state")
+def mines_state(body: MinesRoundBody):
+    """For a client reload mid-round -- returns exactly what the board should be
+    showing right now."""
+    user = _authenticate(body.initData)
+    try:
+        return db.get_mines_state(body.round_id, user["telegram_id"])
+    except db.MinesError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.post("/api/mines/reveal")
+def mines_reveal(body: MinesRevealBody):
+    """Opens one tile -- a mine ends the round, a safe tile raises the multiplier
+    (and auto-cashes-out if that was the last safe tile on the board)."""
+    user = _authenticate(body.initData)
+    try:
+        return db.reveal_mines_tile(body.round_id, user["telegram_id"], body.tile)
+    except db.MinesError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/mines/cashout")
+def mines_cashout(body: MinesRoundBody):
+    """Cashes out at whatever multiplier the player's current reveals are worth."""
+    user = _authenticate(body.initData)
+    try:
+        return db.cashout_mines(body.round_id, user["telegram_id"])
+    except db.MinesError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/mines/history")
+def mines_history(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"rounds": db.get_mines_history()}
+
+
+@app.post("/api/mines/leaderboard")
+def mines_leaderboard(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"leaderboard": db.get_mines_leaderboard(10)}
+
+
 @app.post("/api/poker/deal")
 def poker_deal(body: PokerDealBody):
     """Charges the bet and deals a fresh 5-card hand -- everything server-side, the
@@ -929,6 +1011,11 @@ async def games_share(body: GameShareBody):
         if round_row is None or round_row["user_id"] != user["telegram_id"]:
             raise HTTPException(404, "round not found")
         ok = await bot_module.share_poker_result(body.round_id)
+    elif body.game == "mines":
+        round_row = db.get_mines_round(body.round_id)
+        if round_row is None or round_row["user_id"] != user["telegram_id"]:
+            raise HTTPException(404, "round not found")
+        ok = await bot_module.share_mines_result(body.round_id)
     else:
         raise HTTPException(400, "unknown game")
 
@@ -1063,7 +1150,7 @@ def numbers_list(body: NumberListBody):
     except db.ListingPriceTooLow as e:
         raise HTTPException(400, f"minimum price is {e.min_price} gems")
     except db.NumberNotAvailable:
-        raise HTTPException(404, "you don't own this number")
+        raise HTTPException(400, "number not available -- it's either not yours or still pinned to a card (unpin it first)")
     return {"ok": True}
 
 
@@ -1123,7 +1210,7 @@ def names_create(body: NameCreateBody):
     try:
         result = db.create_name_auction(user["telegram_id"], body.name)
     except db.NameInvalid:
-        raise HTTPException(400, f"name must be 1-{db.CUSTOM_NAME_MAX_LEN} English letters/digits")
+        raise HTTPException(400, f"name must be {db.CUSTOM_NAME_MIN_LEN}-{db.CUSTOM_NAME_MAX_LEN} English letters/digits")
     except db.NameTaken:
         raise HTTPException(400, "this name is already taken")
     except db.InsufficientGems:
@@ -1198,6 +1285,14 @@ def custom_nft_create(body: CustomNftCreateBody):
     except db.NumberNotAvailable:
         raise HTTPException(404, "you don't own this number")
     return result
+
+
+@app.post("/api/obsidian/list")
+def obsidian_list(body: InitDataBody):
+    """Full catalog of every Obsidian card across all players -- backs the "OBSIDIAN"
+    browse button in Модели."""
+    _authenticate(body.initData)
+    return {"cards": db.get_all_obsidian_cards()}
 
 
 @app.post("/api/wall/list")
