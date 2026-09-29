@@ -213,24 +213,37 @@ async def handle_admin_panel(message: Message):
     if not _is_admin(message.from_user.id):
         return
     stats = db.get_admin_stats()
-    await message.answer(
-        "👑 <b>Админ-панель Peeppo</b>\n\n"
-        f"Юзеры: <b>{stats['users']}</b>\n"
-        f"Сегодня: <b>{stats['active_today']}</b>\n"
-        f"Карты: <b>{stats['total_farmed']}</b>\n"
-        f"Фарм: <b>{stats['farms_pressed']}</b>\n"
-        f"Кейсы: <b>{stats['cases_bought']}</b>\n"
-        f"Крафт: <b>{stats['cards_crafted']}</b>\n"
-        f"Эволюция: <b>{stats['cards_evolved']}</b>\n"
-        f"Стейки: <b>{stats['cards_staked']}</b>\n\n"
-        "<b>Команды:</b>\n"
-        "/addgem id_или_@username кол-во — начислить гемы\n"
-        "/cardgiveaway [редкость] [кол-во] [мин] [макс] — мгновенный розыгрыш ТВОИХ карт среди всех юзеров бота\n"
-        "/numbergiveaway номер [часов] — розыгрыш ТВОЕЙ карты с этим номером живьём в чате (кнопка «Участвовать», по умолчанию 1 час)\n"
-        "/cardsgiveaway [часов] — розыгрыш ВСЕХ твоих карт кроме diamond сразу, живьём в чате (кнопка «Участвовать», карты раздаются случайно между всеми, кто нажал)\n"
-        "/topstakers — топ-10 по заработку на стейкинге",
-        parse_mode="HTML",
-    )
+    lines = [
+        "👑 <b>Админ-панель Peeppo</b>\n",
+        f"Юзеры: <b>{stats['users']}</b>",
+        f"Сегодня: <b>{stats['active_today']}</b>",
+        f"Фармили сегодня: <b>{stats['farmers_today']}</b>",
+        f"Карты: <b>{stats['total_farmed']}</b>",
+        f"Фарм: <b>{stats['farms_pressed']}</b>",
+        f"Кейсы: <b>{stats['cases_bought']}</b>",
+        f"Крафт: <b>{stats['cards_crafted']}</b>",
+        f"Эволюция: <b>{stats['cards_evolved']}</b>",
+        f"Стейки: <b>{stats['cards_staked']}</b>",
+        "",
+        "📊 <b>Статистика казны по всем играм</b>\n",
+    ]
+    all_stats = db.get_all_house_stats()
+    for key in ("mines", "redblack", "aviator", "poker"):
+        lines.append(_house_stats_line(key, all_stats[key]))
+    await message.answer("\n".join(lines), parse_mode="HTML")
+
+
+@dp.message(Command("pvpbot"))
+async def handle_pvp_test_bot(message: Message):
+    """Admin-only: makes a fake bot account join the current open PvP lobby round
+    with a free card, so a 2-player round (and the reveal animation) can be triggered
+    for testing without a second real account."""
+    if not _is_admin(message.from_user.id):
+        return
+    try:
+        db.join_pvp_test_bot()
+    except Exception as e:
+        await message.answer(f"Не получилось: {e}")
 
 
 @dp.message(Command("minesstats"))

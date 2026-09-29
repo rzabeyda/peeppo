@@ -1,47 +1,67 @@
-import sqlite3
-conn = sqlite3.connect("peeppo.db")
-conn.row_factory = sqlite3.Row
+import sys
+sys.path.insert(0, "/root/peeppo")
+import database as db
 
-UID = 5392127313
+USERNAME = "fuckzxm"
 
-print("=== user row ===")
-u = conn.execute("SELECT telegram_id, username, first_name, gems, created_at FROM users WHERE telegram_id=?", (UID,)).fetchone()
-print(dict(u) if u else "NOT FOUND")
+with db.get_conn() as conn:
+    user = conn.execute(
+        "SELECT telegram_id, username, first_name, created_at, gems, gems_earned, ref_by "
+        "FROM users WHERE LOWER(username) = ?", (USERNAME.lower(),)
+    ).fetchone()
+    if not user:
+        print("user not found")
+        sys.exit()
+    uid = user["telegram_id"]
+    print("USER:", dict(user))
 
-print()
-print("=== all his diamond user_cards (voided or not) ===")
-rows = conn.execute(
-    "SELECT uc.id, uc.obtained_at, uc.voided, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id "
-    "FROM user_cards uc JOIN cards c ON c.id=uc.card_id "
-    "WHERE uc.user_id=? AND c.rarity='diamond' ORDER BY uc.obtained_at",
-    (UID,)
-).fetchall()
-print("total diamond cards ever (incl voided):", len(rows))
-for r in rows:
-    print(dict(r))
+    diamond_cards = conn.execute(
+        "SELECT uc.id, uc.obtained_at, uc.voided, uc.listed_price, uc.swap_listed, "
+        "uc.staked_at, uc.pvp_round_id, uc.pinned_at, c.name, c.filename "
+        "FROM user_cards uc JOIN cards c ON c.id = uc.card_id "
+        "WHERE uc.user_id = ? AND c.rarity = 'diamond' ORDER BY uc.obtained_at",
+        (uid,)
+    ).fetchall()
+    print(f"\nTOTAL diamond user_cards rows ever (incl. voided): {len(diamond_cards)}")
+    for r in diamond_cards:
+        print(dict(r))
 
-print()
-print("=== his crypto_withdrawals (all statuses) ===")
-for r in conn.execute("SELECT * FROM crypto_withdrawals WHERE user_id=? ORDER BY id", (UID,)).fetchall():
-    print(dict(r))
+    withdrawals = conn.execute(
+        "SELECT id, card_count, gram_amount, wallet_address, status, created_at "
+        "FROM crypto_withdrawals WHERE user_id = ? ORDER BY created_at",
+        (uid,)
+    ).fetchall()
+    print(f"\nCRYPTO WITHDRAWALS: {len(withdrawals)}")
+    for r in withdrawals:
+        print(dict(r))
 
-print()
-print("=== crypto_withdrawal_cards linked to his withdrawals ===")
-for r in conn.execute(
-    "SELECT cwc.withdrawal_id, cwc.user_card_id FROM crypto_withdrawal_cards cwc "
-    "JOIN crypto_withdrawals cw ON cw.id=cwc.withdrawal_id WHERE cw.user_id=? ORDER BY cwc.withdrawal_id",
-    (UID,)
-).fetchall():
-    print(dict(r))
+    total_cards = conn.execute("SELECT COUNT(*) AS n FROM user_cards WHERE user_id = ?", (uid,)).fetchone()["n"]
+    print(f"\nTotal cards ever obtained (any rarity, any source): {total_cards}")
 
-print()
-print("=== duplicate user_card_id across DIFFERENT withdrawals (should be empty) ===")
-dupe = conn.execute(
-    "SELECT user_card_id, COUNT(*) c FROM crypto_withdrawal_cards GROUP BY user_card_id HAVING c > 1"
-).fetchall()
-print(dupe if dupe else "none")
+    pvp_wins = conn.execute("SELECT COUNT(*) AS n FROM pvp_rounds WHERE winner_id = ?", (uid,)).fetchone()["n"]
+    print(f"PvP rounds won: {pvp_wins}")
 
-print()
-print("=== withdrawal #3 request time vs now, to check deploy timing ===")
-r3 = conn.execute("SELECT * FROM crypto_withdrawals WHERE id=3").fetchone()
-print(dict(r3) if r3 else "no #3")
+    market_bought = conn.execute(
+        "SELECT mo.id, mo.price_gems, mo.status, mo.created_at, c.rarity "
+        "FROM market_offers mo JOIN user_cards uc ON uc.id = mo.user_card_id "
+        "JOIN cards c ON c.id = uc.card_id WHERE mo.buyer_id = ? AND c.rarity = 'diamond'",
+        (uid,)
+    ).fetchall()
+    print(f"\nMarket purchases of diamond cards: {len(market_bought)}")
+    for r in market_bought:
+        print(dict(r))
+
+    swap_bought = conn.execute(
+        "SELECT so.id, so.status, so.created_at, c.rarity "
+        "FROM swap_offers so JOIN user_cards uc ON uc.id = so.user_card_id "
+        "JOIN cards c ON c.id = uc.card_id WHERE so.buyer_id = ? AND c.rarity = 'diamond'",
+        (uid,)
+    ).fetchall()
+    print(f"\nSwap trades receiving diamond cards: {len(swap_bought)}")
+    for r in swap_bought:
+        print(dict(r))
+
+    craft_diamond = conn.execute(
+        "SELECT COUNT(*) AS n FROM action_counters WHERE action = 'craft'"
+    ).fetchone()
+    print(f"\n(global craft counter, for reference): {dict(craft_diamond)}")

@@ -923,7 +923,27 @@
     font-size:10.5px; font-weight:800;
   }
 
-  /* ---------- PvP reveal overlay (spin-the-wheel result) ---------- */
+  /* ---------- PvP reveal overlay (donut wheel + center needle) ---------- */
+  #pvp-reveal-wheel-wrap{margin-bottom:14px;}
+  .pvp-spinner-needle{
+    position:absolute; left:50%; top:50%; width:6px; height:47%;
+    transform-origin:50% 100%;
+    transform:translate(-50%,-100%) rotate(0deg);
+    z-index:3; pointer-events:none;
+  }
+  .pvp-spinner-needle::before{
+    content:""; position:absolute; left:50%; top:0; transform:translateX(-50%);
+    width:0; height:0;
+    border-left:7px solid transparent; border-right:7px solid transparent;
+    border-bottom:22px solid #fff;
+    filter:drop-shadow(0 2px 3px rgba(0,0,0,.5));
+  }
+  .pvp-spinner-needle::after{
+    content:""; position:absolute; left:50%; bottom:0; transform:translate(-50%,50%);
+    width:18px; height:18px; border-radius:50%;
+    background:#fff; border:2px solid #0d0d0d;
+    box-shadow:0 2px 4px rgba(0,0,0,.5);
+  }
   #pvp-reveal-overlay{
     position:absolute; inset:0;
     background:rgba(0,0,0,.92);
@@ -931,7 +951,7 @@
   }
   #pvp-reveal-overlay.active{display:flex;}
   #pvp-reveal-card{
-    width:100%; max-width:320px; max-height:86vh; overflow-y:auto;
+    width:100%; max-width:380px; max-height:86vh; overflow-y:auto;
     background:var(--card-bg); border:1px solid var(--card-border); border-radius:20px;
     padding:20px 16px; display:flex; flex-direction:column; align-items:center; text-align:center;
     box-sizing:border-box;
@@ -1319,6 +1339,15 @@
   #pvp-picker-overlay.active{display:flex;}
   #pvp-picker-rarity-filters{
     display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap;
+  }
+  #profile-rarity-filters{
+    display:flex; gap:6px; margin:0 0 10px; flex-wrap:wrap;
+  }
+  #profile-rarity-filters .pvp-picker-rarity-btn{
+    opacity:.45; transition:opacity .15s, transform .15s;
+  }
+  #profile-rarity-filters .pvp-picker-rarity-btn.active{
+    opacity:1; box-shadow:0 0 0 2px rgba(255,255,255,.5);
   }
   .pvp-picker-rarity-btn{
     flex:1 1 0; min-width:0;
@@ -2738,6 +2767,13 @@
           <button id="profile-rarity-sort-btn" class="active-sort">Ранг ↓</button>
         </div>
       </div>
+      <div id="profile-rarity-filters">
+        <button class="pvp-picker-rarity-btn bronze" data-rarity="bronze">Bronze</button>
+        <button class="pvp-picker-rarity-btn silver" data-rarity="silver">Silver</button>
+        <button class="pvp-picker-rarity-btn gold" data-rarity="gold">Gold</button>
+        <button class="pvp-picker-rarity-btn platinum" data-rarity="platinum">PLATNM</button>
+        <button class="pvp-picker-rarity-btn diamond" data-rarity="diamond">DIAMND</button>
+      </div>
       <div class="grid" id="profile-grid"></div>
     </section>
   </main>
@@ -3272,10 +3308,10 @@
   <div id="pvp-reveal-overlay">
     <div id="pvp-reveal-card">
       <div id="pvp-reveal-title">🎲 Розыгрыш банка...</div>
-      <div class="pvp-wheel-wrap">
-        <div class="pvp-wheel-pointer"></div>
+      <div class="pvp-wheel-wrap" id="pvp-reveal-wheel-wrap">
         <div class="pvp-wheel" id="pvp-reveal-wheel"></div>
-        <div class="pvp-wheel-hole" id="pvp-reveal-hole"><div class="big">🎁</div></div>
+        <div class="pvp-wheel-hole"><div class="big" id="pvp-reveal-hole-icon">🎁</div></div>
+        <div class="pvp-spinner-needle" id="pvp-spinner-needle"></div>
       </div>
       <div id="pvp-reveal-legend"></div>
       <div id="pvp-reveal-outcome"></div>
@@ -4211,9 +4247,9 @@ function renderPvpHistory(rounds){
     return;
   }
   list.innerHTML = rounds.map(r => {
-    // A win with under a 10% chance is a real underdog moment -- call it out with a
+    // A win with under a 20% chance is a real underdog moment -- call it out with a
     // pink/fuchsia border instead of the usual neutral one.
-    const underdog = r.winner_win_pct != null && r.winner_win_pct < 10 ? " underdog-win" : "";
+    const underdog = r.winner_win_pct != null && r.winner_win_pct < 20 ? " underdog-win" : "";
     return `
     <div class="history-row pvp-history-row${underdog}">
       <div class="info">
@@ -5763,11 +5799,6 @@ function renderPvp(){
         <span class="pvp-arena-title">⚔️ Общий банк</span>
         <span class="pvp-live ${counting ? 'on' : ''}"><span class="pvp-live-dot"></span>${counting ? 'Live' : 'Ожидание'}</span>
       </div>
-      <div class="pvp-wheel-wrap">
-        <div class="pvp-wheel-pointer"></div>
-        <div class="pvp-wheel" style="background:conic-gradient(${gradient})"></div>
-        <div class="pvp-wheel-hole"><div class="big">${holeBig}</div><div class="small">${holeSmall}</div></div>
-      </div>
       <div class="pvp-header">
         <div class="pvp-timer ${counting ? 'counting' : ''}">${timerText}</div>
       </div>
@@ -5837,25 +5868,30 @@ function renderPvp(){
 
 // ---------- PvP reveal (spin the wheel to the winner) ----------
 function openPvpReveal(result){
-  const { segments } = pvpBuildWheel(result.participants || []);
+  const { gradient, segments } = pvpBuildWheel(result.participants || []);
   const wheel = document.getElementById("pvp-reveal-wheel");
+  const needle = document.getElementById("pvp-spinner-needle");
+  const holeIcon = document.getElementById("pvp-reveal-hole-icon");
   const legend = document.getElementById("pvp-reveal-legend");
   const outcome = document.getElementById("pvp-reveal-outcome");
   const closeBtn = document.getElementById("pvp-reveal-close");
   const title = document.getElementById("pvp-reveal-title");
 
-  title.textContent = "🎲 Розыгрыш банка...";
+  title.textContent = "\ud83c\udfb2 \u0420\u043e\u0437\u044b\u0433\u0440\u044b\u0448 \u0431\u0430\u043d\u043a\u0430...";
   outcome.style.display = "none";
   outcome.className = "";
   outcome.textContent = "";
   closeBtn.style.display = "none";
+  if(holeIcon) holeIcon.textContent = "\ud83c\udf81";
 
-  const gradient = segments.length
-    ? segments.map(s=>`${s.color} ${s.start}deg ${s.end}deg`).join(", ")
-    : "#2a2a2a 0deg 360deg";
+  // The ring itself never moves -- it's just a static donut divided into each
+  // participant's slice (same segments/gradient pvpBuildWheel already computed for
+  // the old wheel). Only the needle spins, pivoting from the center, and stops
+  // pointing at the winner's slice.
+  wheel.style.background = segments.length ? `conic-gradient(${gradient})` : "#2a2a2a";
 
   legend.innerHTML = segments.map(p=>{
-    const name = maskedName(p.username) || p.first_name || "Игрок";
+    const name = maskedName(p.username) || p.first_name || "\u0418\u0433\u0440\u043e\u043a";
     const isWinner = p.user_id === result.winner_id;
     return `
       <div class="pvp-reveal-row${isWinner ? ' winner' : ''}">
@@ -5865,40 +5901,46 @@ function openPvpReveal(result){
       </div>`;
   }).join("");
 
-  wheel.style.transition = "none";
-  wheel.style.transform = "rotate(0deg)";
-  wheel.style.background = `conic-gradient(${gradient})`;
-  void wheel.offsetWidth; // force reflow so the transition-reset above actually applies
-
-  const winnerSeg = segments.find(s => s.user_id === result.winner_id);
-  const targetMid = winnerSeg ? winnerSeg.mid : 0;
-  const spins = 5;
-  const finalDeg = spins * 360 + ((360 - targetMid) % 360);
-
   document.getElementById("pvp-reveal-overlay").classList.add("active");
-
-  requestAnimationFrame(()=>{
-    requestAnimationFrame(()=>{
-      wheel.style.transition = "transform 4.2s cubic-bezier(.15,.85,.25,1)";
-      wheel.style.transform = `rotate(${finalDeg}deg)`;
-    });
-  });
 
   let finished = false;
   const finish = ()=>{
     if(finished) return;
     finished = true;
+    if(holeIcon) holeIcon.textContent = "\ud83c\udfc6";
     const iWon = result.winner_id === myTelegramId;
-    title.textContent = "🏆 Победитель!";
+    title.textContent = "\ud83c\udfc6 \u041f\u043e\u0431\u0435\u0434\u0438\u0442\u0435\u043b\u044c!";
     outcome.style.display = "block";
     outcome.className = iWon ? "won" : "";
     outcome.textContent = iWon
-      ? `Ты выиграл! Забрал весь банк — ${pluralCards(result.total_cards)}.`
-      : `Победил ${result.winner_name} — забрал ${pluralCards(result.total_cards)} у ${result.total_players} игроков.`;
+      ? `\u0422\u044b \u0432\u044b\u0438\u0433\u0440\u0430\u043b! \u0417\u0430\u0431\u0440\u0430\u043b \u0432\u0435\u0441\u044c \u0431\u0430\u043d\u043a — ${pluralCards(result.total_cards)}.`
+      : `\u041f\u043e\u0431\u0435\u0434\u0438\u043b ${result.winner_name} — \u0437\u0430\u0431\u0440\u0430\u043b ${pluralCards(result.total_cards)} \u0443 ${result.total_players} \u0438\u0433\u0440\u043e\u043a\u043e\u0432.`;
     closeBtn.style.display = "block";
   };
-  wheel.addEventListener("transitionend", finish, { once: true });
-  setTimeout(finish, 4600); // fallback in case transitionend doesn't fire
+
+  // The winner is already decided server-side (result.winner_id, from the same
+  // weighted segments as before) -- the needle spin below is purely cosmetic on
+  // top of that already-decided outcome. Snap the needle back to 0deg instantly
+  // (no transition), then on the next frame kick off the real spin toward the
+  // winner's slice, with a few extra full turns thrown in for suspense.
+  needle.style.transition = "none";
+  needle.style.transform = "translate(-50%,-100%) rotate(0deg)";
+  void needle.offsetWidth;
+
+  const winnerSeg = segments.find(s => s.user_id === result.winner_id);
+  const targetMid = winnerSeg ? winnerSeg.mid : 0;
+  const extraSpins = 5;
+  const finalDeg = extraSpins * 360 + targetMid;
+
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      needle.style.transition = "transform 4.2s cubic-bezier(.15,.85,.25,1)";
+      needle.style.transform = `translate(-50%,-100%) rotate(${finalDeg}deg)`;
+    });
+  });
+
+  needle.addEventListener("transitionend", finish, {once:true});
+  setTimeout(finish, 4600); // fallback in case transitionend ever doesn't fire
 }
 
 document.getElementById("pvp-reveal-close").addEventListener("click", ()=>{
@@ -6640,16 +6682,31 @@ function sortInventoryAndRender(){
   renderProfileGrid();
 }
 
+let profileRarityFilter = null; // null = show all; otherwise one of the 5 rarities
+
+document.getElementById("profile-rarity-filters").addEventListener("click", (e)=>{
+  const btn = e.target.closest(".pvp-picker-rarity-btn");
+  if(!btn) return;
+  const rarity = btn.dataset.rarity;
+  profileRarityFilter = profileRarityFilter === rarity ? null : rarity; // tap again to clear
+  document.querySelectorAll("#profile-rarity-filters .pvp-picker-rarity-btn").forEach(b=>{
+    b.classList.toggle("active", b.dataset.rarity === profileRarityFilter);
+  });
+  renderProfileGrid();
+});
+
 function renderProfileGrid(){
   const grid = document.getElementById("profile-grid");
-  if(inventory.length === 0){
+  const items = profileRarityFilter ? inventory.filter(c => c.rarity === profileRarityFilter) : inventory;
+  if(items.length === 0){
     grid.innerHTML = "";
     document.getElementById("empty-hint")?.remove();
-    grid.insertAdjacentHTML("afterend", `<div class="empty-state" id="empty-hint">Пока пусто — иди фармить 🌱</div>`);
+    const emptyText = profileRarityFilter ? "Нет карт такой редкости" : "Пока пусто — иди фармить 🌱";
+    grid.insertAdjacentHTML("afterend", `<div class="empty-state" id="empty-hint">${emptyText}</div>`);
     return;
   }
   document.getElementById("empty-hint")?.remove();
-  grid.innerHTML = inventory.map(c => `
+  grid.innerHTML = items.map(c => `
     <div class="grid-item rarity-border-${c.rarity}${c.custom_name ? " obsidian-border" : ""}${c.pinned_at ? " pinned" : ""}" data-uc="${c.user_card_id}">
       <img src="/static/cards/${c.filename}?v=${CARD_IMG_VERSION}" alt="${c.name||''}">
       <div class="rarity-tag ${c.custom_name ? "obsidian" : c.rarity}">${c.custom_name ? "OBSIDIAN" : c.rarity}</div>

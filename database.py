@@ -648,6 +648,11 @@ def init_db():
         # player can't spam PUBLIC_CHAT with invites (see PVP_INVITE_COOLDOWN_SECONDS).
         if "last_pvp_invite_at" not in u_cols:
             conn.execute("ALTER TABLE users ADD COLUMN last_pvp_invite_at TEXT")
+        # migration for the /admin "unique farmers today" stat — stamped on every
+        # successful farm() call, same local-date-comparison convention as
+        # active_today/last_seen_at (see get_admin_stats()).
+        if "last_farm_at" not in u_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN last_farm_at TEXT")
         # migration for burn_cards() — see its docstring for why this is "soft destroy"
         # (voided=1) rather than an actual DELETE.
         if "voided" not in uc_cols:
@@ -1376,7 +1381,7 @@ def _settle_mines_won(conn: sqlite3.Connection, row: sqlite3.Row, multiplier: fl
     new_gems = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (row["user_id"],)).fetchone()["gems"]
     return {
         "status": "won", "payout": payout, "multiplier": multiplier, "gems": new_gems,
-        "mine_positions": json.loads(row["mine_positions"]),
+        "mine_positions": json.loads(row["mine_positions"]), "round_id": row["id"],
     }
 
 
@@ -1404,7 +1409,7 @@ def reveal_mines_tile(round_id: int, user_id: int, tile: int) -> dict:
                 "UPDATE mines_rounds SET status = 'lost', payout = 0, resolved_at = ? WHERE id = ?",
                 (_now(), round_id),
             )
-            return {"status": "lost", "mine_positions": mine_positions, "tile": tile}
+            return {"status": "lost", "mine_positions": mine_positions, "tile": tile, "round_id": round_id}
         revealed.append(tile)
         multiplier = _mines_multiplier(row["mine_count"], len(revealed))
         if len(revealed) >= MINES_GRID_TILES - row["mine_count"]:
@@ -1520,11 +1525,16 @@ def _house_stats_row(rounds: int, wagered: int, paid: int) -> dict:
 
 
 def get_redblack_house_stats() -> dict:
-    """Same shape as get_mines_house_stats() -- see there for what each field means."""
+    """Same shape as get_mines_house_stats() -- see there for what each field means.
+    Excludes LEADERBOARD_EXCLUDED_USERNAMES (the dev's own test play) so RTP reflects
+    real players, not testing noise."""
     with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
         row = conn.execute(
-            "SELECT COUNT(*) AS n, COALESCE(SUM(bet), 0) AS wagered, COALESCE(SUM(payout), 0) AS paid "
-            "FROM redblack_rounds"
+            "SELECT COUNT(*) AS n, COALESCE(SUM(rr.bet), 0) AS wagered, COALESCE(SUM(rr.payout), 0) AS paid "
+            "FROM redblack_rounds rr JOIN users u ON u.telegram_id = rr.user_id "
+            f"WHERE LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})",
+            list(LEADERBOARD_EXCLUDED_USERNAMES),
         ).fetchone()
     return _house_stats_row(row["n"], row["wagered"], row["paid"])
 
@@ -1532,12 +1542,17 @@ def get_redblack_house_stats() -> dict:
 def get_aviator_house_stats() -> dict:
     """Same shape as get_mines_house_stats(). aviator_rounds has no stored payout
     column (only cashout_multiplier), so paid is recomputed here the same way
-    cashout_aviator() itself rounds it: ROUND(bet * cashout_multiplier)."""
+    cashout_aviator() itself rounds it: ROUND(bet * cashout_multiplier). Excludes
+    LEADERBOARD_EXCLUDED_USERNAMES (the dev's own test play) so RTP reflects real
+    players, not testing noise."""
     with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
         row = conn.execute(
-            "SELECT COUNT(*) AS n, COALESCE(SUM(bet), 0) AS wagered, "
-            "COALESCE(SUM(CASE WHEN status = 'won' THEN CAST(ROUND(bet * cashout_multiplier) AS INTEGER) ELSE 0 END), 0) AS paid "
-            "FROM aviator_rounds WHERE status IN ('won', 'lost')"
+            "SELECT COUNT(*) AS n, COALESCE(SUM(ar.bet), 0) AS wagered, "
+            "COALESCE(SUM(CASE WHEN ar.status = 'won' THEN CAST(ROUND(ar.bet * ar.cashout_multiplier) AS INTEGER) ELSE 0 END), 0) AS paid "
+            "FROM aviator_rounds ar JOIN users u ON u.telegram_id = ar.user_id "
+            f"WHERE ar.status IN ('won', 'lost') AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})",
+            list(LEADERBOARD_EXCLUDED_USERNAMES),
         ).fetchone()
     return _house_stats_row(row["n"], row["wagered"], row["paid"])
 
@@ -1545,11 +1560,15 @@ def get_aviator_house_stats() -> dict:
 def get_poker_house_stats() -> dict:
     """Same shape as get_mines_house_stats(). current_payout is already 0 for a
     'busted' round and the settled amount for 'collected'/'lost', same field the
-    in-app history/leaderboard use."""
+    in-app history/leaderboard use. Excludes LEADERBOARD_EXCLUDED_USERNAMES (the
+    dev's own test play) so RTP reflects real players, not testing noise."""
     with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
         row = conn.execute(
-            "SELECT COUNT(*) AS n, COALESCE(SUM(bet), 0) AS wagered, COALESCE(SUM(current_payout), 0) AS paid "
-            "FROM poker_rounds WHERE status IN ('collected', 'busted', 'lost')"
+            "SELECT COUNT(*) AS n, COALESCE(SUM(pr.bet), 0) AS wagered, COALESCE(SUM(pr.current_payout), 0) AS paid "
+            "FROM poker_rounds pr JOIN users u ON u.telegram_id = pr.user_id "
+            f"WHERE pr.status IN ('collected', 'busted', 'lost') AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})",
+            list(LEADERBOARD_EXCLUDED_USERNAMES),
         ).fetchone()
     return _house_stats_row(row["n"], row["wagered"], row["paid"])
 
@@ -1570,11 +1589,15 @@ def get_mines_house_stats() -> dict:
     house's actual running profit/loss for this game (not just the theoretical 97%
     RTP the multiplier formula is built on -- this is what really happened). profit
     is wagered - paid (positive = house ahead, negative = house is down real gems).
-    Backs /minesstats and /housestats."""
+    Excludes LEADERBOARD_EXCLUDED_USERNAMES (the dev's own test play) so RTP reflects
+    real players, not testing noise. Backs /minesstats and /housestats."""
     with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
         row = conn.execute(
-            "SELECT COUNT(*) AS n, COALESCE(SUM(bet), 0) AS wagered, COALESCE(SUM(payout), 0) AS paid "
-            "FROM mines_rounds WHERE status IN ('won', 'lost')"
+            "SELECT COUNT(*) AS n, COALESCE(SUM(mr.bet), 0) AS wagered, COALESCE(SUM(mr.payout), 0) AS paid "
+            "FROM mines_rounds mr JOIN users u ON u.telegram_id = mr.user_id "
+            f"WHERE mr.status IN ('won', 'lost') AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})",
+            list(LEADERBOARD_EXCLUDED_USERNAMES),
         ).fetchone()
     return _house_stats_row(row["n"], row["wagered"], row["paid"])
 
@@ -1588,12 +1611,12 @@ def get_mines_leaderboard(limit: int = 10) -> list[dict]:
         rows = conn.execute(
             f"""
             SELECT mr.user_id AS telegram_id, u.username AS username, u.first_name AS first_name,
-                   SUM(CASE WHEN mr.status = 'won' THEN mr.payout - mr.bet ELSE -mr.bet END) AS net_gems
+                   SUM(CASE WHEN mr.status = 'won' THEN mr.payout - mr.bet ELSE -mr.bet END) AS net_profit
             FROM mines_rounds mr JOIN users u ON u.telegram_id = mr.user_id
             WHERE mr.status IN ('won', 'lost')
             AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})
             GROUP BY mr.user_id
-            ORDER BY net_gems DESC LIMIT ?
+            ORDER BY net_profit DESC LIMIT ?
             """,
             (*LEADERBOARD_EXCLUDED_USERNAMES, limit),
         ).fetchall()
@@ -2517,7 +2540,10 @@ def farm(user_id: int) -> dict | None:
         prior_cards = conn.execute(
             "SELECT COUNT(*) FROM user_cards WHERE user_id = ?", (user_id,)
         ).fetchone()[0]
-        conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (FARM_COST_GEMS, user_id))
+        conn.execute(
+            "UPDATE users SET gems = gems - ?, last_farm_at = ? WHERE telegram_id = ?",
+            (FARM_COST_GEMS, _now(), user_id),
+        )
         cur = conn.execute(
             "INSERT INTO user_cards (user_id, card_id, obtained_at) VALUES (?, ?, ?)",
             (user_id, card["id"], _now()),
@@ -5080,7 +5106,7 @@ def get_global_rarity_breakdown() -> dict:
 # account (ADMIN_ID). Used by get_leaderboard()/get_ref_leaderboard()/
 # get_pvp_win_leaderboard() -- add a username here to hide that account from all
 # three at once.
-LEADERBOARD_EXCLUDED_USERNAMES = {"rzabeyda", "zzabeyda"}
+LEADERBOARD_EXCLUDED_USERNAMES = {"rzabeyda", "zzabeyda", "test_bot"}
 
 
 # Just for the general/collection "Топы" screen (Карты/Гемы/Diamond-карты) -- kept
@@ -5205,7 +5231,7 @@ def get_swap_history(limit: int = 50) -> list[dict]:
 # someone is actually looking at the PvP screen.
 # ---------------------------------------------------------------------------
 
-PVP_LOCK_SECONDS = 30
+PVP_LOCK_SECONDS = 20
 # Staking used to close a few seconds before the round resolved so a card couldn't be
 # thrown in right at the wire — removed by request, betting is now allowed right up to
 # the round actually resolving. Kept at 0 (not deleted) so join_pvp_round()'s "already
@@ -5232,6 +5258,41 @@ def _get_or_create_open_round(conn) -> int:
         return row["id"]
     cur = conn.execute("INSERT INTO pvp_rounds (status, created_at) VALUES ('open', ?)", (_now(),))
     return cur.lastrowid
+
+
+PVP_TEST_BOT_ID = -1  # negative -- can never collide with a real Telegram user id
+
+
+def join_pvp_test_bot() -> dict:
+    """Admin-only test helper (/pvpbot in bot.py): makes a fake bot account join the
+    CURRENT open PvP lobby round with one free card, so the dev can trigger a 2-player
+    round (and the reveal animation) without needing a second real account. Creates the
+    bot account and hands it a fresh card the first time; reuses both on later calls."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT telegram_id FROM users WHERE telegram_id = ?", (PVP_TEST_BOT_ID,)).fetchone()
+        if row is None:
+            conn.execute(
+                "INSERT INTO users (telegram_id, username, first_name, gems, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (PVP_TEST_BOT_ID, "test_bot", "Тест-бот", 999999, _now()),
+            )
+        ucid_row = conn.execute(
+            "SELECT id FROM user_cards WHERE user_id = ? AND listed_price IS NULL AND swap_listed = 0 "
+            "AND staked_at IS NULL AND pvp_round_id IS NULL AND pinned_at IS NULL LIMIT 1",
+            (PVP_TEST_BOT_ID,),
+        ).fetchone()
+        if ucid_row:
+            ucid = ucid_row["id"]
+        else:
+            card_row = conn.execute("SELECT id FROM cards WHERE is_active = 1 ORDER BY id LIMIT 1").fetchone()
+            if card_row is None:
+                raise RuntimeError("нет ни одной карты в каталоге -- нечего дать тест-боту")
+            cur = conn.execute(
+                "INSERT INTO user_cards (user_id, card_id, obtained_at) VALUES (?, ?, ?)",
+                (PVP_TEST_BOT_ID, card_row["id"], _now()),
+            )
+            ucid = cur.lastrowid
+    return join_pvp_round(PVP_TEST_BOT_ID, [ucid])
 
 
 def join_pvp_round(user_id: int, user_card_ids: list[int]) -> dict:
@@ -5840,6 +5901,9 @@ def get_admin_stats() -> dict:
         seen_rows = conn.execute(
             "SELECT last_seen_at FROM users WHERE last_seen_at IS NOT NULL"
         ).fetchall()
+        farm_rows = conn.execute(
+            "SELECT last_farm_at FROM users WHERE last_farm_at IS NOT NULL"
+        ).fetchall()
     # "Active today" = last_seen_at (stamped on every /api/auth call, i.e. every app open)
     # falls on today's LOCAL (Tallinn) calendar date — same day-rollover convention used
     # for streaks/daily bonus elsewhere, not a raw 24h window.
@@ -5847,6 +5911,13 @@ def get_admin_stats() -> dict:
     active_today = sum(
         1 for row in seen_rows
         if _parse_utc(row["last_seen_at"]).astimezone(TALLINN_TZ).date() == today_local_date
+    )
+    # Unique players who pressed "Фарм" today (last_farm_at is overwritten on every
+    # farm(), not just their first of the day, so this is a simple "how many distinct
+    # users have a most-recent farm falling on today's local date" count).
+    farmers_today = sum(
+        1 for row in farm_rows
+        if _parse_utc(row["last_farm_at"]).astimezone(TALLINN_TZ).date() == today_local_date
     )
     # Reuse get_total_farmed() instead of a separate raw COUNT(*) here — that raw query
     # used to forget the "WHERE voided = 0" filter that burn_cards()/craft_card() rely on,
@@ -5856,6 +5927,7 @@ def get_admin_stats() -> dict:
     stats = {
         "users": users, "cards": cards, "gems_total": gems_total,
         "total_farmed": total_farmed, "active_today": active_today,
+        "farmers_today": farmers_today,
     }
     stats.update(get_action_counters())
     return stats
