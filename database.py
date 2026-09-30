@@ -2447,7 +2447,8 @@ def _seed_collections(conn: sqlite3.Connection) -> None:
     player placements pointing at it, so a stale slot never lingers."""
     for coll in COLLECTIONS_SEED:
         conn.execute(
-            "INSERT OR IGNORE INTO collections (key, name, icon, created_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO collections (key, name, icon, created_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET name = excluded.name, icon = excluded.icon",
             (coll["key"], coll["name"], coll["icon"], _now()),
         )
         coll_row = conn.execute("SELECT id FROM collections WHERE key = ?", (coll["key"],)).fetchone()
