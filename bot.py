@@ -52,7 +52,7 @@ WEBAPP_URL = os.environ.get("WEBAPP_URL", "https://peeppo.memstroy.app")
 # Telegram/its WebView caches the mini-app HTML by exact URL, same as it cached card
 # images earlier -- bump this on every real webapp/index.html deploy so the "Open app"
 # button forces a fresh fetch instead of reusing a stale cached page.
-WEBAPP_VERSION = "4"
+WEBAPP_VERSION = "7"
 
 # The admin's own real @handle should never leak in anything posted publicly (giveaway/
 # contest winner announcements, share-to-chat results, Aviator chat messages) -- it's

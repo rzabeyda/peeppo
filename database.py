@@ -510,6 +510,29 @@ def _detach_number_on_card_transfer(conn: sqlite3.Connection, user_card_id: int)
     )
 
 
+def _move_number_with_card(conn: sqlite3.Connection, user_card_id: int, new_owner_id: int) -> None:
+    """A card's DISPLAYED number (natural or pinned via number_override) must never
+    change just because the card changed hands (sold, gifted, swapped, lost in PvP,
+    won in a giveaway) -- only an explicit action (Кастом / Номер / attach_number)
+    is allowed to change what number a card shows. So instead of detaching a pinned
+    number back into the previous owner's own bank (the old behaviour, which made the
+    new owner's card silently revert to its live-computed rank -- the "number changed
+    by itself" bug), the number stays pinned on the exact same card and its
+    card_numbers bookkeeping (owner_id) simply follows the card to whoever owns it
+    now. No-op if this card isn't currently showing a pinned (bought/won) number --
+    a natural, never-overridden number doesn't need anything done to it here, since
+    its live-computed rank is based on obtained_at, which a transfer never touches."""
+    row = conn.execute(
+        "SELECT number_override FROM user_cards WHERE id = ?", (user_card_id,)
+    ).fetchone()
+    if row is None or row["number_override"] is None:
+        return
+    conn.execute(
+        "UPDATE card_numbers SET owner_id = ?, updated_at = ? WHERE user_card_id = ?",
+        (new_owner_id, _now(), user_card_id),
+    )
+
+
 def _release_name_on_card_void(conn: sqlite3.Connection, user_card_id: int) -> None:
     """When a card wearing a custom name stops existing or showing it (burned as
     evolve fuel, a failed Diamond craft, a crypto withdrawal), the name itself stays
@@ -742,24 +765,21 @@ def init_db():
 
 DAILY_BONUS_GEMS = 25
 # Graduated referral payout: bigger rewards for the referrer's later invites (in the
-# same signup), to encourage inviting more than just one friend. Referrals past
+# same signup), to encourage inviting more than just one friend. Simple flat step:
+# 25, 50, 75, 100, 125, ... up to the 20th referral. Referrals past
 # MAX_REWARDED_REFERRALS still count (get_referral_count/leaderboards keep growing)
 # but never pay out gems.
-REFERRAL_REWARD_SCHEDULE = [25, 50, 100, 200, 300, 400, 500]  # 1st..7th referral
-REFERRAL_REWARD_STEP_GEMS = 50  # +50 per referral after the 7th, up to the cap below
+REFERRAL_REWARD_STEP_GEMS = 25  # reward for position N is STEP * (N+1)
 MAX_REWARDED_REFERRALS = 20  # after this many, referrals still count but stop paying out
 
 
 def _referral_reward_for_position(position: int) -> int:
-    """position is 0-indexed (0 = this referrer's 1st referral this run). Returns the
-    gem reward due for that position — REFERRAL_REWARD_SCHEDULE for the first 7, then
-    +REFERRAL_REWARD_STEP_GEMS per referral after that, 0 once past MAX_REWARDED_REFERRALS."""
+    """position is 0-indexed (0 = this referrer's 1st referral this run). Returns
+    REFERRAL_REWARD_STEP_GEMS * (position + 1) -- 25, 50, 75, 100, ... -- 0 once past
+    MAX_REWARDED_REFERRALS."""
     if position >= MAX_REWARDED_REFERRALS:
         return 0
-    if position < len(REFERRAL_REWARD_SCHEDULE):
-        return REFERRAL_REWARD_SCHEDULE[position]
-    extra_steps = position - len(REFERRAL_REWARD_SCHEDULE) + 1
-    return REFERRAL_REWARD_SCHEDULE[-1] + REFERRAL_REWARD_STEP_GEMS * extra_steps
+    return REFERRAL_REWARD_STEP_GEMS * (position + 1)
 SIGNUP_BONUS_GEMS = 50
 EARLY_SIGNUP_BONUS_GEMS = 100
 EARLY_SIGNUP_LIMIT = 100  # the first 100 users ever to register get EARLY_SIGNUP_BONUS_GEMS
@@ -2221,7 +2241,7 @@ def add_card_to_catalog(filename: str, name: str | None = None, rarity: str = "s
 COLLECTIONS_SEED = [
     {
         "key": "car_lover",
-        "name": "Автолюбитель",
+        "name": "Авто Маньяк",
         "icon": "🚗",
         "filenames": [
             "audi_cabriolet.jpg", "audi_rs6_avant.jpg",
@@ -2242,7 +2262,7 @@ COLLECTIONS_SEED = [
     },
     {
         "key": "cs_weapons",
-        "name": "Оружие из CS",
+        "name": "Оружейный Барон",
         "icon": "🔫",
         # Every filename here was opened and visually checked (not just name-matched) --
         # several "obvious" candidates turned out to be characters/unrelated items and
@@ -2263,6 +2283,157 @@ COLLECTIONS_SEED = [
             "mp5.jpg", "neo_noir.jpg", "printstream.jpg", "redline.jpg", "uzi.jpg",
             "wild_lotus.jpg",
             # removed: balisong.jpg -- not actually right for this collection
+        ],
+    },
+    {
+        "key": "diamond_colors",
+        "name": "Алмазный Король",
+        "icon": "\U0001F48E",
+        "filenames": [
+            "black_diamond.jpg", "blue_diamond.jpg", "white_diamond.jpg",
+            "green_diamond.jpg", "orange_diamond.jpg", "pink_diamond.jpg",
+            "gem.jpg",
+        ],
+    },
+    {
+        "key": "ships",
+        "name": "Морской Волк",
+        "icon": "\U0001F6A2",
+        "filenames": [
+            "azzam.jpg", "sailing.jpg", "lovers_deep.jpg", "koru.jpg",
+        ],
+    },
+    {
+        "key": "planes",
+        "name": "Небесный Магнат",
+        "icon": "\u2708\uFE0F",
+        "filenames": [
+            "gulfstream.jpg", "dreamliner.jpg", "bombardier.jpg", "airbus.jpg", "jet.jpg",
+        ],
+    },
+    {
+        "key": "alcohol",
+        "name": "Ликероводочник",
+        "icon": "\U0001F943",
+        "filenames": [
+            "damalfi_limoncello.jpg", "billionaire_vodka.jpg", "macallan_1926.jpg",
+            "henri_iv_cognac.jpg", "bottle_cognac.jpg", "tequila_ley.jpg",
+        ],
+    },
+    {
+        "key": "jewelry",
+        "name": "Бриллиантовый Эстет",
+        "icon": "\U0001F48D",
+        # blue_diamond.jpg / white_diamond.jpg deliberately excluded -- those belong
+        # to the diamond_colors collection instead.
+        "filenames": [
+            "bulgari_serpenti.jpg", "bvlgari_serpenti.jpg", "shawish_all_diamond.jpg",
+            "vca_alhambra.jpg", "chopard_blue_diamond.jpg", "taylor_burton.jpg",
+            "pink_star.jpg", "hope_diamond.jpg", "gem_signet.jpg", "signet_ring.jpg",
+            "diamond_ring.jpg", "diamond_studs.jpg", "bonded_ring.jpg", "cartier_love.jpg",
+            "platina_chain.jpg", "gold_chain.jpg", "cufflinks_gold.jpg", "nail_bracelet.jpg",
+        ],
+    },
+    {
+        "key": "islands",
+        "name": "Хозяин Островов",
+        "icon": "\U0001F3DD\uFE0F",
+        "filenames": [
+            "laucala_island.jpg", "necker_island.jpg", "north_island.jpg",
+            "fregate_island.jpg", "lanai.jpg", "sa_ferradura.jpg",
+        ],
+    },
+    {
+        "key": "paintings",
+        "name": "Меценат",
+        "icon": "\U0001F5BC\uFE0F",
+        "filenames": [
+            "mona_lisa.jpg", "salvator_mundi.jpg", "card_players.jpg", "nafea_faa_Ipoipo.jpg",
+        ],
+    },
+    {
+        "key": "credit_cards",
+        "name": "Воротила",
+        "icon": "\U0001F4B3",
+        "filenames": [
+            "american_platinum.jpg", "stratus_visa.jpg", "jpmorgan_reserve.jpg", "coutts_silk.jpg",
+        ],
+    },
+    {
+        "key": "watches",
+        "name": "Повелитель Времени",
+        "icon": "\u231A",
+        "filenames": [
+            "Rolex_daytona.jpg", "ap_royal_oak.jpg", "cartier_tank_lc.jpg", "cartier_tank_must.jpg",
+            "chronos_vanguard.jpg", "matrix_watch.jpg", "g_shock.jpg", "omega_moonwatch.jpg",
+            "patek_philippe_5711.jpg", "patek_philippe_5811.jpg", "rolex_submariner.jpg",
+            "swiss_watch.jpg", "watch_vintage.jpg", "apple_watch.jpg",
+        ],
+    },
+    {
+        "key": "glasses",
+        "name": "Стиляга",
+        "icon": "\U0001F576\uFE0F",
+        "filenames": [
+            "ar_glasses.jpg", "glasses_diamond.jpg", "matrix_shades.jpg", "oakley.jpg",
+            "oakley_holbrook.jpg", "oakley_radar.jpg", "persol_649.jpg", "ray_ban_aviator.jpg",
+            "ray_ban_meta.jpg", "ray_ban_wayfarer.jpg",
+        ],
+    },
+    {
+        "key": "bags",
+        "name": "Икона Стиля",
+        "icon": "\U0001F45C",
+        "filenames": [
+            "birkin_20_sellier.jpg", "birkin_25_sellier.jpg", "birkin_himalaya30.jpg",
+            "handbag_croc.jpg", "celine.jpg", "prada.jpg", "chanel.jpg", "urban_pack.jpg",
+        ],
+    },
+    {
+        "key": "iphones",
+        "name": "Яблочный Фанат",
+        "icon": "\U0001F4F1",
+        "filenames": [
+            "iphone_diamond.jpg", "iphone_platinum.jpg", "iphone_v2.jpg",
+        ],
+    },
+    {
+        "key": "pepe",
+        "name": "Царь Мемов",
+        "icon": "\U0001F438",
+        "filenames": [
+            "pepe_bronze.jpg", "pepe_silver.jpg", "pepe_gold.jpg", "pepe_platina.jpg",
+            "pepe_diamond.jpg", "green_pepe.jpg", "black_pepe.jpg",
+        ],
+    },
+    {
+        "key": "shoes",
+        "name": "Сникерхед",
+        "icon": "\U0001F45F",
+        "filenames": [
+            "adidas_shoes.jpg", "adidas_samba.jpg", "air_jordan_1.jpg", "nike_dunk_low.jpg",
+            "nike_shoes.jpg", "new_balance.jpg", "fake_sneakers.jpg", "hyped_sneakers.jpg",
+            "sneakers_gold.jpg", "y2k_skate_shoes.jpg", "louboutins.jpg",
+            "cyber_kicks.jpg",
+        ],
+    },
+    {
+        "key": "gamers",
+        "name": "Стример Года",
+        "icon": "\U0001F3AE",
+        "filenames": [
+            "gaming_chair.jpg", "rgb_keyboard.jpg", "custom_kb.jpg", "honeycomb_mouse.jpg",
+            "mouse.jpg", "keyboard.jpg", "rtx4090.jpg", "ultimate_gpu.jpg", "water_pc.jpg",
+            "pc_tower.jpg", "vr_visor.jpg", "stream_pro.jpg", "streamer_mic.jpg", "pro_mic.jpg",
+            "dual_mics.jpg", "cyber_rig.jpg",
+        ],
+    },
+    {
+        "key": "arcade",
+        "name": "Дворовый Чемпион",
+        "icon": "\U0001F579\uFE0F",
+        "filenames": [
+            "metal_slug.jpg", "mortal_kombat.jpg", "street_fighter.jpg", "tekken.jpg",
         ],
     },
 ]
@@ -2307,6 +2478,31 @@ def _seed_collections(conn: sqlite3.Connection) -> None:
             )
 
 
+def _sync_collection_placements(conn: sqlite3.Connection, user_id: int) -> None:
+    """Auto-fills any collection slot this player already owns at least one copy of --
+    called at the top of both get_collections_overview() and get_collection_detail() so
+    a freshly obtained card (from ANY source: farm, case, market, gift, PvP win, admin
+    grant, giveaway...) is already counted by the time either screen renders, with no
+    manual placement step needed. Idempotent/cheap -- INSERT OR IGNORE on the same
+    (user_id, collection_id, card_id) uniqueness place_collection_card() relies on."""
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO user_collection_cards (user_id, collection_id, card_id, placed_at)
+        SELECT ?, cc.collection_id, cc.card_id, ?
+        FROM collection_cards cc
+        JOIN user_cards uc ON uc.card_id = cc.card_id AND uc.user_id = ?
+        """,
+        (user_id, _now(), user_id),
+    )
+    touched = conn.execute(
+        "SELECT DISTINCT cc.collection_id FROM collection_cards cc "
+        "JOIN user_cards uc ON uc.card_id = cc.card_id AND uc.user_id = ?",
+        (user_id,),
+    ).fetchall()
+    for row in touched:
+        _maybe_complete_collection(conn, user_id, row["collection_id"])
+
+
 def _maybe_complete_collection(conn: sqlite3.Connection, user_id: int, collection_id: int) -> bool:
     """Returns True if every slot is now placed and this call is what just
     recorded the completion achievement for the first time."""
@@ -2337,12 +2533,35 @@ def get_collections_overview(user_id: int) -> list[dict]:
     collections list screen opened from the "Коллекция" button in Профиль."""
     with get_conn() as conn:
         _seed_collections(conn)
-        colls = conn.execute("SELECT id, key, name, icon FROM collections ORDER BY id").fetchall()
+        _sync_collection_placements(conn, user_id)
+        # Hardest-to-complete collections first: "difficulty" is the sum, over every
+        # member card, of 1/farm-drop-weight -- i.e. roughly how many farms it'd take
+        # to pull that one card on average (same RARITY_WEIGHTS farm() itself draws
+        # from). A collection with fewer but rarer cards can easily outrank one with
+        # many common cards, which matches how it actually feels to complete it.
+        colls = conn.execute(
+            """
+            SELECT co.id, co.key, co.name, co.icon,
+                   COUNT(cc.card_id) AS total,
+                   COALESCE(SUM(
+                       1.0 / CASE c.rarity
+                           WHEN 'bronze' THEN 50
+                           WHEN 'silver' THEN 29
+                           WHEN 'gold' THEN 16.5
+                           WHEN 'platinum' THEN 4
+                           WHEN 'diamond' THEN 0.5
+                           ELSE 29
+                       END
+                   ), 0) AS difficulty
+            FROM collections co
+            LEFT JOIN collection_cards cc ON cc.collection_id = co.id
+            LEFT JOIN cards c ON c.id = cc.card_id
+            GROUP BY co.id
+            ORDER BY difficulty DESC, co.id
+            """
+        ).fetchall()
         out = []
         for c in colls:
-            total = conn.execute(
-                "SELECT COUNT(*) AS n FROM collection_cards WHERE collection_id = ?", (c["id"],)
-            ).fetchone()["n"]
             placed = conn.execute(
                 "SELECT COUNT(*) AS n FROM user_collection_cards WHERE user_id = ? AND collection_id = ?",
                 (user_id, c["id"]),
@@ -2353,7 +2572,7 @@ def get_collections_overview(user_id: int) -> list[dict]:
             ).fetchone()
             out.append({
                 "id": c["id"], "key": c["key"], "name": c["name"], "icon": c["icon"],
-                "total": total, "placed": placed,
+                "total": c["total"], "placed": placed,
                 "completed": completed_row is not None,
             })
         return out
@@ -2365,6 +2584,7 @@ def get_collection_detail(user_id: int, collection_id: int) -> dict:
     they've already placed it (fills the slot permanently)."""
     with get_conn() as conn:
         _seed_collections(conn)
+        _sync_collection_placements(conn, user_id)
         coll = conn.execute("SELECT id, key, name, icon FROM collections WHERE id = ?", (collection_id,)).fetchone()
         if coll is None:
             raise ValueError("collection not found")
@@ -2486,13 +2706,13 @@ CASE_DEFS = {
     # gives fewer total cards per gem than farm (1 card per open vs farm's cheaper/faster
     # draws) and zero chance at anything outside its two tiers, unlike farm's small tail
     # chance at every rarity.
-    "hamster": {"name": "Хомяк", "price": 50, "image": "case/case_hamster.jpg",  # Bronze/Silver only, +10% silver vs farm
-                "weights": {"bronze": 36, "silver": 64}},
-    "duck": {"name": "Уточка", "price": 100, "image": "case/case_utya.jpg",  # Silver/Gold only, +15% gold vs farm
-             "weights": {"silver": 40, "gold": 60}},
-    "capybara": {"name": "Капибара", "price": 200, "image": "case/case_capybara.jpg",  # Gold/Platinum only, +20% platinum vs farm
+    "hamster": {"name": "Хомяк", "price": 100, "image": "case/case_hamster.jpg",  # was Bronze/Silver only, still worse than farm for Silver at this price (100 gems can't beat farm's ~86/Silver even at 100% weight) -- added small Platinum/Diamond tail chances as upside; trimmed from 3/1 to 2.5/0.5 after the 1% Diamond alone made overall EV ~1.39x farm (higher than every other case) -- now ~1.12x, in line with Capybara/Pepe
+                "weights": {"bronze": 34, "silver": 63, "platinum": 2.5, "diamond": 0.5}},
+    "duck": {"name": "Уточка", "price": 200, "image": "case/case_utya.jpg",  # was Silver/Gold only, still worse than farm for Gold at this price (200 gems can't beat farm's ~151/Gold even at 100% weight) -- added small Platinum/Diamond tail chances as upside instead
+             "weights": {"silver": 38, "gold": 58, "platinum": 3, "diamond": 1}},
+    "capybara": {"name": "Капибара", "price": 400, "image": "case/case_capybara.jpg",  # Gold/Platinum only -- price doubled (was 200) to halve return/gem, per request
                  "weights": {"gold": 33, "platinum": 67}},
-    "pepe": {"name": "Пепе", "price": 500, "image": "case/case_pep.jpg",  # Platinum/Diamond only, +25% diamond vs farm
+    "pepe": {"name": "Пепе", "price": 1000, "image": "case/case_pep.jpg",  # Platinum/Diamond only -- price doubled (was 500) to halve return/gem, per request
              "weights": {"platinum": 75, "diamond": 25}},
 }
 
@@ -2588,10 +2808,10 @@ def create_card_giveaway(admin_id: int, rarity: str, total_cards: int,
             given_ids = [pool_ids.pop() for _ in range(amount)]
             placeholders = ",".join("?" for _ in given_ids)
             for gid in given_ids:
-                _detach_number_on_card_transfer(conn, gid)
+                _move_number_with_card(conn, gid, p["telegram_id"])
             conn.execute(
                 f"UPDATE user_cards SET user_id = ?, listed_price = NULL, swap_listed = 0, "
-                f"staked_at = NULL, pvp_round_id = NULL, number_override = NULL, pinned_at = NULL WHERE id IN ({placeholders})",
+                f"staked_at = NULL, pvp_round_id = NULL, pinned_at = NULL WHERE id IN ({placeholders})",
                 (p["telegram_id"], *given_ids),
             )
             w = winners.setdefault(p["telegram_id"], {
@@ -2606,12 +2826,16 @@ def create_card_giveaway(admin_id: int, rarity: str, total_cards: int,
     }
 
 
-# Burn: sacrifice several owned cards of one rarity for a GUARANTEED shot at exactly the
-# next tier up (unlike craft, which is a random spread across same-tier-or-higher). Free —
+# Burn: sacrifice several owned cards of one rarity for a GUARANTEED-ODDS shot at exactly
+# the next tier up (unlike craft, which is a random spread across same-tier-or-higher). Free —
 # no gem cost, since craft already covers the "pay gems, random result" niche. Success chance
 # (BURN_SUCCESS_RATE) depends on the target tier — evolving into something rarer is riskier:
-# 99% into silver, 98% into gold, 96% into platinum, 92% into diamond. The rest of the time
-# everything burned is lost for nothing, so it's a real risk.
+# Flat 100% -- burn is now a GUARANTEED conversion, no risk of losing the burned cards
+# for nothing. (Raised from a flat 95% -- confirmed even at 95%/100% the 4-card
+# requirement alone still makes burn costlier than craft per Diamond in raw gem terms,
+# so the success rate was never the lever that would make burn cheaper than craft --
+# the card COUNT in BURN_REQUIREMENTS above is. Kept deterministic for simplicity/
+# player trust instead of a risk that can no longer buy any real economic advantage.)
 # Counts scale with how much scarcer the target tier actually is in RARITY_WEIGHTS (the
 # base farm odds, untouched): bronze->silver/silver->gold/gold->platinum are all a ~1.7-2.2x
 # scarcity step so they cost close to the same; platinum->diamond is a genuinely bigger
@@ -2619,9 +2843,10 @@ def create_card_giveaway(admin_id: int, rarity: str, total_cards: int,
 # 1:1 mapping to that ratio (which would need ~15-18 platinum cards) since platinum itself is
 # already hard to farm and that would make the top tier unreachable via burn.
 BURN_REQUIREMENTS = {
-    # Uniform 4 cards at every tier now (was 4/5/5/6) -- simpler to remember, and at the
-    # unchanged BURN_SUCCESS_RATE this puts Platinum->Diamond at ~1420 gems/Diamond
-    # (buying the 4 expected Platinum cards via the cheapest source, Capybara).
+    # Back to uniform 4 cards at every tier (was briefly 3) -- combined with the
+    # guaranteed BURN_SUCCESS_RATE (100%), Platinum->Diamond now costs exactly 4x the
+    # cheapest-source Platinum price (~389 gems via crafting Silver) = ~1556 gems/Diamond,
+    # a bit ABOVE craft-from-Platinum's own ~1250 gems/Diamond again.
     "bronze":   {"target": "silver",   "count": 4},
     "silver":   {"target": "gold",     "count": 4},
     "gold":     {"target": "platinum", "count": 4},
@@ -2633,10 +2858,10 @@ BURN_REQUIREMENTS = {
 # Failure chance scales with how rare/valuable the TARGET tier is — evolving into something
 # higher up is riskier. Keyed by target_rarity (not source rarity).
 BURN_SUCCESS_RATE = {
-    "silver":   0.98,  # 2% fail
-    "gold":     0.96,  # 4% fail
-    "platinum": 0.92,  # 8% fail
-    "diamond":  0.84,  # 16% fail
+    "silver":   1.0,  # guaranteed
+    "gold":     1.0,  # guaranteed
+    "platinum": 1.0,  # guaranteed
+    "diamond":  1.0,  # guaranteed
 }
 
 
@@ -2657,8 +2882,8 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
     (wrong count, someone else's card, a duplicate id, a busy card) raises
     BurnNotEnoughCards rather than silently dropping/substituting cards, since the player
     chose these specific ones. BURN_SUCCESS_RATE[target_rarity] of the time the burned cards
-    are replaced with one freshly-drawn card of the next-tier-up rarity (99%/98%/96%/92% for
-    silver/gold/platinum/diamond); the rest of the time NOTHING comes back — a genuine loss,
+    are replaced with one freshly-drawn card of the next-tier-up rarity -- guaranteed
+    (flat 100% for every tier), no chance of losing the burned cards for nothing,
     not just flavor text.
 
     Like craft_card(), this NEVER actually DELETEs a user_cards row — market_offers,
@@ -2850,11 +3075,13 @@ def farm(user_id: int) -> dict | None:
 # near-lateral reroll, since it's already the top tier) costs far more than crafting a
 # cheap Bronze. Keeps craft from being a flat-rate gem sink regardless of what's at stake.
 CRAFT_COST_GEMS = {
-    # Reverted back to the cheap flat scale (per request, again) -- 25/25/50/100/200.
+    # Gold/platinum raised (were 50/100) to bring craft back down to a modest premium
+    # over plain farm odds instead of a 2-13x free-money shortcut -- see CRAFT_WEIGHTS
+    # comment below for the full reasoning.
     "bronze": 25,
     "silver": 25,
-    "gold": 50,
-    "platinum": 100,
+    "gold": 100,
+    "platinum": 200,
     "diamond": 200,
 }
 TRANSFER_FEE_GEMS = 25  # charged to the sender for a direct @username gift
@@ -2910,10 +3137,13 @@ CRAFT_WEIGHTS = {
     # which the very first cut of this rebalance missed for bronze and silver (0 premium).
     # Diamond input is the one deliberate exception — it's meant to be a real sink/risk (see
     # CRAFT_DIAMOND_SUCCESS_RATE), so it gets no "beat the odds" treatment at all.
-    "bronze":   {"bronze": 70, "silver": 16, "gold": 8, "platinum": 5, "diamond": 1},
-    "silver":   {"silver": 76, "gold": 13, "platinum": 8, "diamond": 3},
-    "gold":     {"gold": 80, "platinum": 10, "diamond": 10},
-    "platinum": {"platinum": 50, "diamond": 50},
+    # Diamond column set to a clean 2/4/8/16% doubling ladder (bronze->platinum), per
+    # request -- the rest of each row keeps its old relative shape, just rescaled to
+    # still sum to 100 after carving out the new diamond share.
+    "bronze":   {"bronze": 69, "silver": 16, "gold": 8, "platinum": 5, "diamond": 2},
+    "silver":   {"silver": 75, "gold": 13, "platinum": 8, "diamond": 4},
+    "gold":     {"gold": 82, "platinum": 10, "diamond": 8},
+    "platinum": {"platinum": 84, "diamond": 16},
     # Diamond is the top tier — nowhere higher to go, so crafting one just re-rolls
     # another random Diamond (people reroll for a different Diamond card they want more).
     "diamond": {"diamond": 100},
@@ -3978,9 +4208,9 @@ def claim_transfer(user_card_id: int, new_owner_id: int) -> dict | None:
         ).fetchone()
         if row is None or not row["transfer_pending"] or row["from_user_id"] == new_owner_id:
             return None
-        _detach_number_on_card_transfer(conn, user_card_id)
+        _move_number_with_card(conn, user_card_id, new_owner_id)
         conn.execute(
-            "UPDATE user_cards SET user_id = ?, transfer_pending = 0, number_override = NULL, pinned_at = NULL WHERE id = ?",
+            "UPDATE user_cards SET user_id = ?, transfer_pending = 0, pinned_at = NULL WHERE id = ?",
             (new_owner_id, user_card_id),
         )
         return {"from_user_id": row["from_user_id"], "filename": row["filename"], "name": row["name"]}
@@ -4360,10 +4590,10 @@ def draw_number_giveaway(giveaway_id: int) -> dict:
                     or row["pvp_round_id"] is not None or row["pinned_at"] is not None):
                 reason = "карта сейчас занята (продажа/обмен/стейк/пвп/стена)"
             else:
-                _detach_number_on_card_transfer(conn, giveaway["user_card_id"])
+                _move_number_with_card(conn, giveaway["user_card_id"], winner["telegram_id"])
                 conn.execute(
                     "UPDATE user_cards SET user_id = ?, listed_price = NULL, swap_listed = 0, "
-                    "staked_at = NULL, pvp_round_id = NULL, number_override = NULL, pinned_at = NULL WHERE id = ?",
+                    "staked_at = NULL, pvp_round_id = NULL, pinned_at = NULL WHERE id = ?",
                     (winner["telegram_id"], giveaway["user_card_id"]),
                 )
                 transferred = True
@@ -4539,10 +4769,10 @@ def draw_card_batch_giveaway(batch_id: int) -> dict:
                         or row["pvp_round_id"] is not None or row["pinned_at"] is not None):
                     reason = "карта сейчас занята (продажа/обмен/стейк/пвп/стена)"
                 else:
-                    _detach_number_on_card_transfer(conn, giveaway["user_card_id"])
+                    _move_number_with_card(conn, giveaway["user_card_id"], winner["telegram_id"])
                     conn.execute(
                         "UPDATE user_cards SET user_id = ?, listed_price = NULL, swap_listed = 0, "
-                        "staked_at = NULL, pvp_round_id = NULL, number_override = NULL, pinned_at = NULL WHERE id = ?",
+                        "staked_at = NULL, pvp_round_id = NULL, pinned_at = NULL WHERE id = ?",
                         (winner["telegram_id"], giveaway["user_card_id"]),
                     )
                     transferred = True
@@ -4687,9 +4917,9 @@ def buy_listing(user_card_id: int, buyer_id: int) -> dict | None:
             return None
         conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (price, buyer_id))
         conn.execute("UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?", (price, price, row["seller_id"]))
-        _detach_number_on_card_transfer(conn, user_card_id)
+        _move_number_with_card(conn, user_card_id, buyer_id)
         conn.execute(
-            "UPDATE user_cards SET user_id = ?, listed_price = NULL, listed_at = NULL, number_override = NULL, pinned_at = NULL WHERE id = ?",
+            "UPDATE user_cards SET user_id = ?, listed_price = NULL, listed_at = NULL, pinned_at = NULL WHERE id = ?",
             (buyer_id, user_card_id),
         )
         conn.execute(
@@ -4779,9 +5009,9 @@ def accept_offer(offer_id: int, seller_id: int) -> dict | None:
         ).fetchone()
         conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (offer["price_gems"], offer["buyer_id"]))
         conn.execute("UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?", (offer["price_gems"], offer["price_gems"], seller_id))
-        _detach_number_on_card_transfer(conn, offer["user_card_id"])
+        _move_number_with_card(conn, offer["user_card_id"], offer["buyer_id"])
         conn.execute(
-            "UPDATE user_cards SET user_id = ?, listed_price = NULL, number_override = NULL, pinned_at = NULL WHERE id = ?",
+            "UPDATE user_cards SET user_id = ?, listed_price = NULL, pinned_at = NULL WHERE id = ?",
             (offer["buyer_id"], offer["user_card_id"]),
         )
         conn.execute(
@@ -5095,15 +5325,15 @@ def accept_swap_offer(offer_id: int, seller_id: int) -> dict | None:
             conn.execute("UPDATE swap_offers SET status = 'expired' WHERE id = ?", (offer_id,))
             return None
 
-        _detach_number_on_card_transfer(conn, offer["user_card_id"])
+        _move_number_with_card(conn, offer["user_card_id"], offer["buyer_id"])
         conn.execute(
-            "UPDATE user_cards SET user_id = ?, swap_listed = 0, number_override = NULL, pinned_at = NULL WHERE id = ?",
+            "UPDATE user_cards SET user_id = ?, swap_listed = 0, pinned_at = NULL WHERE id = ?",
             (offer["buyer_id"], offer["user_card_id"]),
         )
         for oid in offered_ids:
-            _detach_number_on_card_transfer(conn, oid)
+            _move_number_with_card(conn, oid, seller_id)
             conn.execute(
-                "UPDATE user_cards SET user_id = ?, swap_listed = 0, number_override = NULL, pinned_at = NULL WHERE id = ?",
+                "UPDATE user_cards SET user_id = ?, swap_listed = 0, pinned_at = NULL WHERE id = ?",
                 (seller_id, oid),
             )
         conn.execute(
@@ -5172,9 +5402,9 @@ def transfer_card_to(user_card_id: int, from_user_id: int, to_user_id: int) -> d
         if gems_row is None or gems_row["gems"] < TRANSFER_FEE_GEMS:
             raise InsufficientGems()
         conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (TRANSFER_FEE_GEMS, from_user_id))
-        _detach_number_on_card_transfer(conn, user_card_id)
+        _move_number_with_card(conn, user_card_id, to_user_id)
         conn.execute(
-            "UPDATE user_cards SET user_id = ?, listed_price = NULL, transfer_pending = 0, number_override = NULL, pinned_at = NULL WHERE id = ?",
+            "UPDATE user_cards SET user_id = ?, listed_price = NULL, transfer_pending = 0, pinned_at = NULL WHERE id = ?",
             (to_user_id, user_card_id),
         )
         conn.execute(
@@ -6115,9 +6345,9 @@ def resolve_due_pvp_rounds() -> list[dict]:
 
             card_ids = [e["user_card_id"] for e in entries]
             for cid in card_ids:
-                _detach_number_on_card_transfer(conn, cid)
+                _move_number_with_card(conn, cid, winner_id)
             conn.executemany(
-                "UPDATE user_cards SET user_id = ?, pvp_round_id = NULL, number_override = NULL, pinned_at = NULL WHERE id = ?",
+                "UPDATE user_cards SET user_id = ?, pvp_round_id = NULL, pinned_at = NULL WHERE id = ?",
                 [(winner_id, cid) for cid in card_ids],
             )
             conn.execute(

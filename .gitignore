@@ -6,3 +6,5 @@ __pycache__/
 venv/
 *.pyc
 nul
+_patch_*.py
+_verify_*.js
