@@ -52,7 +52,7 @@ WEBAPP_URL = os.environ.get("WEBAPP_URL", "https://peeppo.memstroy.app")
 # Telegram/its WebView caches the mini-app HTML by exact URL, same as it cached card
 # images earlier -- bump this on every real webapp/index.html deploy so the "Open app"
 # button forces a fresh fetch instead of reusing a stale cached page.
-WEBAPP_VERSION = "7"
+WEBAPP_VERSION = "9"
 
 # The admin's own real @handle should never leak in anything posted publicly (giveaway/
 # contest winner announcements, share-to-chat results, Aviator chat messages) -- it's
@@ -1091,6 +1091,19 @@ async def notify_diamond_farmed(who_name: str, card_name: str):
         )
     except Exception:
         logger.warning("could not announce diamond farm to %s", PUBLIC_CHAT)
+
+
+async def notify_collection_completed(who_name: str, collection_name: str):
+    """Posted to PUBLIC_CHAT whenever anyone finishes every slot in a collection —
+    same social-proof/FOMO hook as notify_diamond_farmed(). Best-effort, never blocks
+    the collections screen. Callers already exclude rzabeyda/zzabeyda before calling this."""
+    try:
+        await bot.send_message(
+            PUBLIC_CHAT,
+            f"🏆 Игрок {who_name} собрал коллекцию «{collection_name}»!",
+        )
+    except Exception:
+        logger.warning("could not announce collection completion to %s", PUBLIC_CHAT)
 
 
 async def notify_new_offer(seller_id: int, offer_id: int, buyer_name: str, card_name: str | None,

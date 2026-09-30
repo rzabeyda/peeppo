@@ -394,6 +394,7 @@ CREATE TABLE IF NOT EXISTS collections (
     key           TEXT NOT NULL UNIQUE,
     name          TEXT NOT NULL,
     icon          TEXT,
+    icon_image    TEXT,
     created_at    TEXT NOT NULL
 );
 
@@ -745,6 +746,11 @@ def init_db():
             conn.execute("ALTER TABLE card_batch_giveaways ADD COLUMN reminder_1h_sent INTEGER NOT NULL DEFAULT 0")
         if "reminder_5m_sent" not in cbg_cols:
             conn.execute("ALTER TABLE card_batch_giveaways ADD COLUMN reminder_5m_sent INTEGER NOT NULL DEFAULT 0")
+        # migration for DBs created before collections had a real card-photo thumbnail
+        # (icon_image) instead of only an emoji (icon) -- see COLLECTIONS_SEED/_seed_collections()
+        coll_cols = {row["name"] for row in conn.execute("PRAGMA table_info(collections)")}
+        if "icon_image" not in coll_cols:
+            conn.execute("ALTER TABLE collections ADD COLUMN icon_image TEXT")
         # One-time (but harmless-every-startup) backfill for poker rounds stranded in
         # status='won': the client used to only flip a round to 'collected' when the
         # player explicitly pressed "Забрать", so leaving the Poker tab (switching to
@@ -1421,15 +1427,28 @@ def start_mines(user_id: int, bet: int, mine_count: int) -> dict:
     }
 
 
-def _settle_mines_won(conn: sqlite3.Connection, row: sqlite3.Row, multiplier: float) -> dict:
+def _settle_mines_won(conn: sqlite3.Connection, row: sqlite3.Row, multiplier: float) -> dict | None:
     """Shared settle step for both an explicit cash-out and the forced auto-cashout
-    when every safe tile has been revealed. Caller already holds the open connection
-    and has confirmed the round is still 'active'."""
+    when every safe tile has been revealed. Atomic + race-safe (same pattern as
+    cashout_aviator()): the status flip is conditioned on "AND status = 'active'" and
+    gems are only credited if THIS call is the one that actually won that flip.
+    Returns None if a race lost -- some other concurrent call (a double-tap, or two
+    parallel requests hitting reveal/cashout for the same round_id at once) already
+    resolved this round a moment earlier, so this call must do nothing more. Without
+    this guard, two simultaneous cashout_mines()/reveal_mines_tile() calls on the same
+    round_id could both read status='active' before either one's UPDATE lands, and
+    both would credit gems for the same win -- this was a real exploit: a player
+    double-firing the cashout request could get paid twice (or more) per round,
+    which is exactly how Mines' observed RTP ended up over 100% in production
+    (one player always ended up in profit) instead of the intended 97%."""
     payout = int(round(row["bet"] * multiplier))
-    conn.execute(
-        "UPDATE mines_rounds SET status = 'won', cashout_multiplier = ?, payout = ?, resolved_at = ? WHERE id = ?",
+    cur = conn.execute(
+        "UPDATE mines_rounds SET status = 'won', cashout_multiplier = ?, payout = ?, resolved_at = ? "
+        "WHERE id = ? AND status = 'active'",
         (multiplier, payout, _now(), row["id"]),
     )
+    if cur.rowcount == 0:
+        return None
     conn.execute(
         "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
         (payout, payout, row["user_id"]),
@@ -1461,22 +1480,28 @@ def reveal_mines_tile(round_id: int, user_id: int, tile: int) -> dict:
         if tile in revealed:
             raise MinesError("эта клетка уже открыта")
         if tile in mine_positions:
-            conn.execute(
-                "UPDATE mines_rounds SET status = 'lost', payout = 0, resolved_at = ? WHERE id = ?",
+            cur = conn.execute(
+                "UPDATE mines_rounds SET status = 'lost', payout = 0, resolved_at = ? WHERE id = ? AND status = 'active'",
                 (_now(), round_id),
             )
+            if cur.rowcount == 0:
+                raise MinesError("раунд уже завершён")
             return {"status": "lost", "mine_positions": mine_positions, "tile": tile, "round_id": round_id}
         revealed.append(tile)
         multiplier = _mines_multiplier(row["mine_count"], len(revealed))
         if len(revealed) >= MINES_GRID_TILES - row["mine_count"]:
             # Every safe tile is now open -- nothing left to reveal, force the cashout.
             result = _settle_mines_won(conn, row, multiplier)
+            if result is None:
+                raise MinesError("раунд уже завершён")
             result["revealed"] = revealed
             return result
-        conn.execute(
-            "UPDATE mines_rounds SET revealed = ? WHERE id = ?",
+        cur = conn.execute(
+            "UPDATE mines_rounds SET revealed = ? WHERE id = ? AND status = 'active'",
             (json.dumps(revealed), round_id),
         )
+        if cur.rowcount == 0:
+            raise MinesError("раунд уже завершён")
     return {"status": "active", "multiplier": multiplier, "revealed": revealed}
 
 
@@ -1495,6 +1520,8 @@ def cashout_mines(round_id: int, user_id: int) -> dict:
             raise MinesError("сначала открой хотя бы одну клетку")
         multiplier = _mines_multiplier(row["mine_count"], len(revealed))
         result = _settle_mines_won(conn, row, multiplier)
+        if result is None:
+            raise MinesError("раунд уже завершён")
         result["revealed"] = revealed
     return result
 
@@ -1560,15 +1587,19 @@ def get_mines_round(round_id: int) -> dict | None:
 def get_mines_history(limit: int = 50) -> list[dict]:
     """Every resolved Mines round (won or lost -- 'active' ones are still in
     progress and excluded), newest first, for the "История" panel. Same convention
-    as get_redblack_history()/get_aviator_history()."""
+    as get_redblack_history()/get_aviator_history() -- also hides
+    LEADERBOARD_EXCLUDED_USERNAMES (the dev's own test play) from the round list
+    itself, not just the leaderboard, since it's not real play worth showing players."""
     with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
         rows = conn.execute(
             "SELECT mr.id, mr.user_id, mr.bet, mr.mine_count, mr.status, mr.cashout_multiplier, "
             "mr.payout, mr.created_at, u.username, u.first_name "
             "FROM mines_rounds mr JOIN users u ON u.telegram_id = mr.user_id "
             "WHERE mr.status IN ('won', 'lost') "
+            f"AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders}) "
             "ORDER BY mr.id DESC LIMIT ?",
-            (limit,),
+            list(LEADERBOARD_EXCLUDED_USERNAMES) + [limit],
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -2009,15 +2040,19 @@ def get_poker_round(round_id: int) -> dict | None:
 def get_poker_history(limit: int = 50) -> list[dict]:
     """Every FINISHED Poker round (collected, busted, or lost -- never an in-progress
     'dealt'/'won' one still waiting on a draw/gamble/collect), newest first -- same
-    convention as get_redblack_history()."""
+    convention as get_redblack_history(), except this one also hides
+    LEADERBOARD_EXCLUDED_USERNAMES (the dev's own test play) from the round list
+    itself, not just the leaderboard, since it's not real play worth showing players."""
     with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
         rows = conn.execute(
             "SELECT pr.id, pr.user_id, pr.bet, pr.category, pr.current_payout, pr.status, "
             "pr.gamble_count, pr.created_at, u.username, u.first_name "
             "FROM poker_rounds pr JOIN users u ON u.telegram_id = pr.user_id "
             "WHERE pr.status IN ('collected', 'busted', 'lost') "
+            f"AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders}) "
             "ORDER BY pr.id DESC LIMIT ?",
-            (limit,),
+            list(LEADERBOARD_EXCLUDED_USERNAMES) + [limit],
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -2243,6 +2278,7 @@ COLLECTIONS_SEED = [
         "key": "car_lover",
         "name": "Авто Маньяк",
         "icon": "🚗",
+        "icon_image": "bugati_chiron.jpg",
         "filenames": [
             "audi_cabriolet.jpg", "audi_rs6_avant.jpg",
             "bmw_e36.jpg", "bmw_m3.jpg", "bmw_m5.jpg",
@@ -2264,6 +2300,7 @@ COLLECTIONS_SEED = [
         "key": "cs_weapons",
         "name": "Оружейный Барон",
         "icon": "🔫",
+        "icon_image": "ak-47.jpg",
         # Every filename here was opened and visually checked (not just name-matched) --
         # several "obvious" candidates turned out to be characters/unrelated items and
         # were left out: cs.jpg/terrorist.jpg/standoff.jpg (player figures, not weapons),
@@ -2289,6 +2326,7 @@ COLLECTIONS_SEED = [
         "key": "diamond_colors",
         "name": "Алмазный Король",
         "icon": "\U0001F48E",
+        "icon_image": "gem.jpg",
         "filenames": [
             "black_diamond.jpg", "blue_diamond.jpg", "white_diamond.jpg",
             "green_diamond.jpg", "orange_diamond.jpg", "pink_diamond.jpg",
@@ -2299,22 +2337,33 @@ COLLECTIONS_SEED = [
         "key": "ships",
         "name": "Морской Волк",
         "icon": "\U0001F6A2",
+        "icon_image": "azzam.jpg",
+        # eclipse.jpg (a superyacht with its own mini-submarine bay) and dibar.jpg
+        # (the megayacht "Dilbar") were missing here despite being Diamond-rarity
+        # ships -- added after a full re-check of the Diamond catalog.
         "filenames": [
             "azzam.jpg", "sailing.jpg", "lovers_deep.jpg", "koru.jpg",
+            "eclipse.jpg", "dibar.jpg",
         ],
     },
     {
         "key": "planes",
         "name": "Небесный Магнат",
         "icon": "\u2708\uFE0F",
+        "icon_image": "gulfstream.jpg",
+        # airbus_exclusive.jpg (an Airbus ACH160 executive helicopter) was missing
+        # here despite being Diamond-rarity elite aviation -- added after a full
+        # re-check of the Diamond catalog.
         "filenames": [
             "gulfstream.jpg", "dreamliner.jpg", "bombardier.jpg", "airbus.jpg", "jet.jpg",
+            "airbus_exclusive.jpg",
         ],
     },
     {
         "key": "alcohol",
         "name": "Ликероводочник",
         "icon": "\U0001F943",
+        "icon_image": "billionaire_vodka.jpg",
         "filenames": [
             "damalfi_limoncello.jpg", "billionaire_vodka.jpg", "macallan_1926.jpg",
             "henri_iv_cognac.jpg", "bottle_cognac.jpg", "tequila_ley.jpg",
@@ -2324,6 +2373,7 @@ COLLECTIONS_SEED = [
         "key": "jewelry",
         "name": "Бриллиантовый Эстет",
         "icon": "\U0001F48D",
+        "icon_image": "hope_diamond.jpg",
         # blue_diamond.jpg / white_diamond.jpg deliberately excluded -- those belong
         # to the diamond_colors collection instead.
         "filenames": [
@@ -2338,6 +2388,7 @@ COLLECTIONS_SEED = [
         "key": "islands",
         "name": "Хозяин Островов",
         "icon": "\U0001F3DD\uFE0F",
+        "icon_image": "laucala_island.jpg",
         "filenames": [
             "laucala_island.jpg", "necker_island.jpg", "north_island.jpg",
             "fregate_island.jpg", "lanai.jpg", "sa_ferradura.jpg",
@@ -2347,14 +2398,24 @@ COLLECTIONS_SEED = [
         "key": "paintings",
         "name": "Меценат",
         "icon": "\U0001F5BC\uFE0F",
+        "icon_image": "mona_lisa.jpg",
+        # Paintings plus other fine-art/museum objects (all Diamond rarity) -- every
+        # filename here was opened and visually checked. marengo_sword.jpg (Napoleon's
+        # ceremonial Marengo sabre) is included by explicit request even though it's a
+        # weapon-shaped relic, not a painting. Excluded despite looking like a candidate:
+        # number_17a.jpg (a decorative yarn-embroidered pillow, not an actual painting
+        # or gallery piece), dibar.jpg (a superyacht, wrong theme entirely despite the
+        # name looking unfamiliar).
         "filenames": [
             "mona_lisa.jpg", "salvator_mundi.jpg", "card_players.jpg", "nafea_faa_Ipoipo.jpg",
+            "pinner_vase.jpg", "codex_leicester.jpg", "codex_sassoon.jpg", "marengo_sword.jpg",
         ],
     },
     {
         "key": "credit_cards",
         "name": "Воротила",
         "icon": "\U0001F4B3",
+        "icon_image": "american_platinum.jpg",
         "filenames": [
             "american_platinum.jpg", "stratus_visa.jpg", "jpmorgan_reserve.jpg", "coutts_silk.jpg",
         ],
@@ -2363,6 +2424,7 @@ COLLECTIONS_SEED = [
         "key": "watches",
         "name": "Повелитель Времени",
         "icon": "\u231A",
+        "icon_image": "Rolex_daytona.jpg",
         "filenames": [
             "Rolex_daytona.jpg", "ap_royal_oak.jpg", "cartier_tank_lc.jpg", "cartier_tank_must.jpg",
             "chronos_vanguard.jpg", "matrix_watch.jpg", "g_shock.jpg", "omega_moonwatch.jpg",
@@ -2374,6 +2436,7 @@ COLLECTIONS_SEED = [
         "key": "glasses",
         "name": "Стиляга",
         "icon": "\U0001F576\uFE0F",
+        "icon_image": "ray_ban_aviator.jpg",
         "filenames": [
             "ar_glasses.jpg", "glasses_diamond.jpg", "matrix_shades.jpg", "oakley.jpg",
             "oakley_holbrook.jpg", "oakley_radar.jpg", "persol_649.jpg", "ray_ban_aviator.jpg",
@@ -2384,6 +2447,7 @@ COLLECTIONS_SEED = [
         "key": "bags",
         "name": "Икона Стиля",
         "icon": "\U0001F45C",
+        "icon_image": "birkin_25_sellier.jpg",
         "filenames": [
             "birkin_20_sellier.jpg", "birkin_25_sellier.jpg", "birkin_himalaya30.jpg",
             "handbag_croc.jpg", "celine.jpg", "prada.jpg", "chanel.jpg", "urban_pack.jpg",
@@ -2393,6 +2457,7 @@ COLLECTIONS_SEED = [
         "key": "iphones",
         "name": "Яблочный Фанат",
         "icon": "\U0001F4F1",
+        "icon_image": "iphone_diamond.jpg",
         "filenames": [
             "iphone_diamond.jpg", "iphone_platinum.jpg", "iphone_v2.jpg",
         ],
@@ -2401,6 +2466,7 @@ COLLECTIONS_SEED = [
         "key": "pepe",
         "name": "Царь Мемов",
         "icon": "\U0001F438",
+        "icon_image": "green_pepe.jpg",
         "filenames": [
             "pepe_bronze.jpg", "pepe_silver.jpg", "pepe_gold.jpg", "pepe_platina.jpg",
             "pepe_diamond.jpg", "green_pepe.jpg", "black_pepe.jpg",
@@ -2410,6 +2476,7 @@ COLLECTIONS_SEED = [
         "key": "shoes",
         "name": "Сникерхед",
         "icon": "\U0001F45F",
+        "icon_image": "air_jordan_1.jpg",
         "filenames": [
             "adidas_shoes.jpg", "adidas_samba.jpg", "air_jordan_1.jpg", "nike_dunk_low.jpg",
             "nike_shoes.jpg", "new_balance.jpg", "fake_sneakers.jpg", "hyped_sneakers.jpg",
@@ -2419,8 +2486,9 @@ COLLECTIONS_SEED = [
     },
     {
         "key": "gamers",
-        "name": "Стример Года",
+        "name": "Геймер",
         "icon": "\U0001F3AE",
+        "icon_image": "rgb_keyboard.jpg",
         "filenames": [
             "gaming_chair.jpg", "rgb_keyboard.jpg", "custom_kb.jpg", "honeycomb_mouse.jpg",
             "mouse.jpg", "keyboard.jpg", "rtx4090.jpg", "ultimate_gpu.jpg", "water_pc.jpg",
@@ -2432,8 +2500,85 @@ COLLECTIONS_SEED = [
         "key": "arcade",
         "name": "Дворовый Чемпион",
         "icon": "\U0001F579\uFE0F",
+        "icon_image": "mortal_kombat.jpg",
         "filenames": [
             "metal_slug.jpg", "mortal_kombat.jpg", "street_fighter.jpg", "tekken.jpg",
+        ],
+    },
+    {
+        "key": "brawl_stars",
+        "name": "Brawl Stars",
+        "icon": "\u2B50",
+        "icon_image": "shelly.jpg",
+        # Every filename here was opened and visually checked -- all 10 are genuine
+        # Brawl Stars character plushies (colt.jpg here is Brawl Stars' Colt --
+        # not to be confused with any cs_weapons revolver).
+        "filenames": [
+            "shelly.jpg", "colt.jpg", "el_primo.jpg", "mortis.jpg", "emz.jpg",
+            "bibi.jpg", "edgar.jpg", "leon.jpg", "max.jpg", "spike.jpg",
+        ],
+    },
+    {
+        "key": "blizzard",
+        "name": "Blizzard",
+        "icon": "\u2744\uFE0F",
+        "icon_image": "diablo.jpg",
+        # Every filename here was opened and visually checked. Excluded despite
+        # name-matching: zergling.jpg (a generic baby dragon plush, not a Zerg
+        # Zergling), archangel.jpg (generic winged knight, no Blizzard branding),
+        # barbarian.jpg (explicitly a Clash of Clans plush -- Supercell, not
+        # Blizzard), sorceress.jpg (generic fantasy sorceress, no Diablo styling),
+        # griffon.jpg (a generic mythological gryphon, no WoW branding).
+        "filenames": [
+            "diablo.jpg", "arthas_menethil.jpg", "deckard_cain.jpg", "jim_raynor.jpg",
+            "thrall.jpg", "tyrael.jpg", "zealot.jpg",
+        ],
+    },
+    {
+        "key": "elite_buildings",
+        "name": "Элитное Жильё",
+        "icon": "\U0001F3F0",
+        "icon_image": "royal_mansion.jpg",
+        # Diamond-rarity real estate/structures only -- every filename here was opened
+        # and visually checked. Excluded despite looking like a match: dubai_royale.jpg
+        # (actually a credit card design, not a building, despite the "royale" name),
+        # dibar.jpg (a superyacht), islands/ships collections already claim their own
+        # island and yacht cards separately.
+        "filenames": [
+            "royal_mansion.jpg", "cliffside_estate.jpg", "mark_penthouse.jpg",
+            "palm_villa.jpg", "tuscan_fortrees.jpg", "empathy_suite.jpg", "kyoto_zen.jpg",
+        ],
+    },
+    {
+        "key": "wonders_of_the_world",
+        "name": "Чудеса Света",
+        "icon": "\U0001F3DB\uFE0F",
+        "icon_image": "giza_pyramids.jpg",
+        # Famous real-world landmarks/monuments from the Diamond batch. Deliberately
+        # excludes: religious texts (see the separate "sacred_texts" collection below)
+        # and hotels (plaza_hotel.jpg, ritz_paris.jpg, de_crillon_paris.jpg,
+        # claridges_hotel.jpg -- hospitality, not a "wonder" landmark). burj_al_arab.jpg
+        # is kept here (not with hotels) since it's iconic skyline architecture, same
+        # treatment as eiffel_tower.jpg/sydney_opera.jpg.
+        "filenames": [
+            "giza_pyramids.jpg", "christ_redeemer.jpg", "moscow_kremlin.jpg", "petronas.jpg",
+            "rome_colosseum.jpg", "eiffel_tower.jpg", "athens_acropolis.jpg", "sheikh_zayed.jpg",
+            "taj_mahal.jpg", "stonehenge.jpg", "alhambra_palace.jpg", "tikal_guatemala.jpg",
+            "china_wall.jpg", "angkor_wat.jpg", "pamukkale_turkey.jpg", "petra_jordan.jpg",
+            "forbidden_city.jpg", "shwedagon_pagoda.jpg", "burj_al_arab.jpg", "machu_picchu.jpg",
+            "statue_of_liberty.jpg", "saint_michel.jpg", "chichen_itza.jpg", "sydney_opera.jpg",
+            "neuschwanstein.jpg",
+        ],
+    },
+    {
+        "key": "sacred_texts",
+        "name": "Священные Писания",
+        "icon": "\U0001F4D6",
+        "icon_image": "holy_bible.jpg",
+        # Holy books of the major world religions from the Diamond batch.
+        "filenames": [
+            "holy_bible.jpg", "holy_quran.jpg", "hebrew_torah.jpg", "ancient_vedas.jpg",
+            "tripitaka_canon.jpg",
         ],
     },
 ]
@@ -2447,9 +2592,10 @@ def _seed_collections(conn: sqlite3.Connection) -> None:
     player placements pointing at it, so a stale slot never lingers."""
     for coll in COLLECTIONS_SEED:
         conn.execute(
-            "INSERT INTO collections (key, name, icon, created_at) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(key) DO UPDATE SET name = excluded.name, icon = excluded.icon",
-            (coll["key"], coll["name"], coll["icon"], _now()),
+            "INSERT INTO collections (key, name, icon, icon_image, created_at) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET name = excluded.name, icon = excluded.icon, "
+            "icon_image = excluded.icon_image",
+            (coll["key"], coll["name"], coll["icon"], coll.get("icon_image"), _now()),
         )
         coll_row = conn.execute("SELECT id FROM collections WHERE key = ?", (coll["key"],)).fetchone()
         coll_id = coll_row["id"]
@@ -2479,13 +2625,17 @@ def _seed_collections(conn: sqlite3.Connection) -> None:
             )
 
 
-def _sync_collection_placements(conn: sqlite3.Connection, user_id: int) -> None:
+def _sync_collection_placements(conn: sqlite3.Connection, user_id: int) -> set[int]:
     """Auto-fills any collection slot this player already owns at least one copy of --
     called at the top of both get_collections_overview() and get_collection_detail() so
     a freshly obtained card (from ANY source: farm, case, market, gift, PvP win, admin
     grant, giveaway...) is already counted by the time either screen renders, with no
     manual placement step needed. Idempotent/cheap -- INSERT OR IGNORE on the same
-    (user_id, collection_id, card_id) uniqueness place_collection_card() relies on."""
+    (user_id, collection_id, card_id) uniqueness place_collection_card() relies on.
+    Returns the set of collection_ids that were newly completed (their achievement was
+    just recorded) by this call -- so the caller can announce it (see notify_collection_completed
+    in bot.py), since this lazy-sync path is how most completions actually happen (a player
+    rarely re-opens a collection's detail screen right after their last farm)."""
     conn.execute(
         """
         INSERT OR IGNORE INTO user_collection_cards (user_id, collection_id, card_id, placed_at)
@@ -2500,8 +2650,11 @@ def _sync_collection_placements(conn: sqlite3.Connection, user_id: int) -> None:
         "JOIN user_cards uc ON uc.card_id = cc.card_id AND uc.user_id = ?",
         (user_id,),
     ).fetchall()
+    newly_completed_ids = set()
     for row in touched:
-        _maybe_complete_collection(conn, user_id, row["collection_id"])
+        if _maybe_complete_collection(conn, user_id, row["collection_id"]):
+            newly_completed_ids.add(row["collection_id"])
+    return newly_completed_ids
 
 
 def _maybe_complete_collection(conn: sqlite3.Connection, user_id: int, collection_id: int) -> bool:
@@ -2534,7 +2687,7 @@ def get_collections_overview(user_id: int) -> list[dict]:
     collections list screen opened from the "Коллекция" button in Профиль."""
     with get_conn() as conn:
         _seed_collections(conn)
-        _sync_collection_placements(conn, user_id)
+        newly_completed_ids = _sync_collection_placements(conn, user_id)
         # Hardest-to-complete collections first: "difficulty" is the sum, over every
         # member card, of 1/farm-drop-weight -- i.e. roughly how many farms it'd take
         # to pull that one card on average (same RARITY_WEIGHTS farm() itself draws
@@ -2542,7 +2695,7 @@ def get_collections_overview(user_id: int) -> list[dict]:
         # many common cards, which matches how it actually feels to complete it.
         colls = conn.execute(
             """
-            SELECT co.id, co.key, co.name, co.icon,
+            SELECT co.id, co.key, co.name, co.icon, co.icon_image,
                    COUNT(cc.card_id) AS total,
                    COALESCE(SUM(
                        1.0 / CASE c.rarity
@@ -2553,7 +2706,9 @@ def get_collections_overview(user_id: int) -> list[dict]:
                            WHEN 'diamond' THEN 0.5
                            ELSE 29
                        END
-                   ), 0) AS difficulty
+                   ), 0) AS difficulty,
+                   (SELECT COUNT(*) FROM user_collection_completions ucc2
+                    WHERE ucc2.collection_id = co.id) AS completers_count
             FROM collections co
             LEFT JOIN collection_cards cc ON cc.collection_id = co.id
             LEFT JOIN cards c ON c.id = cc.card_id
@@ -2573,8 +2728,11 @@ def get_collections_overview(user_id: int) -> list[dict]:
             ).fetchone()
             out.append({
                 "id": c["id"], "key": c["key"], "name": c["name"], "icon": c["icon"],
+                "icon_image": c["icon_image"],
                 "total": c["total"], "placed": placed,
                 "completed": completed_row is not None,
+                "completers_count": c["completers_count"],
+                "just_completed": c["id"] in newly_completed_ids,
             })
         return out
 
@@ -2585,8 +2743,8 @@ def get_collection_detail(user_id: int, collection_id: int) -> dict:
     they've already placed it (fills the slot permanently)."""
     with get_conn() as conn:
         _seed_collections(conn)
-        _sync_collection_placements(conn, user_id)
-        coll = conn.execute("SELECT id, key, name, icon FROM collections WHERE id = ?", (collection_id,)).fetchone()
+        newly_completed_ids = _sync_collection_placements(conn, user_id)
+        coll = conn.execute("SELECT id, key, name, icon, icon_image FROM collections WHERE id = ?", (collection_id,)).fetchone()
         if coll is None:
             raise ValueError("collection not found")
         card_rows = conn.execute(
@@ -2615,15 +2773,35 @@ def get_collection_detail(user_id: int, collection_id: int) -> dict:
             }
             for r in card_rows
         ]
-        _maybe_complete_collection(conn, user_id, collection_id)
+        just_completed_now = _maybe_complete_collection(conn, user_id, collection_id)
+        just_completed = just_completed_now or (collection_id in newly_completed_ids)
         completed_row = conn.execute(
             "SELECT completed_at FROM user_collection_completions WHERE user_id = ? AND collection_id = ?",
             (user_id, collection_id),
         ).fetchone()
         return {
             "id": coll["id"], "key": coll["key"], "name": coll["name"], "icon": coll["icon"],
+            "icon_image": coll["icon_image"],
             "cards": cards, "completed": completed_row is not None,
+            "just_completed": just_completed,
         }
+
+
+def get_collection_completers(collection_id: int, limit: int = 200) -> list[dict]:
+    """Every player who has completed this collection (has a user_collection_completions
+    row for it), most recent first -- for the "?" info button next to each row in the
+    Коллекции list. Returns username (may be None) and first_name so the client can
+    fall back sensibly; the client is the one that strips any leading "@"."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT u.username, u.first_name, ucc.completed_at "
+            "FROM user_collection_completions ucc "
+            "JOIN users u ON u.telegram_id = ucc.user_id "
+            "WHERE ucc.collection_id = ? "
+            "ORDER BY ucc.completed_at DESC LIMIT ?",
+            (collection_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def place_collection_card(user_id: int, collection_id: int, card_id: int) -> dict:
@@ -2650,7 +2828,11 @@ def place_collection_card(user_id: int, collection_id: int, card_id: int) -> dic
             (user_id, collection_id, card_id, _now()),
         )
         newly_completed = _maybe_complete_collection(conn, user_id, collection_id)
-        return {"placed": True, "newly_completed": newly_completed}
+        coll_name = None
+        if newly_completed:
+            coll_row = conn.execute("SELECT name FROM collections WHERE id = ?", (collection_id,)).fetchone()
+            coll_name = coll_row["name"] if coll_row else None
+        return {"placed": True, "newly_completed": newly_completed, "collection_name": coll_name}
 
 
 def get_all_cards() -> list[dict]:
@@ -6085,14 +6267,18 @@ def get_redblack_round(round_id: int) -> dict | None:
 
 def get_redblack_history(limit: int = 50) -> list[dict]:
     """Every Red&Black round ever played, newest first — for the "История" panel,
-    same convention as get_pvp_history()/get_market_history()."""
+    same convention as get_pvp_history()/get_market_history() -- also hides
+    LEADERBOARD_EXCLUDED_USERNAMES (the dev's own test play) from the round list
+    itself, not just the leaderboard, since it's not real play worth showing players."""
     with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
         rows = conn.execute(
             "SELECT rr.id, rr.user_id, rr.bet, rr.choice, rr.result, rr.won, rr.payout, rr.created_at, "
             "u.username, u.first_name "
             "FROM redblack_rounds rr JOIN users u ON u.telegram_id = rr.user_id "
+            f"WHERE LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders}) "
             "ORDER BY rr.id DESC LIMIT ?",
-            (limit,),
+            list(LEADERBOARD_EXCLUDED_USERNAMES) + [limit],
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -6132,15 +6318,19 @@ def get_aviator_history(limit: int = 50) -> list[dict]:
     flight and excluded), newest first, for the "История" panel. Covers BOTH the
     chat /go game and the in-app one -- same underlying table, same game, just two
     ways to play it, same convention count_active_aviator_rounds_for_user() already
-    uses (chat_id IS NULL) to tell them apart when it matters."""
+    uses (chat_id IS NULL) to tell them apart when it matters. Also hides
+    LEADERBOARD_EXCLUDED_USERNAMES (the dev's own test play) from the round list
+    itself, not just the leaderboard, since it's not real play worth showing players."""
     with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
         rows = conn.execute(
             "SELECT ar.id, ar.user_id, ar.bet, ar.crash_point, ar.status, ar.cashout_multiplier, ar.created_at, "
             "u.username, u.first_name "
             "FROM aviator_rounds ar JOIN users u ON u.telegram_id = ar.user_id "
             "WHERE ar.status IN ('won', 'lost') "
+            f"AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders}) "
             "ORDER BY ar.id DESC LIMIT ?",
-            (limit,),
+            list(LEADERBOARD_EXCLUDED_USERNAMES) + [limit],
         ).fetchall()
         return [dict(r) for r in rows]
 

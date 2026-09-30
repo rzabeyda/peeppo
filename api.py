@@ -218,6 +218,10 @@ class CollectionPlaceBody(InitDataBody):
     card_id: int
 
 
+class CollectionCompletersBody(InitDataBody):
+    collection_id: int
+
+
 class PokerDealBody(InitDataBody):
     bet: int
 
@@ -1072,28 +1076,58 @@ def crypto_status(body: InitDataBody):
 # database.py's get_collections_overview()/get_collection_detail()/place_collection_card().
 # ---------------------------------------------------------------------------
 
+async def _announce_collection_completions(user: dict, collection_names: list[str]):
+    """Posts to PUBLIC_CHAT for every newly-completed collection in this request --
+    skipped entirely for rzabeyda/zzabeyda (dev/test accounts), same exclusion the
+    diamond-farm announcement already uses."""
+    if not collection_names:
+        return
+    if (user.get("username") or "").lower() in ("rzabeyda", "zzabeyda"):
+        return
+    import bot as bot_module
+    display_name = f"@{user['username']}" if user.get("username") else (user.get("first_name") or "Игрок")
+    for name in collection_names:
+        await bot_module.notify_collection_completed(display_name, name)
+
+
 @app.post("/api/collections")
-def collections_overview(body: InitDataBody):
+async def collections_overview(body: InitDataBody):
     user = _authenticate(body.initData)
-    return {"collections": db.get_collections_overview(user["telegram_id"])}
+    collections = db.get_collections_overview(user["telegram_id"])
+    await _announce_collection_completions(
+        user, [c["name"] for c in collections if c.get("just_completed")]
+    )
+    return {"collections": collections}
 
 
 @app.post("/api/collections/detail")
-def collections_detail(body: CollectionDetailBody):
+async def collections_detail(body: CollectionDetailBody):
     user = _authenticate(body.initData)
     try:
-        return db.get_collection_detail(user["telegram_id"], body.collection_id)
+        detail = db.get_collection_detail(user["telegram_id"], body.collection_id)
     except ValueError as e:
         raise HTTPException(404, str(e))
+    if detail.get("just_completed"):
+        await _announce_collection_completions(user, [detail["name"]])
+    return detail
 
 
 @app.post("/api/collections/place")
-def collections_place(body: CollectionPlaceBody):
+async def collections_place(body: CollectionPlaceBody):
     user = _authenticate(body.initData)
     try:
-        return db.place_collection_card(user["telegram_id"], body.collection_id, body.card_id)
+        result = db.place_collection_card(user["telegram_id"], body.collection_id, body.card_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    if result.get("newly_completed") and result.get("collection_name"):
+        await _announce_collection_completions(user, [result["collection_name"]])
+    return result
+
+
+@app.post("/api/collections/completers")
+def collections_completers(body: CollectionCompletersBody):
+    _authenticate(body.initData)
+    return {"completers": db.get_collection_completers(body.collection_id)}
 
 
 @app.post("/api/crypto/withdraw")
