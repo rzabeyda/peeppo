@@ -236,6 +236,23 @@ CREATE TABLE IF NOT EXISTS redblack_rounds (
     created_at    TEXT NOT NULL
 );
 
+-- Plinko -- a ball falls through PLINKO_ROWS pegs (each a fair 50/50 left/right
+-- bounce) and lands in one of PLINKO_ROWS+1 slots; the slot's multiplier (see
+-- PLINKO_MULTIPLIERS, chosen per risk level) times the bet is the payout. See
+-- play_plinko().
+CREATE TABLE IF NOT EXISTS plinko_rounds (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL REFERENCES users(telegram_id),
+    bet           INTEGER NOT NULL,
+    risk          TEXT NOT NULL,
+    slot          INTEGER NOT NULL,
+    multiplier    REAL NOT NULL,
+    payout        INTEGER NOT NULL,
+    created_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_plinko_rounds_user ON plinko_rounds(user_id);
+
 -- American Poker '90s -- one row per hand from deal() through its eventual
 -- collect()/bust. status: dealt (waiting on draw()) -> won/lost (post-draw; won means
 -- payout > 0 and still open to gamble or collect) -> collected/busted (final). Gems are
@@ -421,6 +438,24 @@ CREATE TABLE IF NOT EXISTS user_collection_completions (
     completed_at   TEXT NOT NULL,
     UNIQUE(user_id, collection_id)
 );
+
+CREATE TABLE IF NOT EXISTS stars_payments (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL REFERENCES users(telegram_id),
+    stars          INTEGER NOT NULL,
+    description    TEXT,
+    created_at     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS blind_swap_listings (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL REFERENCES users(telegram_id),
+    user_card_id   INTEGER NOT NULL UNIQUE REFERENCES user_cards(id),
+    rarity_bucket  TEXT NOT NULL,
+    created_at     TEXT NOT NULL,
+    UNIQUE(user_id, rarity_bucket)
+);
+CREATE INDEX IF NOT EXISTS idx_blind_swap_bucket ON blind_swap_listings(rarity_bucket, created_at);
 """
 
 
@@ -855,9 +890,9 @@ def _parse_utc(ts: str) -> datetime:
 
 
 def _daily_bonus_amount_for(days_elapsed: int) -> int:
-    """DAILY_BONUS_GEMS, +25 more for every full 30-day "month" since signup — the daily
-    login reward keeps growing the longer a player sticks around."""
-    return DAILY_BONUS_GEMS + 25 * (days_elapsed // 30)
+    """DAILY_BONUS_GEMS, +5 more for every full 30-day "month" since signup — the daily
+    login reward keeps growing the longer a player sticks around (25, 30, 35, 40, ...)."""
+    return DAILY_BONUS_GEMS + 5 * (days_elapsed // 30)
 
 
 def get_bot_uptime_days() -> int:
@@ -1133,6 +1168,125 @@ def play_redblack(user_id: int, bet: int, choice: str) -> dict:
         )
         round_id = cur.lastrowid
     return {"round_id": round_id, "result": result, "won": won, "bet": bet, "payout": payout, "gems": new_gems}
+
+
+# ---------------------------------------------------------------------------
+# Plinko -- ball drops through PLINKO_ROWS pegs, each an independent fair 50/50
+# left/right bounce (a binomial walk), landing in one of PLINKO_ROWS+1 slots.
+# Multiplier tables below are symmetric and each hand-tuned (via simulation) to a
+# specific target RTP: LOW/MEDIUM ~97%, HIGH ~96% (within the requested 95-97%
+# band) -- higher risk trades a lower floor multiplier for a much bigger jackpot
+# at the edges, same shape real Plinko games use, not copied from any of them.
+# ---------------------------------------------------------------------------
+
+PLINKO_ROWS = 16
+PLINKO_MIN_BET = 25
+
+PLINKO_MULTIPLIERS = {
+    "low": [16, 8.8, 2.9, 1.5, 1.3, 1.2, 1.1, 0.98, 0.44, 0.98, 1.1, 1.2, 1.3, 1.5, 2.9, 8.8, 16],
+    "medium": [110, 28, 8.3, 4.1, 2.1, 1.7, 1.1, 0.55, 0.25, 0.55, 1.1, 1.7, 2.1, 4.1, 8.3, 28, 110],
+    "high": [1146, 138, 34, 11, 3.4, 1.1, 0.46, 0.23, 0.09, 0.23, 0.46, 1.1, 3.4, 11, 34, 138, 1146],
+}
+
+
+class PlinkoError(Exception):
+    """Raised by play_plinko() for a malformed bet/risk (not a balance problem --
+    that's InsufficientGems, same exception every other gem-spending action uses)."""
+
+
+def play_plinko(user_id: int, bet: int, risk: str) -> dict:
+    """One Plinko drop in one atomic step: validates the bet/risk and balance, draws
+    PLINKO_ROWS independent fair coin flips (the ball's left/right bounce at each peg
+    row), and the number of "right" bounces (0..PLINKO_ROWS) is the landing slot --
+    the classic binomial-walk Plinko model, pegs and all, no separate visual-only
+    path needed since every bounce is already decided server-side. Settles
+    payout = round(bet * PLINKO_MULTIPLIERS[risk][slot]) same net-profit convention
+    as play_redblack() (gems_earned only bumped on a net gain). Raises
+    InsufficientGems if the balance can't cover the bet, PlinkoError for a bad bet
+    amount or risk level. Returns {"slot": int, "path": [0/1, ...], "risk": str,
+    "multiplier": float, "bet": int, "payout": int, "gems": new balance}."""
+    if risk not in PLINKO_MULTIPLIERS:
+        raise PlinkoError("risk must be 'low', 'medium' or 'high'")
+    if not isinstance(bet, int) or bet < PLINKO_MIN_BET:
+        raise PlinkoError(f"bet must be a whole number >= {PLINKO_MIN_BET}")
+    with get_conn() as conn:
+        row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        if row is None or row["gems"] < bet:
+            raise InsufficientGems()
+        path = [random.randint(0, 1) for _ in range(PLINKO_ROWS)]
+        slot = sum(path)
+        multiplier = PLINKO_MULTIPLIERS[risk][slot]
+        payout = round(bet * multiplier)
+        net = payout - bet
+        if net >= 0:
+            conn.execute(
+                "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
+                (net, net, user_id),
+            )
+        else:
+            conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (-net, user_id))
+        new_gems = conn.execute(
+            "SELECT gems FROM users WHERE telegram_id = ?", (user_id,)
+        ).fetchone()["gems"]
+        cur = conn.execute(
+            "INSERT INTO plinko_rounds (user_id, bet, risk, slot, multiplier, payout, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user_id, bet, risk, slot, multiplier, payout, _now()),
+        )
+        round_id = cur.lastrowid
+    return {
+        "round_id": round_id, "path": path, "slot": slot, "risk": risk,
+        "multiplier": multiplier, "bet": bet, "payout": payout, "gems": new_gems,
+    }
+
+
+def get_plinko_history(limit: int = 50) -> list[dict]:
+    """Every Plinko drop ever played, newest first -- for the "История" panel, same
+    convention as get_redblack_history(). Also hides LEADERBOARD_EXCLUDED_USERNAMES
+    from the list itself, not just the leaderboard."""
+    with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        rows = conn.execute(
+            "SELECT pr.id, pr.user_id, pr.bet, pr.risk, pr.slot, pr.multiplier, pr.payout, pr.created_at, "
+            "u.username, u.first_name "
+            "FROM plinko_rounds pr JOIN users u ON u.telegram_id = pr.user_id "
+            f"WHERE LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders}) "
+            "ORDER BY pr.id DESC LIMIT ?",
+            list(LEADERBOARD_EXCLUDED_USERNAMES) + [limit],
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_plinko_leaderboard(limit: int = 12) -> list[dict]:
+    """Top players by total net gems won across every Plinko drop they've played
+    (payout - bet, win or lose), highest first. Same LEADERBOARD_EXCLUDED_USERNAMES
+    convention as every other leaderboard."""
+    with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        rows = conn.execute(
+            "SELECT pr.user_id AS telegram_id, u.username AS username, u.first_name AS first_name, "
+            "SUM(pr.payout - pr.bet) AS net_profit, COUNT(*) AS rounds_played "
+            "FROM plinko_rounds pr JOIN users u ON u.telegram_id = pr.user_id "
+            f"WHERE LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders}) "
+            "GROUP BY pr.user_id ORDER BY net_profit DESC LIMIT ?",
+            list(LEADERBOARD_EXCLUDED_USERNAMES) + [limit],
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_plinko_house_stats() -> dict:
+    """Same shape as get_mines_house_stats()/get_redblack_house_stats(). Excludes
+    LEADERBOARD_EXCLUDED_USERNAMES (the dev's own test play) so RTP reflects real
+    players, not testing noise."""
+    with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(pr.bet), 0) AS wagered, COALESCE(SUM(pr.payout), 0) AS paid "
+            "FROM plinko_rounds pr JOIN users u ON u.telegram_id = pr.user_id "
+            f"WHERE LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})",
+            list(LEADERBOARD_EXCLUDED_USERNAMES),
+        ).fetchone()
+    return _house_stats_row(row["n"], row["wagered"], row["paid"])
 
 
 # ---------------------------------------------------------------------------
@@ -1644,18 +1798,30 @@ def get_aviator_house_stats() -> dict:
     return _house_stats_row(row["n"], row["wagered"], row["paid"])
 
 
+# RTP stats below this cutoff don't count towards get_poker_house_stats() -- rounds
+# played before this timestamp were under earlier, now-fixed paytable/strategy
+# revisions (one day in particular, 2026-09-29, measured ~9% RTP) that permanently
+# dragged the all-time aggregate down to ~63% even after the underlying bugs were
+# fixed, since historical base_payout/current_payout values are frozen at whatever
+# was correct the day each round was played. This resets the DISPLAYED stat only --
+# no rows are deleted, individual round history (get_poker_history()) is untouched.
+POKER_STATS_RESET_AT = "2026-10-01T15:35:45.048607+00:00"
+
+
 def get_poker_house_stats() -> dict:
     """Same shape as get_mines_house_stats(). current_payout is already 0 for a
     'busted' round and the settled amount for 'collected'/'lost', same field the
     in-app history/leaderboard use. Excludes LEADERBOARD_EXCLUDED_USERNAMES (the
-    dev's own test play) so RTP reflects real players, not testing noise."""
+    dev's own test play) so RTP reflects real players, not testing noise. Only
+    counts rounds at/after POKER_STATS_RESET_AT -- see that constant's comment."""
     with get_conn() as conn:
         excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
         row = conn.execute(
             "SELECT COUNT(*) AS n, COALESCE(SUM(pr.bet), 0) AS wagered, COALESCE(SUM(pr.current_payout), 0) AS paid "
             "FROM poker_rounds pr JOIN users u ON u.telegram_id = pr.user_id "
-            f"WHERE pr.status IN ('collected', 'busted', 'lost') AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})",
-            list(LEADERBOARD_EXCLUDED_USERNAMES),
+            f"WHERE pr.status IN ('collected', 'busted', 'lost') AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders}) "
+            "AND pr.created_at >= ?",
+            list(LEADERBOARD_EXCLUDED_USERNAMES) + [POKER_STATS_RESET_AT],
         ).fetchone()
     return _house_stats_row(row["n"], row["wagered"], row["paid"])
 
@@ -1668,7 +1834,41 @@ def get_all_house_stats() -> dict:
         "redblack": get_redblack_house_stats(),
         "aviator": get_aviator_house_stats(),
         "poker": get_poker_house_stats(),
+        "plinko": get_plinko_house_stats(),
     }
+
+
+def log_stars_payment(user_id: int, stars: int, description: str) -> None:
+    """Records one real Telegram Stars purchase (gems top-up or a bought rank) --
+    called from bot.py's handle_successful_payment() right alongside the existing
+    one-off admin DM ping, so (unlike that ping) there's now a queryable history to
+    build a top-donors leaderboard from going forward. Never touches payments made
+    before this table existed -- there's no way to recover those retroactively."""
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO stars_payments (user_id, stars, description, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, stars, description, _now()),
+        )
+
+
+def get_top_stars_donors(limit: int = 5) -> list[dict]:
+    """Top spenders by total Stars paid (across every gems top-up / rank purchase
+    since stars_payments started being recorded), highest first. Same
+    LEADERBOARD_EXCLUDED_USERNAMES convention as every other leaderboard."""
+    with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        rows = conn.execute(
+            f"""
+            SELECT sp.user_id AS telegram_id, u.username AS username, u.first_name AS first_name,
+                   SUM(sp.stars) AS total_stars, COUNT(*) AS purchases
+            FROM stars_payments sp JOIN users u ON u.telegram_id = sp.user_id
+            WHERE LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})
+            GROUP BY sp.user_id
+            ORDER BY total_stars DESC LIMIT ?
+            """,
+            (*LEADERBOARD_EXCLUDED_USERNAMES, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def get_mines_house_stats() -> dict:
@@ -1689,7 +1889,7 @@ def get_mines_house_stats() -> dict:
     return _house_stats_row(row["n"], row["wagered"], row["paid"])
 
 
-def get_mines_leaderboard(limit: int = 10) -> list[dict]:
+def get_mines_leaderboard(limit: int = 12) -> list[dict]:
     """Top players by total net gems won across every resolved Mines round (won:
     payout - bet, lost: -bet), highest first. Same LEADERBOARD_EXCLUDED_USERNAMES
     convention as every other leaderboard."""
@@ -2057,7 +2257,7 @@ def get_poker_history(limit: int = 50) -> list[dict]:
         return [dict(r) for r in rows]
 
 
-def get_poker_leaderboard(limit: int = 10) -> list[dict]:
+def get_poker_leaderboard(limit: int = 12) -> list[dict]:
     """Top players by total net gems won across every finished Poker round
     (current_payout - bet per round, summed -- this telescopes correctly through any
     gamble chain since gems are credited/debited live at each step, see draw_poker()/
@@ -2371,7 +2571,7 @@ COLLECTIONS_SEED = [
     },
     {
         "key": "jewelry",
-        "name": "Бриллиантовый Эстет",
+        "name": "Ювелир",
         "icon": "\U0001F48D",
         "icon_image": "hope_diamond.jpg",
         # blue_diamond.jpg / white_diamond.jpg deliberately excluded -- those belong
@@ -2392,6 +2592,54 @@ COLLECTIONS_SEED = [
         "filenames": [
             "laucala_island.jpg", "necker_island.jpg", "north_island.jpg",
             "fregate_island.jpg", "lanai.jpg", "sa_ferradura.jpg",
+            "bali_island.jpg", "canary_islands.jpg", "cuba_island.jpg", "hawaii_islands.jpg",
+            "easter_island.jpg",
+        ],
+    },
+    {
+        "key": "patriot",
+        "name": "Патриот",
+        "icon": "\u2B50",
+        "icon_image": "volga.jpg",
+        "filenames": [
+            "volga.jpg", "niva.jpg", "moskvich.jpg", "chaika.jpg", "uaz.jpg",
+            "smz.jpg", "gaz_24.jpg", "samara.jpg", "kopeika.jpg", "zaporozhets.jpg",
+        ],
+    },
+    {
+        "key": "banks",
+        "name": "Банкир",
+        "icon": "\U0001F3E6",
+        "icon_image": "jpmorgan_chase.jpg",
+        "filenames": [
+            "bnp_paribas.jpg", "bofa_bank.jpg", "citigroup_bank.jpg", "dbs_bank.jpg",
+            "hsbc_bank.jpg", "jpmorgan_chase.jpg", "nubank_fintech.jpg",
+            "revolut_bank.jpg", "wells_fargo.jpg", "wise_bank.jpg",
+        ],
+    },
+    {
+        "key": "empires",
+        "name": "Империалист",
+        "icon": "\U0001F451",
+        "icon_image": "roman_empire.jpg",
+        "filenames": [
+            "abbasid_empire.jpg", "babylon_empire.jpg", "british_empire.jpg",
+            "byzantine_empire.jpg", "carthage_empire.jpg", "dutch_empire.jpg",
+            "french_empire.jpg", "german_empire.jpg", "inca_empire.jpg",
+            "macedon_empire.jpg", "ming_dynasty.jpg", "mongol_empire.jpg",
+            "ottoman_empire.jpg", "persian_empire.jpg", "roman_empire.jpg",
+            "russian_empire.jpg", "spanish_empire.jpg", "sparta_empire.jpg",
+            "sumerian_empire.jpg", "ussr_empire.jpg", "usa_empire.jpg",
+        ],
+    },
+    {
+        "key": "cities",
+        "name": "Города",
+        "icon": "\U0001F3D9\uFE0F",
+        "icon_image": "vatican_city.jpg",
+        "filenames": [
+            "acropolis_city.jpg", "las_vegas_city.jpg", "mecca_city.jpg",
+            "varanasi_city.jpg", "vatican_city.jpg", "jerusalem.jpg", "manhattan.jpg",
         ],
     },
     {
@@ -2424,9 +2672,9 @@ COLLECTIONS_SEED = [
         "key": "watches",
         "name": "Повелитель Времени",
         "icon": "\u231A",
-        "icon_image": "Rolex_daytona.jpg",
+        "icon_image": "rolex_daytona.jpg",
         "filenames": [
-            "Rolex_daytona.jpg", "ap_royal_oak.jpg", "cartier_tank_lc.jpg", "cartier_tank_must.jpg",
+            "rolex_daytona.jpg", "ap_royal_oak.jpg", "cartier_tank_lc.jpg", "cartier_tank_must.jpg",
             "chronos_vanguard.jpg", "matrix_watch.jpg", "g_shock.jpg", "omega_moonwatch.jpg",
             "patek_philippe_5711.jpg", "patek_philippe_5811.jpg", "rolex_submariner.jpg",
             "swiss_watch.jpg", "watch_vintage.jpg", "apple_watch.jpg",
@@ -2450,7 +2698,7 @@ COLLECTIONS_SEED = [
         "icon_image": "birkin_25_sellier.jpg",
         "filenames": [
             "birkin_20_sellier.jpg", "birkin_25_sellier.jpg", "birkin_himalaya30.jpg",
-            "handbag_croc.jpg", "celine.jpg", "prada.jpg", "chanel.jpg", "urban_pack.jpg",
+            "handbag_croc.jpg", "celine.jpg", "prada.jpg", "chanel.jpg",
         ],
     },
     {
@@ -2567,7 +2815,8 @@ COLLECTIONS_SEED = [
             "china_wall.jpg", "angkor_wat.jpg", "pamukkale_turkey.jpg", "petra_jordan.jpg",
             "forbidden_city.jpg", "shwedagon_pagoda.jpg", "burj_al_arab.jpg", "machu_picchu.jpg",
             "statue_of_liberty.jpg", "saint_michel.jpg", "chichen_itza.jpg", "sydney_opera.jpg",
-            "neuschwanstein.jpg",
+            "neuschwanstein.jpg", "british_museum.jpg", "hermitage.jpg", "twin_towers.jpg",
+            "palazzo_vecchio.jpg", "uffizi_gallery.jpg", "empire_state.jpg", "niagara_falls.jpg",
         ],
     },
     {
@@ -2657,9 +2906,14 @@ def _sync_collection_placements(conn: sqlite3.Connection, user_id: int) -> set[i
     return newly_completed_ids
 
 
+COLLECTION_COMPLETE_REWARD_GEMS = 100
+
+
 def _maybe_complete_collection(conn: sqlite3.Connection, user_id: int, collection_id: int) -> bool:
     """Returns True if every slot is now placed and this call is what just
-    recorded the completion achievement for the first time."""
+    recorded the completion achievement for the first time -- also pays out
+    COLLECTION_COMPLETE_REWARD_GEMS gems, exactly once per (user, collection),
+    in the same transaction as the completion row."""
     already = conn.execute(
         "SELECT id FROM user_collection_completions WHERE user_id = ? AND collection_id = ?",
         (user_id, collection_id),
@@ -2674,10 +2928,17 @@ def _maybe_complete_collection(conn: sqlite3.Connection, user_id: int, collectio
         (user_id, collection_id),
     ).fetchone()["n"]
     if total > 0 and placed >= total:
-        conn.execute(
+        cur = conn.execute(
             "INSERT OR IGNORE INTO user_collection_completions (user_id, collection_id, completed_at) VALUES (?, ?, ?)",
             (user_id, collection_id, _now()),
         )
+        # rowcount is 0 if a concurrent call already won the UNIQUE(user_id, collection_id)
+        # race and inserted first -- guards against paying out gems twice for one completion.
+        if cur.rowcount > 0:
+            conn.execute(
+                "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
+                (COLLECTION_COMPLETE_REWARD_GEMS, COLLECTION_COMPLETE_REWARD_GEMS, user_id),
+            )
         return True
     return False
 
@@ -5278,9 +5539,144 @@ def get_swap_listings() -> list[dict]:
                        (SELECT COUNT(*) FROM user_cards uc2 WHERE uc2.obtained_at <= uc.obtained_at)) AS drop_number
             FROM user_cards uc
             JOIN cards c ON c.id = uc.card_id
-            WHERE uc.swap_listed = 1
+            WHERE uc.swap_listed = 1 AND uc.id NOT IN (SELECT user_card_id FROM blind_swap_listings)
             ORDER BY uc.id DESC
             """
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Blind swap: no specific listing to pick -- you put up any one card of a given
+# rarity and get back whatever the next matching player put up for that same
+# rarity. Obsidian/custom NFTs are their own bucket (never pooled with plain
+# Diamond) per an explicit decision: Obsidian only trades for Obsidian here,
+# even though it counts as Diamond for Stars-withdrawal eligibility elsewhere.
+# ---------------------------------------------------------------------------
+
+def _blind_rarity_bucket(rarity: str, custom_name) -> str:
+    return "obsidian" if custom_name else rarity
+
+
+def list_for_blind_swap(user_card_id: int, user_id: int) -> dict | None:
+    """Puts one owned copy into the blind-swap pool for its rarity bucket, then
+    immediately tries to match it against the oldest other pending listing in the
+    same bucket. Returns {"matched": False} if it just joined the queue, or a dict
+    with "matched": True plus both sides' card info if a swap just happened.
+    Returns None if the card can't be listed (not owned / busy / this rarity
+    bucket already has a pending listing for this player)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT uc.user_id, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, uc.pinned_at, uc.voided, "
+            "uc.custom_name, COALESCE(uc.custom_rarity, c.rarity) AS rarity, "
+            "(SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = uc.id AND ng.drawn_at IS NULL) AS in_giveaway "
+            "FROM user_cards uc JOIN cards c ON c.id = uc.card_id WHERE uc.id = ?",
+            (user_card_id,),
+        ).fetchone()
+        if row is None or row["user_id"] != user_id or row["voided"]:
+            return None
+        if (row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None
+                or row["pvp_round_id"] is not None or row["pinned_at"] is not None or row["in_giveaway"]):
+            return None
+        bucket = _blind_rarity_bucket(row["rarity"], row["custom_name"])
+        already = conn.execute(
+            "SELECT id FROM blind_swap_listings WHERE user_id = ? AND rarity_bucket = ?",
+            (user_id, bucket),
+        ).fetchone()
+        if already is not None:
+            return None
+
+        conn.execute("UPDATE user_cards SET swap_listed = 1 WHERE id = ?", (user_card_id,))
+        conn.execute(
+            "INSERT INTO blind_swap_listings (user_id, user_card_id, rarity_bucket, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, user_card_id, bucket, _now()),
+        )
+
+        # Oldest-first match -- skip (and self-heal by deleting) any candidate whose
+        # card went stale in the meantime instead of trusting the row blindly.
+        candidates = conn.execute(
+            "SELECT id, user_id, user_card_id FROM blind_swap_listings "
+            "WHERE rarity_bucket = ? AND user_id != ? ORDER BY created_at ASC LIMIT 5",
+            (bucket, user_id),
+        ).fetchall()
+        partner = None
+        for cand in candidates:
+            check = conn.execute(
+                "SELECT user_id, swap_listed, voided FROM user_cards WHERE id = ?",
+                (cand["user_card_id"],),
+            ).fetchone()
+            if check is None or check["user_id"] != cand["user_id"] or not check["swap_listed"] or check["voided"]:
+                conn.execute("DELETE FROM blind_swap_listings WHERE id = ?", (cand["id"],))
+                continue
+            partner = cand
+            break
+
+        if partner is None:
+            return {"matched": False}
+
+        partner_uc_id = partner["user_card_id"]
+        partner_user_id = partner["user_id"]
+
+        received_row = conn.execute(
+            "SELECT c.filename, COALESCE(uc.custom_name, c.name) AS name FROM user_cards uc "
+            "JOIN cards c ON c.id = uc.card_id WHERE uc.id = ?", (partner_uc_id,)
+        ).fetchone()
+        given_row = conn.execute(
+            "SELECT c.filename, COALESCE(uc.custom_name, c.name) AS name FROM user_cards uc "
+            "JOIN cards c ON c.id = uc.card_id WHERE uc.id = ?", (user_card_id,)
+        ).fetchone()
+
+        _move_number_with_card(conn, user_card_id, partner_user_id)
+        conn.execute(
+            "UPDATE user_cards SET user_id = ?, swap_listed = 0, pinned_at = NULL WHERE id = ?",
+            (partner_user_id, user_card_id),
+        )
+        _move_number_with_card(conn, partner_uc_id, user_id)
+        conn.execute(
+            "UPDATE user_cards SET user_id = ?, swap_listed = 0, pinned_at = NULL WHERE id = ?",
+            (user_id, partner_uc_id),
+        )
+        conn.execute("DELETE FROM blind_swap_listings WHERE id = ?", (partner["id"],))
+        conn.execute(
+            "DELETE FROM blind_swap_listings WHERE user_id = ? AND user_card_id = ?",
+            (user_id, user_card_id),
+        )
+
+        return {
+            "matched": True,
+            "partner_id": partner_user_id,
+            "received_name": received_row["name"], "received_filename": received_row["filename"],
+            "given_name": given_row["name"], "given_filename": given_row["filename"],
+        }
+
+
+def unlist_blind_swap(user_card_id: int, user_id: int) -> bool:
+    """Cancels a still-pending blind listing. False if it's already matched (and
+    thus already gone from the table) or never existed."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM blind_swap_listings WHERE user_card_id = ? AND user_id = ?",
+            (user_card_id, user_id),
+        ).fetchone()
+        if row is None:
+            return False
+        conn.execute("DELETE FROM blind_swap_listings WHERE id = ?", (row["id"],))
+        conn.execute("UPDATE user_cards SET swap_listed = 0 WHERE id = ? AND user_id = ?", (user_card_id, user_id))
+        return True
+
+
+def get_blind_swap_status(user_id: int) -> list[dict]:
+    """This player's own pending blind listings -- at most one per rarity bucket."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT bsl.rarity_bucket, bsl.user_card_id, c.filename, COALESCE(uc.custom_name, c.name) AS name
+            FROM blind_swap_listings bsl
+            JOIN user_cards uc ON uc.id = bsl.user_card_id
+            JOIN cards c ON c.id = uc.card_id
+            WHERE bsl.user_id = ?
+            """,
+            (user_id,),
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -6283,7 +6679,7 @@ def get_redblack_history(limit: int = 50) -> list[dict]:
         return [dict(r) for r in rows]
 
 
-def get_redblack_leaderboard(limit: int = 10) -> list[dict]:
+def get_redblack_leaderboard(limit: int = 12) -> list[dict]:
     """Top players by total net gems won across every Red&Black round they've played
     (SUM(payout - bet) -- a loss round contributes -bet, a win round contributes
     +bet), highest first. Same LEADERBOARD_EXCLUDED_USERNAMES convention as every
@@ -6335,7 +6731,27 @@ def get_aviator_history(limit: int = 50) -> list[dict]:
         return [dict(r) for r in rows]
 
 
-def get_aviator_leaderboard(limit: int = 10) -> list[dict]:
+def get_recent_gem_withdrawals(limit: int = 5) -> list[dict]:
+    """The most recently completed (status='paid') gem/Diamond-card withdrawals, newest
+    first -- shown to players in the gems modal as social proof that payouts are real.
+    Same LEADERBOARD_EXCLUDED_USERNAMES convention as every other leaderboard."""
+    with get_conn() as conn:
+        excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        rows = conn.execute(
+            f"""
+            SELECT cw.user_id AS telegram_id, u.username AS username, u.first_name AS first_name,
+                   cw.gram_amount AS gram_amount, cw.card_count AS card_count, cw.resolved_at AS resolved_at
+            FROM crypto_withdrawals cw JOIN users u ON u.telegram_id = cw.user_id
+            WHERE cw.status = 'paid'
+            AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})
+            ORDER BY cw.resolved_at DESC LIMIT ?
+            """,
+            (*LEADERBOARD_EXCLUDED_USERNAMES, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_aviator_leaderboard(limit: int = 12) -> list[dict]:
     """Top players by total net gems won across every resolved Aviator round
     (won: +(bet*cashout_multiplier - bet), lost: -bet), highest first. Same
     LEADERBOARD_EXCLUDED_USERNAMES convention as every other leaderboard."""
@@ -6354,7 +6770,7 @@ def get_aviator_leaderboard(limit: int = 10) -> list[dict]:
         return [dict(r) for r in rows]
 
 
-def get_pvp_win_leaderboard(limit: int = 10, exclude_id: int | None = None) -> list[dict]:
+def get_pvp_win_leaderboard(limit: int = 12, exclude_id: int | None = None) -> list[dict]:
     """Top players by total resolved PvP round wins, highest first. exclude_id leaves
     one telegram_id out entirely (used to keep the dev's own account off the public
     leaderboard, same convention as get_ref_leaderboard())."""
@@ -6377,7 +6793,7 @@ def get_pvp_win_leaderboard(limit: int = 10, exclude_id: int | None = None) -> l
         return [dict(row) for row in rows]
 
 
-def get_top_stakers(limit: int = 10, exclude_id: int | None = None) -> list[dict]:
+def get_top_stakers(limit: int = 12, exclude_id: int | None = None) -> list[dict]:
     """Top players by lifetime gems earned specifically from staking (staking_gems_earned
     -- separate from the general gems_earned, which mixes in every other gem source).
     Only reflects staking income credited after this counter was added. Same
@@ -6400,7 +6816,7 @@ def get_top_stakers(limit: int = 10, exclude_id: int | None = None) -> list[dict
         return [dict(row) for row in rows]
 
 
-def get_pvp_cards_won_leaderboard(limit: int = 10, exclude_id: int | None = None) -> list[dict]:
+def get_pvp_cards_won_leaderboard(limit: int = 12, exclude_id: int | None = None) -> list[dict]:
     """Top players by NET cards across all resolved PvP rounds -- cards captured from
     opponents (rounds they won) minus cards they themselves lost (rounds someone else
     won), not just a gross "cards captured" count. A winner's own staked cards
@@ -6439,7 +6855,7 @@ def get_pvp_cards_won_leaderboard(limit: int = 10, exclude_id: int | None = None
         return [dict(row) for row in rows]
 
 
-def get_pvp_diamond_cards_won_leaderboard(limit: int = 10, exclude_id: int | None = None) -> list[dict]:
+def get_pvp_diamond_cards_won_leaderboard(limit: int = 12, exclude_id: int | None = None) -> list[dict]:
     """Same as get_pvp_cards_won_leaderboard() (net = captured - lost), restricted to
     diamond-rarity cards only (rarity at the time staked -- never changes after farming)."""
     with get_conn() as conn:
@@ -6630,7 +7046,7 @@ def get_card_by_id(card_id: int) -> sqlite3.Row | None:
 # ---------------------------------------------------------------------------
 
 GRAM_CARDS_PER_UNIT = 10  # 10 Diamond cards = 1 payout unit
-STARS_PER_UNIT = 100  # each unit now pays 100 Telegram Stars (was 1 GRAM back when this paid crypto)
+STARS_PER_UNIT = 50  # lowered from 100 -- only affects NEW requests, already-pending ones keep their stored gram_amount
 
 
 class CryptoWithdrawalError(Exception):
@@ -6673,7 +7089,15 @@ def request_crypto_withdrawal(user_id: int, user_card_ids: list[int], wallet_add
         placeholders = ",".join("?" for _ in user_card_ids)
         rows = conn.execute(
             f"SELECT uc.id FROM user_cards uc JOIN cards c ON c.id = uc.card_id "
-            f"WHERE uc.id IN ({placeholders}) AND uc.user_id = ? AND c.rarity = 'diamond' "
+            f"WHERE uc.id IN ({placeholders}) AND uc.user_id = ? "
+            # Obsidian custom cards are always displayed/counted as diamond (see
+            # get_inventory()'s COALESCE(uc.custom_rarity, c.rarity)) regardless of what
+            # the underlying card's own rarity is -- this check used to look at c.rarity
+            # alone, so an Obsidian diamond card built on a non-diamond base would show up
+            # as selectable in the picker (which reads the same coalesced inventory field)
+            # but then get rejected here as "not an eligible Diamond card". Match the same
+            # coalesced rule everywhere.
+            f"AND COALESCE(uc.custom_rarity, c.rarity) = 'diamond' "
             f"AND uc.listed_price IS NULL AND uc.swap_listed = 0 "
             f"AND uc.staked_at IS NULL AND uc.pvp_round_id IS NULL AND uc.voided = 0 "
             f"AND NOT EXISTS (SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = uc.id AND ng.drawn_at IS NULL)",

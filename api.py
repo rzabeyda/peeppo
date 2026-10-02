@@ -187,6 +187,11 @@ class RedBlackPlayBody(InitDataBody):
     choice: str
 
 
+class PlinkoPlayBody(InitDataBody):
+    bet: int
+    risk: str
+
+
 class AviatorStartBody(InitDataBody):
     bet: int
 
@@ -763,6 +768,41 @@ def swap_history(body: InitDataBody):
     return {"trades": db.get_swap_history()}
 
 
+# ---------------------------------------------------------------------------
+# Blind swap -- no specific listing to pick, just a rarity. Put up one card,
+# get back whatever the next matching player put up for the same rarity.
+# ---------------------------------------------------------------------------
+
+@app.post("/api/blindswap/status")
+def blindswap_status(body: InitDataBody):
+    user = _authenticate(body.initData)
+    return {"listings": db.get_blind_swap_status(user["telegram_id"])}
+
+
+@app.post("/api/blindswap/list")
+async def blindswap_list(body: SwapListBody):
+    user = _authenticate(body.initData)
+    result = db.list_for_blind_swap(body.user_card_id, user["telegram_id"])
+    if result is None:
+        raise HTTPException(400, "card not found in your inventory, busy, or you already have a pending blind listing for this rarity")
+    if result["matched"]:
+        import bot as bot_module
+        my_photo = os.path.join(STATIC_DIR, "cards", result["received_filename"])
+        partner_photo = os.path.join(STATIC_DIR, "cards", result["given_filename"])
+        await bot_module.notify_blind_swap_match(user["telegram_id"], result["given_name"], result["received_name"], my_photo)
+        await bot_module.notify_blind_swap_match(result["partner_id"], result["received_name"], result["given_name"], partner_photo)
+    return result
+
+
+@app.post("/api/blindswap/unlist")
+def blindswap_unlist(body: SwapListBody):
+    user = _authenticate(body.initData)
+    ok = db.unlist_blind_swap(body.user_card_id, user["telegram_id"])
+    if not ok:
+        raise HTTPException(404, "listing not found, or already matched")
+    return {"ok": True}
+
+
 @app.post("/api/pvp/history")
 def pvp_history(body: InitDataBody):
     _authenticate(body.initData)
@@ -774,21 +814,21 @@ def pvp_leaderboard(body: InitDataBody):
     """Top-10 by total PvP round wins, for the "Топ 10" tab next to Правила/История.
     ADMIN_ID (if set) is left out, same as the /ref referral leaderboard."""
     _authenticate(body.initData)
-    return {"leaderboard": db.get_pvp_win_leaderboard(10, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)}
+    return {"leaderboard": db.get_pvp_win_leaderboard(12, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)}
 
 
 @app.post("/api/pvp/leaderboard/cards")
 def pvp_leaderboard_cards(body: InitDataBody):
     """Top-10 by total cards captured from opponents across all won PvP rounds."""
     _authenticate(body.initData)
-    return {"leaderboard": db.get_pvp_cards_won_leaderboard(10, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)}
+    return {"leaderboard": db.get_pvp_cards_won_leaderboard(12, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)}
 
 
 @app.post("/api/pvp/leaderboard/diamond")
 def pvp_leaderboard_diamond(body: InitDataBody):
     """Top-10 by total DIAMOND-rarity cards captured from opponents across all won PvP rounds."""
     _authenticate(body.initData)
-    return {"leaderboard": db.get_pvp_diamond_cards_won_leaderboard(10, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)}
+    return {"leaderboard": db.get_pvp_diamond_cards_won_leaderboard(12, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)}
 
 
 @app.post("/api/redblack/play")
@@ -799,6 +839,18 @@ def redblack_play(body: RedBlackPlayBody):
     try:
         return db.play_redblack(user["telegram_id"], body.bet, body.choice)
     except db.RedBlackError as e:
+        raise HTTPException(400, str(e))
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
+
+
+@app.post("/api/plinko/play")
+def plinko_play(body: PlinkoPlayBody):
+    """One Plinko drop -- see play_plinko() for the full mechanic."""
+    user = _authenticate(body.initData)
+    try:
+        return db.play_plinko(user["telegram_id"], body.bet, body.risk)
+    except db.PlinkoError as e:
         raise HTTPException(400, str(e))
     except db.InsufficientGems:
         raise HTTPException(400, "not enough gems")
@@ -911,7 +963,13 @@ def mines_history(body: InitDataBody):
 @app.post("/api/mines/leaderboard")
 def mines_leaderboard(body: InitDataBody):
     _authenticate(body.initData)
-    return {"leaderboard": db.get_mines_leaderboard(10)}
+    return {"leaderboard": db.get_mines_leaderboard(12)}
+
+
+@app.post("/api/withdrawals/top")
+def withdrawals_top(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"leaderboard": db.get_recent_gem_withdrawals(5)}
 
 
 @app.post("/api/poker/deal")
@@ -968,7 +1026,7 @@ def poker_history(body: InitDataBody):
 @app.post("/api/poker/leaderboard")
 def poker_leaderboard(body: InitDataBody):
     _authenticate(body.initData)
-    return {"leaderboard": db.get_poker_leaderboard(10)}
+    return {"leaderboard": db.get_poker_leaderboard(12)}
 
 
 @app.post("/api/redblack/history")
@@ -980,7 +1038,19 @@ def redblack_history(body: InitDataBody):
 @app.post("/api/redblack/leaderboard")
 def redblack_leaderboard(body: InitDataBody):
     _authenticate(body.initData)
-    return {"leaderboard": db.get_redblack_leaderboard(10)}
+    return {"leaderboard": db.get_redblack_leaderboard(12)}
+
+
+@app.post("/api/plinko/history")
+def plinko_history(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"rounds": db.get_plinko_history()}
+
+
+@app.post("/api/plinko/leaderboard")
+def plinko_leaderboard(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"leaderboard": db.get_plinko_leaderboard(12)}
 
 
 @app.post("/api/aviator/history")
@@ -992,7 +1062,7 @@ def aviator_history(body: InitDataBody):
 @app.post("/api/aviator/leaderboard")
 def aviator_leaderboard(body: InitDataBody):
     _authenticate(body.initData)
-    return {"leaderboard": db.get_aviator_leaderboard(10)}
+    return {"leaderboard": db.get_aviator_leaderboard(12)}
 
 
 @app.post("/api/games/share")
@@ -1094,10 +1164,16 @@ async def _announce_collection_completions(user: dict, collection_names: list[st
 async def collections_overview(body: InitDataBody):
     user = _authenticate(body.initData)
     collections = db.get_collections_overview(user["telegram_id"])
-    await _announce_collection_completions(
-        user, [c["name"] for c in collections if c.get("just_completed")]
-    )
-    return {"collections": collections}
+    just_completed_names = [c["name"] for c in collections if c.get("just_completed")]
+    await _announce_collection_completions(user, just_completed_names)
+    response = {"collections": collections}
+    # A just-completed collection just paid out COLLECTION_COMPLETE_REWARD_GEMS gems
+    # (see _maybe_complete_collection()) -- re-read the live balance so the client can
+    # show the new total right away instead of waiting for the next unrelated gems-returning
+    # call to refresh it.
+    if just_completed_names:
+        response["gems"] = db.get_gems(user["telegram_id"])
+    return response
 
 
 @app.post("/api/collections/detail")
@@ -1109,6 +1185,7 @@ async def collections_detail(body: CollectionDetailBody):
         raise HTTPException(404, str(e))
     if detail.get("just_completed"):
         await _announce_collection_completions(user, [detail["name"]])
+        detail["gems"] = db.get_gems(user["telegram_id"])
     return detail
 
 
@@ -1121,6 +1198,7 @@ async def collections_place(body: CollectionPlaceBody):
         raise HTTPException(400, str(e))
     if result.get("newly_completed") and result.get("collection_name"):
         await _announce_collection_completions(user, [result["collection_name"]])
+        result["gems"] = db.get_gems(user["telegram_id"])
     return result
 
 

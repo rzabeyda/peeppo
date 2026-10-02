@@ -217,18 +217,17 @@ async def handle_admin_panel(message: Message):
         "👑 <b>Админ-панель Peeppo</b>\n",
         f"Юзеры: <b>{stats['users']}</b>",
         f"Сегодня: <b>{stats['active_today']}</b>",
-        f"Фармили сегодня: <b>{stats['farmers_today']}</b>",
-        f"Карты: <b>{stats['total_farmed']}</b>",
+        "",
         f"Фарм: <b>{stats['farms_pressed']}</b>",
-        f"Кейсы: <b>{stats['cases_bought']}</b>",
-        f"Крафт: <b>{stats['cards_crafted']}</b>",
         f"Эволюция: <b>{stats['cards_evolved']}</b>",
+        f"Крафт: <b>{stats['cards_crafted']}</b>",
+        f"Кейсы: <b>{stats['cases_bought']}</b>",
         f"Стейки: <b>{stats['cards_staked']}</b>",
         "",
         "📊 <b>Статистика казны по всем играм</b>\n",
     ]
     all_stats = db.get_all_house_stats()
-    for key in ("mines", "redblack", "aviator", "poker"):
+    for key in ("redblack", "mines", "aviator", "poker", "plinko"):
         lines.append(_house_stats_line(key, all_stats[key]))
     await message.answer("\n".join(lines), parse_mode="HTML")
 
@@ -271,6 +270,7 @@ _HOUSE_STATS_LABELS = {
     "redblack": ("🔴⚫", "Red&Black", 100),
     "aviator": ("🚀", "Ракетка", 97),
     "poker": ("🃏", "Покер", None),
+    "plinko": ("🎱", "Плинко", 97),
 }
 
 
@@ -287,7 +287,7 @@ async def handle_house_stats(message: Message):
         return
     all_stats = db.get_all_house_stats()
     lines = ["📊 <b>Статистика казны по всем играм</b>\n"]
-    for key in ("mines", "redblack", "aviator", "poker"):
+    for key in ("redblack", "mines", "aviator", "poker", "plinko"):
         lines.append(_house_stats_line(key, all_stats[key]))
     await message.answer("\n".join(lines), parse_mode="HTML")
 
@@ -304,6 +304,21 @@ async def handle_top_stakers(message: Message):
     for i, r in enumerate(rows, 1):
         name = f"@{r['username']}" if r['username'] else (r['first_name'] or f"id{r['telegram_id']}")
         lines.append(f"{i}. {name} — <b>{r['staking_gems_earned']}</b> 💎")
+    await message.answer("\n".join(lines), parse_mode="HTML")
+
+
+@dp.message(Command("topdonors"))
+async def handle_top_donors(message: Message):
+    if not _is_admin(message.from_user.id):
+        return
+    rows = db.get_top_stars_donors(5)
+    if not rows:
+        await message.answer("Пока нет ни одной Stars-покупки с момента добавления учёта.")
+        return
+    lines = ["⭐ <b>Топ-5 донатеров (Telegram Stars)</b>\n"]
+    for i, r in enumerate(rows, 1):
+        name = f"@{r['username']}" if r['username'] else (r['first_name'] or f"id{r['telegram_id']}")
+        lines.append(f"{i}. {name} — <b>{r['total_stars']}</b> ⭐ ({r['purchases']} покупок)")
     await message.answer("\n".join(lines), parse_mode="HTML")
 
 
@@ -375,7 +390,12 @@ async def handle_admin_find_user(message: Message):
     )
 
 
-GEM_DROP_AMOUNT = 25
+GEM_DROP_AMOUNT = 25  # still the default for the manual /gem command when no amount is picked
+
+# The automatic hourly scheduler no longer posts a flat GEM_DROP_AMOUNT every time --
+# it rolls a random amount in this range per drop (see gem_drop_scheduler() below).
+GEM_DROP_MIN_AMOUNT = 15
+GEM_DROP_MAX_AMOUNT = 25
 
 # Auto-scheduler: fires roughly once every hour, only during the active window
 # 06:00-02:00 Tallinn time (quiet 02:00-06:00) -- the window WRAPS past midnight, see
@@ -423,8 +443,12 @@ async def handle_admin_gem_drop(message: Message):
 async def gem_drop_scheduler():
     """Background loop living for the lifetime of the bot process: roughly once every
     hour, round the clock — if no drop went out too recently — posts an automatic
-    GEM_DROP_AMOUNT-gem drop into PUBLIC_CHAT."""
-    logger.info("gem drop scheduler started (06:00-02:00 Tallinn, ~every 1h, %d gems)", GEM_DROP_AMOUNT)
+    gem drop (a random amount between GEM_DROP_MIN_AMOUNT and GEM_DROP_MAX_AMOUNT,
+    rolled fresh each time) into PUBLIC_CHAT."""
+    logger.info(
+        "gem drop scheduler started (06:00-02:00 Tallinn, ~every 1h, %d-%d gems)",
+        GEM_DROP_MIN_AMOUNT, GEM_DROP_MAX_AMOUNT,
+    )
     while True:
         try:
             now_local = datetime.now(GEM_DROP_TZ)
@@ -441,12 +465,66 @@ async def gem_drop_scheduler():
                     last_dt = datetime.fromisoformat(last)
                     due = (datetime.now(timezone.utc) - last_dt).total_seconds() >= GEM_DROP_MIN_GAP_SECONDS
                 if due:
-                    ok = await _post_gem_drop()
+                    amount = random.randint(GEM_DROP_MIN_AMOUNT, GEM_DROP_MAX_AMOUNT)
+                    ok = await _post_gem_drop(amount=amount)
                     if ok:
-                        logger.info("auto gem drop posted at %s Tallinn time", now_local.strftime("%H:%M"))
+                        logger.info(
+                            "auto gem drop posted at %s Tallinn time (%d gems)",
+                            now_local.strftime("%H:%M"), amount,
+                        )
         except Exception:
             logger.exception("gem drop scheduler iteration failed")
         await asyncio.sleep(GEM_DROP_INTERVAL_SECONDS + random.randint(-180, 180))
+
+
+# Daily 100-gem airdrop: separate from the hourly 25-gem drops above -- same
+# claim mechanic (_post_gem_drop/"Забрать" button/claim_gem_drop), its own cadence
+# (get_last_gem_drop_time_by_amount(100), not the shared get_last_gem_drop_time()),
+# and a narrow 06:00-10:00 Tallinn window instead of the almost-round-the-clock one.
+# Fires exactly once per day, at a random moment inside the window rather than always
+# right at 06:00 -- the per-check firing probability rises as the window gets closer to
+# closing, so it stays unpredictable while still guaranteeing it goes out before 10:00.
+GEM_DROP_100_AMOUNT = 100
+GEM_DROP_100_TZ = ZoneInfo("Europe/Tallinn")
+GEM_DROP_100_START_HOUR = 6
+GEM_DROP_100_END_HOUR = 10
+GEM_DROP_100_CHECK_INTERVAL_SECONDS = 300  # check every 5 min while the window is open
+
+
+async def gem_drop_100_scheduler():
+    """Background loop living for the lifetime of the bot process: once a day, at a
+    random moment between 06:00 and 10:00 Tallinn time, posts an automatic
+    GEM_DROP_100_AMOUNT-gem drop into PUBLIC_CHAT -- independent of (and does not
+    replace) the regular hourly GEM_DROP_AMOUNT-gem drops from gem_drop_scheduler()."""
+    logger.info(
+        "100-gem daily airdrop scheduler started (06:00-10:00 Tallinn, once/day, %d gems)",
+        GEM_DROP_100_AMOUNT,
+    )
+    while True:
+        try:
+            now_local = datetime.now(GEM_DROP_100_TZ)
+            in_window = GEM_DROP_100_START_HOUR <= now_local.hour < GEM_DROP_100_END_HOUR
+            if in_window:
+                last = db.get_last_gem_drop_time_by_amount(GEM_DROP_100_AMOUNT)
+                already_today = False
+                if last:
+                    last_dt = datetime.fromisoformat(last)
+                    if last_dt.tzinfo is None:
+                        last_dt = last_dt.replace(tzinfo=timezone.utc)
+                    already_today = last_dt.astimezone(GEM_DROP_100_TZ).date() == now_local.date()
+                if not already_today:
+                    minutes_left = (GEM_DROP_100_END_HOUR - now_local.hour) * 60 - now_local.minute
+                    checks_left = max(1, minutes_left // (GEM_DROP_100_CHECK_INTERVAL_SECONDS // 60))
+                    if random.random() < 1 / checks_left:
+                        ok = await _post_gem_drop(amount=GEM_DROP_100_AMOUNT, label="🎁 Дневной аирдроп")
+                        if ok:
+                            logger.info(
+                                "100-gem daily airdrop posted at %s Tallinn time",
+                                now_local.strftime("%H:%M"),
+                            )
+        except Exception:
+            logger.exception("100-gem airdrop scheduler iteration failed")
+        await asyncio.sleep(GEM_DROP_100_CHECK_INTERVAL_SECONDS)
 
 
 @dp.callback_query(F.data.startswith("gem_claim:"))
@@ -1060,11 +1138,13 @@ async def handle_successful_payment(message: Message):
         gems = int(gems_str)
         new_balance = db.add_gems(int(uid_str), gems)
         await message.answer(f"Зачислено {gems} 💎! Баланс: {new_balance} 💎")
+        db.log_stars_payment(int(uid_str), stars, f"{gems} гемов")
         await notify_admin_payment(message.from_user, stars, f"{gems} гемов")
     elif payload.startswith("rank:"):
         _, uid_str, rank = payload.split(":")
         new_rank = db.set_purchased_rank(int(uid_str), rank)
         await message.answer(f"Ранг {new_rank.upper()} куплен! 🏆")
+        db.log_stars_payment(int(uid_str), stars, f"ранг {new_rank.upper()}")
         await notify_admin_payment(message.from_user, stars, f"ранг {new_rank.upper()}")
 
 
@@ -1164,6 +1244,19 @@ async def handle_offer_decline(call: CallbackQuery):
 # Display order for the grouped-by-rarity swap offer message — low to high, matching
 # how the seller reads it: "what's on the table" from least to most valuable.
 SWAP_RARITY_ORDER = ["bronze", "silver", "gold", "platinum", "diamond"]
+
+
+async def notify_blind_swap_match(user_id: int, given_name: str | None, received_name: str | None, received_photo_path: str):
+    given = given_name or "картинка"
+    received = received_name or "картинка"
+    try:
+        await bot.send_photo(
+            chat_id=user_id,
+            photo=FSInputFile(received_photo_path),
+            caption=f"🔀 Слепой обмен состоялся! Отдал «{given}» — получил «{received}».",
+        )
+    except Exception:
+        logger.warning("could not notify %s of a blind swap match", user_id)
 
 
 async def notify_new_swap_offer(seller_id: int, offer_id: int, buyer_name: str, listing_name: str | None,
@@ -2123,6 +2216,7 @@ async def main():
     await check_hundred_club()  # in case we already had 100+ users before this deploy
     await refund_all_active_aviator_rounds()  # clean up any /go left frozen by the restart that's happening right now
     asyncio.create_task(gem_drop_scheduler())
+    asyncio.create_task(gem_drop_100_scheduler())
     asyncio.create_task(giveaway_scheduler())
     asyncio.create_task(ref_race_scheduler())
     asyncio.create_task(referral_chat_verification_scheduler())
