@@ -6731,12 +6731,15 @@ def get_aviator_history(limit: int = 50) -> list[dict]:
         return [dict(r) for r in rows]
 
 
-def get_recent_gem_withdrawals(limit: int = 5) -> list[dict]:
-    """The most recently completed (status='paid') gem/Diamond-card withdrawals, newest
-    first -- shown to players in the gems modal as social proof that payouts are real.
-    Same LEADERBOARD_EXCLUDED_USERNAMES convention as every other leaderboard."""
+def get_recent_gem_withdrawals(limit: int | None = None) -> list[dict]:
+    """Every completed (status='paid') gem/Diamond-card withdrawal, newest first -- shown
+    to players in the gems modal as social proof that payouts are real. Pass `limit` to
+    cap the result; omit it (default) to return the full history. Same
+    LEADERBOARD_EXCLUDED_USERNAMES convention as every other leaderboard."""
     with get_conn() as conn:
         excl_placeholders = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        limit_sql = " LIMIT ?" if limit is not None else ""
+        params = (*LEADERBOARD_EXCLUDED_USERNAMES, *( [limit] if limit is not None else [] ))
         rows = conn.execute(
             f"""
             SELECT cw.user_id AS telegram_id, u.username AS username, u.first_name AS first_name,
@@ -6744,9 +6747,9 @@ def get_recent_gem_withdrawals(limit: int = 5) -> list[dict]:
             FROM crypto_withdrawals cw JOIN users u ON u.telegram_id = cw.user_id
             WHERE cw.status = 'paid'
             AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})
-            ORDER BY cw.resolved_at DESC LIMIT ?
+            ORDER BY cw.resolved_at DESC{limit_sql}
             """,
-            (*LEADERBOARD_EXCLUDED_USERNAMES, limit),
+            params,
         ).fetchall()
         return [dict(r) for r in rows]
 

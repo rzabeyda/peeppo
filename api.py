@@ -969,7 +969,7 @@ def mines_leaderboard(body: InitDataBody):
 @app.post("/api/withdrawals/top")
 def withdrawals_top(body: InitDataBody):
     _authenticate(body.initData)
-    return {"leaderboard": db.get_recent_gem_withdrawals(5)}
+    return {"leaderboard": db.get_recent_gem_withdrawals()}
 
 
 @app.post("/api/poker/deal")

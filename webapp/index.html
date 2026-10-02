@@ -1098,7 +1098,7 @@
   .pvp-timer{font-size:13px; font-weight:700; color:#ccc; min-width:0; text-align:center;}
   .pvp-timer.counting{color:var(--accent2);}
   #pvp-join-btn{
-    background:#22c55e; color:#fff; border:none; border-radius:12px;
+    background:#fff; color:#000; border:none; border-radius:12px;
     padding:12px 14px; font-size:13px; font-weight:800; cursor:pointer;
     width:100%; margin-top:10px;
   }
@@ -1731,6 +1731,7 @@
   #pvp-mode-switch .mode-switch-btn[data-mode="aviator"].active{background:rgba(250,204,21,.18); color:#facc15;}
   #pvp-mode-switch .mode-switch-btn[data-mode="mines"].active{background:rgba(249,115,22,.18); color:#f97316;}
   #pvp-mode-switch .mode-switch-btn[data-mode="poker"].active{background:rgba(59,130,246,.18); color:#3b82f6;}
+  #pvp-mode-switch .mode-switch-btn[data-mode="plinko"].active{background:rgba(255,255,255,.28); color:#fff;}
   .mode-switch-icon{
     width:22px; height:22px; object-fit:contain; display:block; margin:0 auto;
     opacity:.5; filter:grayscale(100%);
@@ -1813,7 +1814,7 @@
     flex:1; padding:9px 0; border-radius:10px; border:1px solid var(--card-border);
     background:rgba(255,255,255,.05); color:#888; font-weight:800; font-size:12px; cursor:pointer;
   }
-  .plinko-risk-row button.active{background:rgba(255,45,149,.18); color:#ff2d95; border-color:#ff2d95;}
+  .plinko-risk-row button.active{background:rgba(59,130,246,.18); color:#3b82f6; border-color:#3b82f6;}
   .plinko-board{
     position:relative; width:100%; max-width:300px; height:220px;
     margin:10px auto; background:#111; border:1px solid var(--card-border);
@@ -2238,7 +2239,7 @@
   #farm-result-name.chance-hint .bronze{color:#cd7f32;}
 
   /* ---------- Leaderboard ("Топы") overlay ---------- */
-  #tops-overlay{
+  #tops-overlay, #withdrawals-overlay{
     position:absolute; inset:0;
     background:rgba(0,0,0,.94);
     display:none;
@@ -2246,10 +2247,10 @@
     padding:20px 16px calc(20px + env(safe-area-inset-bottom));
     overflow-y:auto;
   }
-  #tops-overlay.active{display:block;}
-  #tops-card{position:relative; max-width:480px; margin:0 auto;}
-  #tops-head{display:flex; align-items:center; gap:8px; margin:0 2px 14px;}
-  #tops-title{font-size:12px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:.6px; margin:0; flex:1;}
+  #tops-overlay.active, #withdrawals-overlay.active{display:block;}
+  #tops-card, #withdrawals-card{position:relative; max-width:480px; margin:0 auto;}
+  #tops-head, #withdrawals-head{display:flex; align-items:center; gap:8px; margin:0 2px 14px;}
+  #tops-title, #withdrawals-title{font-size:12px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:.6px; margin:0; flex:1;}
   .tops-row{
     display:flex; align-items:center; gap:12px;
     background:var(--card-bg);
@@ -2580,7 +2581,8 @@
   }
   #gems-choice-card button:active{transform:scale(.97);}
   #gems-choice-buy{background:#facc15; color:#1a1a1a;}
-  #gems-choice-sell{background:#3b82f6; color:#fff;}
+  #gems-choice-sell{background:#ff2d95; color:#fff;}
+  #gems-choice-withdrawals{background:#fff; color:#000;}
   #gems-choice-cancel{background:#000; color:#fff; margin-bottom:0;}
 
   #referral-overlay{
@@ -3453,6 +3455,7 @@
       <div id="gems-choice-title"><img src="/static/icons/diamond.png" alt="">Гемы</div>
       <button id="gems-choice-buy">Купить Гемы за Звёзды</button>
       <button id="gems-choice-sell">Продать Diamond за Звёзды</button>
+      <button id="gems-choice-withdrawals">История выплат</button>
       <button id="gems-choice-cancel">Закрыть</button>
     </div>
   </div>
@@ -3851,6 +3854,16 @@
         <button class="tops-switch-btn" data-metric="diamond">Diamond</button>
       </div>
       <div id="tops-list"></div>
+    </div>
+  </div>
+
+  <div id="withdrawals-overlay">
+    <div id="withdrawals-card">
+      <div id="withdrawals-head">
+        <div id="withdrawals-title">История выплат</div>
+        <button class="panel-close" id="withdrawals-close">✕</button>
+      </div>
+      <div id="withdrawals-list"></div>
     </div>
   </div>
 
@@ -4264,6 +4277,16 @@ document.getElementById("gems-choice-sell").addEventListener("click", async ()=>
     return;
   }
   openGramPicker();
+});
+document.getElementById("gems-choice-withdrawals").addEventListener("click", async ()=>{
+  document.getElementById("gems-choice-overlay").classList.remove("active");
+  try{
+    const data = await api("/withdrawals/top");
+    renderWithdrawalsList(data.leaderboard || []);
+    document.getElementById("withdrawals-overlay").classList.add("active");
+  }catch(e){
+    toast("Не удалось загрузить историю: " + e.message);
+  }
 });
 
 // ---------- GRAM withdrawal picker (10 Diamond cards = 1 GRAM, multiples of 10 only) ----------
@@ -7199,6 +7222,30 @@ document.getElementById("tops-close").addEventListener("click", ()=>{
 document.getElementById("tops-overlay").addEventListener("click", (e)=>{
   if(e.target.id === "tops-overlay"){
     document.getElementById("tops-overlay").classList.remove("active");
+  }
+});
+
+function renderWithdrawalsList(rows){
+  const list = document.getElementById("withdrawals-list");
+  if(!rows || rows.length === 0){
+    list.innerHTML = `<div class="empty-state">Пока никто не выводил</div>`;
+    return;
+  }
+  list.innerHTML = rows.map((r, i) => `
+    <div class="tops-row">
+      <div class="tops-rank ${i===0?'top1':i===1?'top2':i===2?'top3':''}">${i+1}</div>
+      <div class="tops-avatar">${(maskedName(r.username) || r.first_name || "?")[0].toUpperCase()}</div>
+      <div class="tops-name">${maskedName(r.username) || r.first_name || "Игрок"}<div style="font-weight:500; font-size:10px; color:#888; white-space:nowrap;">${fmtHistoryDate(r.resolved_at)}</div></div>
+      <div class="tops-count">${r.gram_amount} Stars</div>
+    </div>
+  `).join("");
+}
+document.getElementById("withdrawals-close").addEventListener("click", ()=>{
+  document.getElementById("withdrawals-overlay").classList.remove("active");
+});
+document.getElementById("withdrawals-overlay").addEventListener("click", (e)=>{
+  if(e.target.id === "withdrawals-overlay"){
+    document.getElementById("withdrawals-overlay").classList.remove("active");
   }
 });
 
