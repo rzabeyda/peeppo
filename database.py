@@ -599,6 +599,7 @@ def get_action_counters() -> dict[str, int]:
         "cards_evolved": counts.get("evolve", 0),
         "farms_pressed": counts.get("farm", 0),
         "cards_staked": counts.get("stake", 0),
+        "blind_swaps_completed": counts.get("blind_swap_completed", 0),
     }
 
 
@@ -1805,7 +1806,7 @@ def get_aviator_house_stats() -> dict:
 # fixed, since historical base_payout/current_payout values are frozen at whatever
 # was correct the day each round was played. This resets the DISPLAYED stat only --
 # no rows are deleted, individual round history (get_poker_history()) is untouched.
-POKER_STATS_RESET_AT = "2026-10-01T15:35:45.048607+00:00"
+POKER_STATS_RESET_AT = "2026-10-03T05:54:42.468543+00:00"  # bumped 2026-10-03: see the bonus-rung bet-scaling fix above
 
 
 def get_poker_house_stats() -> dict:
@@ -1960,7 +1961,28 @@ POKER_PAYTABLE = {
 # see gamble_poker() for the exact formula. Confirmed against examples given: level6
 # 2400 -> 5000, 7200 -> 15000, 18500 -> 40000 (all = ceil(level6*2/5000)*5000).
 POKER_DOUBLE_MULTIPLIERS = [2, 4, 8, 16, 32, 64]  # levels 1-6 only -- fixed cumulative multiplier off the base
-POKER_BONUS_ROUND_TO = 5000
+
+
+def _poker_nice_round_up(value: int) -> int:
+    """Rounds `value` UP to the nearest "nice" number from the 1-2-5 x 10^n family
+    (..., 100, 200, 500, 1000, 2000, 5000, 10000, ...). Used for the poker gamble
+    ladder's bonus (7th) rung so the jackpot always lands on a clean-looking number,
+    regardless of the underlying bet/hand size. FIXED 2026-10-03: replaces an earlier
+    flat POKER_BONUS_ROUND_TO=5000 floor, which let a bet=1 round that reached the
+    bonus rung always round UP to a full 5000 -- a 5000x payout on a 1-gem bet. One
+    player farmed this repeatedly (8x, +40000 gems off an 8-gem total stake) and
+    dragged Poker's RTP to 1654%. A same-magnitude bet-scaling pass after that still
+    didn't give the clean numbers wanted (e.g. level6=192 -> 500, level6=256 -> 1000),
+    hence this fully bet-independent nice-number snap instead."""
+    if value <= 0:
+        return 0
+    exp = 0
+    while True:
+        for base in (1, 2, 5):
+            candidate = base * (10 ** exp)
+            if candidate >= value:
+                return candidate
+        exp += 1
 POKER_MAX_GAMBLES = len(POKER_DOUBLE_MULTIPLIERS) + 1  # 7 -- the 7th ("bonus") rung is computed dynamically, once here must collect
 POKER_DOUBLE_JOKER_CHANCE = 0.0  # disabled 2026-09-29: an independent guaranteed-win
 # chance stacked ON TOP of the fair 50/50 flip gave every un-used gamble step a real
@@ -2177,10 +2199,12 @@ def gamble_poker(round_id: int, user_id: int, choice: str) -> dict:
         if won:
             if new_level == POKER_MAX_GAMBLES:
                 # Bonus (7th) rung: not a fixed multiplier off the base -- roughly
-                # double whatever level 6 actually paid, rounded UP to a clean number.
+                # double whatever level 6 actually paid, snapped UP to the nearest nice
+                # number (see _poker_nice_round_up()'s comment for why this isn't a
+                # flat or bet-scaled round-to anymore).
                 level6_payout = row["base_payout"] * POKER_DOUBLE_MULTIPLIERS[-1]
                 doubled = level6_payout * 2
-                new_payout = -(-doubled // POKER_BONUS_ROUND_TO) * POKER_BONUS_ROUND_TO  # ceil division
+                new_payout = _poker_nice_round_up(doubled)
             else:
                 new_payout = row["base_payout"] * POKER_DOUBLE_MULTIPLIERS[new_level - 1]
             increment = new_payout - current
@@ -5641,6 +5665,7 @@ def list_for_blind_swap(user_card_id: int, user_id: int) -> dict | None:
             "DELETE FROM blind_swap_listings WHERE user_id = ? AND user_card_id = ?",
             (user_id, user_card_id),
         )
+        _bump_counter(conn, "blind_swap_completed")
 
         return {
             "matched": True,
@@ -6023,6 +6048,31 @@ def get_unverified_ref_candidates(limit: int = 300) -> list[int]:
             (limit,),
         ).fetchall()
         return [row["telegram_id"] for row in rows]
+
+
+def user_has_farmed(user_id: int) -> bool:
+    """True once this player has at least one card in user_cards (farmed, crafted, or
+    otherwise obtained -- same "proves a real person" signal farm()'s referral-payout
+    gate and get_unverified_ref_candidates() use)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM user_cards WHERE user_id = ? LIMIT 1", (user_id,)
+        ).fetchone()
+    return row is not None
+
+
+def mark_chat_member_seen(user_id: int) -> None:
+    """Called the INSTANT a real-time Telegram event tells us this player just joined
+    PUBLIC_CHAT (see bot.py's on_chat_member_update) -- not the periodic ~2min poll.
+    Only flips the flag; does NOT pay a referral reward itself, even if one is pending.
+    That split matters: without it, a freshly-signed-up (never farmed) bot/alt account
+    could join the chat the instant it's created and get its referrer paid before ever
+    playing, defeating the whole anti-bot point of gating on a real farm. farm() already
+    checks this flag and pays immediately if a farm happens after this fires; for the
+    reverse order (already farmed, chat join is the last box), the caller here also
+    calls mark_chat_verified() when user_has_farmed() is already true."""
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET chat_member_verified = 1 WHERE telegram_id = ?", (user_id,))
 
 
 def mark_chat_verified(user_id: int) -> None:

@@ -30,6 +30,7 @@ from aiogram.types import (
     ReplyKeyboardRemove,
     BotCommand,
     CallbackQuery,
+    ChatMemberUpdated,
     ForceReply,
     FSInputFile,
     InlineQuery,
@@ -223,6 +224,7 @@ async def handle_admin_panel(message: Message):
         f"Крафт: <b>{stats['cards_crafted']}</b>",
         f"Кейсы: <b>{stats['cases_bought']}</b>",
         f"Стейки: <b>{stats['cards_staked']}</b>",
+        f"Обмен (рандом): <b>{stats['blind_swaps_completed']}</b>",
         "",
         "📊 <b>Статистика казны по всем играм</b>\n",
     ]
@@ -1635,6 +1637,42 @@ async def send_pvp_invite(name: str) -> bool:
 # one-time scheduled message re-posts the same leaderboard at REF_RACE_ANNOUNCE_AT.
 # ---------------------------------------------------------------------------
 
+def _is_public_chat(chat) -> bool:
+    """PUBLIC_CHAT is normally an @username string (e.g. "@peeppo_chat") but could be
+    configured as a numeric chat id -- match either way."""
+    if PUBLIC_CHAT.lstrip("@").lower() == (chat.username or "").lower():
+        return True
+    return str(chat.id) == PUBLIC_CHAT
+
+
+@dp.chat_member()
+async def on_chat_member_update(update: ChatMemberUpdated):
+    """Real-time companion to sync_referral_chat_verification()'s periodic poll --
+    Telegram pushes this the moment someone's membership status in a chat the bot is
+    in changes, so a referral's join is caught instantly instead of only if the next
+    ~2min poll happens to still see them as a member. FIXED 2026-10-03: without this,
+    someone who joined PUBLIC_CHAT and left again inside one poll window would never
+    get their referrer paid at all -- the next poll would just see "left" with no way
+    to tell that from "never joined".
+    Still anti-bot safe: a fresh account that's never farmed only gets the
+    chat_member_verified flag flipped here (mark_chat_member_seen), not paid -- farm()
+    pays out later once they actually farm. Only an account that's ALREADY farmed gets
+    paid right here (mark_chat_verified), matching the existing "last box ticked"
+    design in mark_chat_verified()'s own docstring."""
+    if not _is_public_chat(update.chat):
+        return
+    if update.new_chat_member.status not in ("member", "administrator", "creator"):
+        return
+    user_id = update.new_chat_member.user.id
+    try:
+        if db.user_has_farmed(user_id):
+            db.mark_chat_verified(user_id)
+        else:
+            db.mark_chat_member_seen(user_id)
+    except Exception:
+        logger.exception("on_chat_member_update failed for %s", user_id)
+
+
 async def sync_referral_chat_verification():
     """Spends one getChatMember call per not-yet-verified, already-farmed referral to
     check if they've joined PUBLIC_CHAT, and flags the ones who have. Cheap to call
@@ -1644,9 +1682,16 @@ async def sync_referral_chat_verification():
             member = await bot.get_chat_member(PUBLIC_CHAT, user_id)
             if member.status in ("member", "administrator", "creator"):
                 db.mark_chat_verified(user_id)
-        except Exception:
-            # not in the chat (yet), or we can't see them — just retried next time
-            pass
+        except Exception as e:
+            # A normal "not a member yet" response does NOT land here — it comes back
+            # as a successful call with status="left"/"kicked", handled by the if above.
+            # Only a REAL API problem (bad chat id, bot kicked/banned, network issue,
+            # rate limit) raises an exception. FIXED 2026-10-03: this used to be a bare
+            # `except: pass` that swallowed any such failure forever with zero trace,
+            # so a real outage would look identical to "nobody joined yet" with nothing
+            # in the logs to tell them apart. Now logged so a real break shows up in
+            # journalctl instead of silently never paying anyone out.
+            logger.warning("sync_referral_chat_verification: getChatMember failed for %s: %s", user_id, e)
 
 
 def format_ref_leaderboard(rows: list[dict]) -> str:

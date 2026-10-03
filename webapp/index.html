@@ -5794,12 +5794,25 @@ let pokerBaseWin = 0; // the payout at level 0 (right after Draw), before any do
 let pokerGambleLevel = 0; // how many successful doublings so far (0..POKER_LADDER_LEVELS)
 // Mirrors database.py's POKER_DOUBLE_MULTIPLIERS: 6 plain doublings off the base, then a
 // bonus final rung that's NOT a fixed multiplier -- it roughly doubles whatever level 6
-// paid and rounds UP to the nearest POKER_BONUS_ROUND_TO, see pokerBonusPayout() below.
+// paid and snaps UP to the nearest "nice" number (1-2-5 x 10^n: 200, 500, 1000, 2000,
+// 5000, ...), see pokerNiceRoundUp()/pokerBonusPayout() below. FIXED 2026-10-03: this
+// used to be a flat round-to-5000 floor, which let a bet=1 round reaching this rung
+// always round UP to a full 5000 -- a 5000x payout on a 1-gem bet.
 const POKER_DOUBLE_MULTIPLIERS = [2, 4, 8, 16, 32, 64];
-const POKER_BONUS_ROUND_TO = 5000;
 const POKER_LADDER_LEVELS = POKER_DOUBLE_MULTIPLIERS.length + 1;
+function pokerNiceRoundUp(value){
+  if(value <= 0) return 0;
+  let exp = 0;
+  while(true){
+    for(const base of [1, 2, 5]){
+      const candidate = base * Math.pow(10, exp);
+      if(candidate >= value) return candidate;
+    }
+    exp++;
+  }
+}
 function pokerBonusPayout(level6Payout){
-  return Math.ceil((level6Payout * 2) / POKER_BONUS_ROUND_TO) * POKER_BONUS_ROUND_TO;
+  return pokerNiceRoundUp(level6Payout * 2);
 }
 function pokerLadderAmount(lvl){
   return lvl === POKER_LADDER_LEVELS
