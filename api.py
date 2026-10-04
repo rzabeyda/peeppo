@@ -20,6 +20,7 @@ from urllib.parse import parse_qsl
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -50,6 +51,13 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.on_event("startup")
 def on_startup():
     db.init_db()
+
+
+@app.exception_handler(db.FeatureDisabled)
+async def feature_disabled_handler(request, exc):
+    """A switched-off feature (db.FEATURES) answers 503 "feature_disabled:<name>" no matter
+    which endpoint reached it -- the webapp shows a "temporarily unavailable" toast."""
+    return JSONResponse(status_code=503, content={"detail": f"feature_disabled:{exc.feature}"})
 
 
 # ---------------------------------------------------------------------------
@@ -361,6 +369,9 @@ def auth(body: InitDataBody):
         # a gap. Shown as the "День: N" tile in Profile (separate from bot_day, which
         # counts days the BOT has existed, not this player's own login streak).
         "streak": db.get_streak_info(user["telegram_id"]),
+        # Which game features are currently open (db.FEATURES) -- the webapp greys out
+        # / blocks the rest (farm, cases, craft, stake, evolve, Stars payout).
+        "features": db.get_features(),
     }
 
 

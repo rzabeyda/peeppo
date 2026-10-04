@@ -146,7 +146,8 @@
   }
   .farm-stage .drop-name{
     position:absolute; bottom:8px; left:50%; transform:translateX(-50%);
-    background:rgba(0,0,0,.7);
+    background:none;
+    text-shadow:0 1px 3px rgba(0,0,0,.9), 0 0 6px rgba(0,0,0,.7);
     color:#fff;
     font-size:12px; font-weight:800;
     padding:4px 10px; border-radius:8px;
@@ -334,7 +335,8 @@
     55%{transform:rotate(10deg) scale(1.1);}
   }
 
-  .farm-btn-wrap{position:relative; display:inline-block;}
+  /* ФАРМ sits at the bottom of the screen, right above the Mining/Cases/#/@ bar, BELOW the chances line */
+  .farm-btn-wrap{position:relative; display:inline-block; order:5; margin-top:auto; margin-bottom:76px;}
   #farm-btn{
     border:1px solid rgba(139,92,246,.5);
     padding:18px 56px;
@@ -1572,6 +1574,7 @@
   }
   .pvp-picker-rarity-btn.bronze{background:linear-gradient(135deg,#8c5a2b,#cd7f32); color:#fff8ee;}
   .pvp-picker-rarity-btn.silver{background:linear-gradient(135deg,#8e97a3,#e5e7eb); color:#1f2530;}
+  .pvp-picker-rarity-btn.obsidian{background:linear-gradient(135deg,#0a0a0a,#3a3a3a); color:#fff;}
   .pvp-picker-rarity-btn.gold{background:linear-gradient(135deg,#d4a017,#fde68a); color:#4a3500;}
   .pvp-picker-rarity-btn.platinum{background:linear-gradient(135deg,#7c3aed,#c4b5fd); color:#fff;}
   .pvp-picker-rarity-btn.diamond{background:linear-gradient(135deg,#ff2fb0,#ffb3ec); color:#3a0022;}
@@ -2063,6 +2066,8 @@
     overflow-y:auto;
   }
   #models-card{position:relative;}
+  .models-close-bottom{display:block; width:100%; margin:16px 0 8px; padding:14px; border-radius:12px; border:1px solid var(--card-border); background:var(--card-bg); color:#fff; font-size:14px; font-weight:800; cursor:pointer;}
+  .models-close-bottom:active{transform:scale(.97);}
   .panel-close{
     flex-shrink:0;
     background:var(--card-bg); border:1px solid var(--card-border); color:#fff;
@@ -2080,9 +2085,9 @@
     cursor:pointer; white-space:nowrap;
   }
   #models-sort:active{transform:scale(.95);}
-  #models-rarity-summary, #blind-swap-status-row{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:0 0 10px; font-size:12px; font-weight:800; letter-spacing:.2px; white-space:nowrap;}
+  #models-rarity-summary, #blind-swap-status-row{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin:0 0 10px; font-size:10px; font-weight:800; letter-spacing:.2px; white-space:nowrap;}
   #blind-swap-status-row.hidden{display:none;}
-  #models-rarity-summary span{cursor:pointer; padding:9px 6px; border-radius:10px; border:none; text-align:center; box-sizing:border-box; opacity:.55; transition:opacity .15s, box-shadow .15s;}
+  #models-rarity-summary span{cursor:pointer; padding:9px 2px; border-radius:10px; border:none; text-align:center; box-sizing:border-box; opacity:.55; transition:opacity .15s, box-shadow .15s;}
   #models-rarity-summary span:active{transform:scale(.96);}
   #models-rarity-summary span.active{opacity:1; box-shadow:0 0 0 2px rgba(255,255,255,.55);}
   #models-rarity-summary .obsidian{background:linear-gradient(135deg,#0a0a0a,#3a3a3a); color:#fff;}
@@ -2091,7 +2096,7 @@
   #models-rarity-summary .gold{background:linear-gradient(135deg,#d4a017,#fde68a); color:#4a3500;}
   #models-rarity-summary .silver{background:linear-gradient(135deg,#8e97a3,#e5e7eb); color:#1f2530;}
   #models-rarity-summary .bronze{background:linear-gradient(135deg,#8c5a2b,#cd7f32); color:#fff8ee;}
-  #blind-swap-status-row span{cursor:pointer; padding:9px 6px; border-radius:10px; border:none; text-align:center; box-sizing:border-box; background:rgba(255,255,255,.06); color:#999; transition:background .15s, color .15s;}
+  #blind-swap-status-row span{cursor:pointer; padding:9px 2px; border-radius:10px; border:none; text-align:center; box-sizing:border-box; background:rgba(255,255,255,.06); color:#999; transition:background .15s, color .15s;}
   #blind-swap-status-row span:active{transform:scale(.96);}
   #blind-swap-status-row span.active.obsidian{background:linear-gradient(135deg,#0a0a0a,#3a3a3a); color:#fff;}
   #blind-swap-status-row span.active.diamond{background:linear-gradient(135deg,#ff2fb0,#ffb3ec); color:#3a0022;}
@@ -2442,10 +2447,10 @@
     100%{box-shadow:0 0 0 0 rgba(74,222,128,0);}
   }
   .btn-craft:active{transform:scale(.97);}
-  .btn-back{background:rgba(255,255,255,.08); color:#ccc; width:100%; border:1px solid var(--card-border);}
-  .btn-custom{background:#000; color:#fff; border:1px solid #000;}
+  .btn-back{background:#000; color:#fff; width:100%; border:1px solid #000;}
+  .btn-custom{background:#fff; color:#000; border:1px solid #fff;}
   .btn-custom.disabled{background:#2a2a2a; color:#777; cursor:not-allowed; border-color:#2a2a2a;}
-  .btn-number{background:#3b82f6; color:#fff;}
+  .btn-number{background:#ec1fb8; color:#fff;}
   .btn-transfer{background:#3b82f6; color:#fff;}
   .btn-transfer.disabled{background:#2a2a2a; color:#777; cursor:not-allowed;}
   .btn-close{
@@ -2753,7 +2758,7 @@
       </div>
       <div id="farm-progress-wrap"><div id="farm-progress-bar"></div></div>
       <div id="farm-result-rarity"></div>
-      <div id="farm-result-name" class="chance-hint"><span class="diamond">DIAMOND 0.5%</span> · <span class="platinum">PLATINUM 4%</span> · <span class="gold">GOLD 16.5%</span><br><span class="silver">SILVER 29%</span> · <span class="bronze">BRONZE 50%</span></div>
+      <div id="farm-result-name" class="chance-hint"><span class="diamond">DIAMOND 0.5%</span> · <span class="platinum">PLATINUM 5%</span> · <span class="gold">GOLD 50%</span></div>
       <div id="farm-result-number"></div>
       <div id="farm-hint"></div>
       <div class="farm-toolbar farm-toolbar-bottom" id="farm-toolbar-bottom">
@@ -2997,7 +3002,7 @@
         <button type="button" class="market-filter-btn active" data-sort="price_asc">Цена ↑</button>
         <button type="button" class="market-filter-btn" data-sort="price_desc">Цена ↓</button>
         <button type="button" class="market-filter-btn" data-sort="number">#</button>
-        <button type="button" class="market-filter-btn" data-sort="rarity_bronze">Bronze</button>
+        <button type="button" class="market-filter-btn" data-sort="rarity_bronze">Gold</button>
         <button type="button" class="market-filter-btn" data-sort="rarity_diamond">Diamond</button>
       </div>
       <div id="blind-swap-status-row" class="hidden"></div>
@@ -3050,11 +3055,10 @@
         </div>
       </div>
       <div id="profile-rarity-filters">
-        <button class="pvp-picker-rarity-btn bronze" data-rarity="bronze">Bronze</button>
-        <button class="pvp-picker-rarity-btn silver" data-rarity="silver">Silver</button>
-        <button class="pvp-picker-rarity-btn gold" data-rarity="gold">Gold</button>
-        <button class="pvp-picker-rarity-btn platinum" data-rarity="platinum">PLATNM</button>
+        <button class="pvp-picker-rarity-btn obsidian" data-rarity="obsidian">OBSIDIAN</button>
         <button class="pvp-picker-rarity-btn diamond" data-rarity="diamond">DIAMND</button>
+        <button class="pvp-picker-rarity-btn platinum" data-rarity="platinum">PLATNM</button>
+        <button class="pvp-picker-rarity-btn gold" data-rarity="gold">Gold</button>
       </div>
       <div class="grid" id="profile-grid"></div>
     </section>
@@ -3125,7 +3129,7 @@
           <div class="info-feature-icon" style="background:rgba(34,197,94,.18); color:#22c55e;">🌱</div>
           <div class="info-feature-body">
             <div class="info-feature-title" style="color:#22c55e;">Фарм</div>
-            <div class="info-feature-desc">За 25 <img src="/static/icons/diamond.png" alt=""> получай случайную карточку — заходи на вкладку Фарм и жми кнопку</div>
+            <div class="info-feature-desc">За 25 <img src="/static/icons/diamond.png" alt=""> шанс получить карточку Gold, Platinum или Diamond — не повезло, гемы сгорают</div>
           </div>
         </div>
         <div class="info-feature-row">
@@ -3194,7 +3198,7 @@
         <div class="info-feature-row">
           <div class="info-feature-icon" style="background:rgba(52,211,153,.18); color:#34d399;">🏦</div>
           <div class="info-feature-body">
-            <div class="info-feature-title" style="color:#34d399;">Стейкинг</div>
+            <div class="info-feature-title" style="color:#34d399;">Стейкинг · скоро</div>
             <div class="info-feature-desc">Ставь карточки в стейк и получай гемы каждый день — чем реже карта, тем больше доход</div>
           </div>
         </div>
@@ -3373,8 +3377,6 @@
       <div class="chance-row"><span class="rarity-tag diamond">diamond</span><span class="chance-pct" id="farmed-diamond">0</span></div>
       <div class="chance-row"><span class="rarity-tag platinum">platinum</span><span class="chance-pct" id="farmed-platinum">0</span></div>
       <div class="chance-row"><span class="rarity-tag gold">gold</span><span class="chance-pct" id="farmed-gold">0</span></div>
-      <div class="chance-row"><span class="rarity-tag silver">silver</span><span class="chance-pct" id="farmed-silver">0</span></div>
-      <div class="chance-row"><span class="rarity-tag bronze">bronze</span><span class="chance-pct" id="farmed-bronze">0</span></div>
     </div>
   </div>
 
@@ -3429,10 +3431,12 @@
         </div>
         <button class="btn-sell" id="modal-sell">Продать</button>
         <button class="btn-swap" id="modal-swap">Обмен</button>
-        <button class="btn-number" id="modal-number">Номер</button>
-        <div class="modal-actions-row">
-          <button class="btn-stake" id="modal-stake">Застейкать</button>
+        <div class="modal-actions-row" id="modal-number-craft-row">
+          <button class="btn-number" id="modal-number">Номер</button>
           <button class="btn-craft" id="modal-craft">Крафт</button>
+        </div>
+        <div style="display:none">
+          <button class="btn-stake" id="modal-stake">Застейкать</button>
         </div>
         <button class="btn-back" id="modal-back">Назад</button>
       </div>
@@ -3520,8 +3524,6 @@
     <div id="pvp-picker-card">
       <div id="pvp-picker-title">Выбери карты для PvP — заберут навсегда, если проиграешь</div>
       <div id="pvp-picker-rarity-filters">
-        <button class="pvp-picker-rarity-btn bronze" data-rarity="bronze">Bronze</button>
-        <button class="pvp-picker-rarity-btn silver" data-rarity="silver">Silver</button>
         <button class="pvp-picker-rarity-btn gold" data-rarity="gold">Gold</button>
         <button class="pvp-picker-rarity-btn platinum" data-rarity="platinum">PLATNM</button>
         <button class="pvp-picker-rarity-btn diamond" data-rarity="diamond">DIAMND</button>
@@ -3684,13 +3686,11 @@
         Шанс на победу зависит от того, какие карты ты поставил — у каждой редкости свой «вес»:
       </div>
       <div id="pvp-rules-weights">
-        <div class="pvp-rules-row"><span class="rarity-tag bronze">bronze</span><span class="w">1</span></div>
-        <div class="pvp-rules-row"><span class="rarity-tag silver">silver</span><span class="w">3</span></div>
         <div class="pvp-rules-row"><span class="rarity-tag gold">gold</span><span class="w">8</span></div>
         <div class="pvp-rules-row"><span class="rarity-tag platinum">platinum</span><span class="w">20</span></div>
         <div class="pvp-rules-row"><span class="rarity-tag diamond">diamond</span><span class="w">50</span></div>
       </div>
-      <div id="pvp-rules-footnote">Например, одна Diamond-карта по шансам равна 50 Bronze-картам. Твой шанс на победу = твой вес ÷ суммарный вес всех карт в банке.</div>
+      <div id="pvp-rules-footnote">Например, одна Diamond-карта по шансам равна примерно 6 Gold-картам. Твой шанс на победу = твой вес ÷ суммарный вес всех карт в банке.</div>
     </div>
   </div>
 
@@ -3793,12 +3793,13 @@
         <div id="models-sticky-head">
           <div id="models-header-row">
             <div id="models-title">Все модели (<span id="models-count">0</span>)</div>
-            <button type="button" id="models-sort">DIAMOND → BRONZE</button>
+            <button type="button" id="models-sort">DIAMOND → GOLD</button>
             <button class="panel-close" id="models-close">✕</button>
           </div>
           <div id="models-rarity-summary"></div>
         </div>
         <div class="grid" id="models-grid"></div>
+        <button type="button" id="models-close-bottom" class="models-close-bottom">Закрыть</button>
       </div>
     </div>
     <button type="button" id="models-scroll-top" class="scroll-top-btn">↑</button>
@@ -3906,7 +3907,7 @@ const CARD_IMG_VERSION = 3;
 const FARM_COST_GEMS = 25;
 // Mirrors database.py's MIN_LISTING_PRICE_BY_RARITY — client-side copy for the price
 // prompt + pre-check (server still enforces it for real via ListingPriceTooLow).
-const MIN_LISTING_PRICE_BY_RARITY = { bronze: 25, silver: 50, gold: 100, platinum: 100, diamond: 100 };
+const MIN_LISTING_PRICE_BY_RARITY = { bronze: 25, silver: 50, gold: 50, platinum: 250, diamond: 100 };
 function minListingPrice(rarity){
   return MIN_LISTING_PRICE_BY_RARITY[rarity] ?? MIN_LISTING_PRICE_BY_RARITY.bronze;
 }
@@ -3921,7 +3922,7 @@ let isAdminUser = false;
 let gemsBalance = 0;
 function setGemsDisplay(n){
   gemsBalance = n;
-  document.getElementById("gems-amount").textContent = isAdminUser ? "∞" : n;
+  document.getElementById("gems-amount").textContent = n;
 }
 let daysUntilNextIncome = null;
 let selectedUserCardId = null;
@@ -4140,12 +4141,34 @@ async function loadStats(){
 }
 loadStats();
 
+// ---------- Feature switches (mirrors database.py FEATURES, delivered by /auth) ----------
+// Until the first /auth answer arrives, everything that can be closed counts as closed.
+let FEATURES = { farm:false, cases:false, craft:false, stake:false, evolve:false, withdraw:false };
+const FEATURE_OFF_TEXT = {
+  farm: "Фарм временно недоступен — скоро вернётся с новыми картами",
+  cases: "Кейсы временно недоступны — скоро вернутся",
+  evolve: "Эволюция временно недоступна — скоро вернётся",
+  craft: "Крафт временно недоступен",
+  stake: "Стейкинг временно недоступен",
+  withdraw: "Вывод Diamond в Stars временно недоступен",
+};
+function featureOffToast(name){ toast(FEATURE_OFF_TEXT[name] || "Временно недоступно"); }
+function applyFeatures(f){
+  if(f) FEATURES = { ...FEATURES, ...f };
+  const dim = (id, on)=>{ const el = document.getElementById(id); if(el) el.style.opacity = on ? "" : "0.45"; };
+  dim("farm-btn", FEATURES.farm);
+  dim("farm-x10-btn", FEATURES.farm);
+  dim("cases-btn", FEATURES.cases);
+  dim("burn-open-btn", FEATURES.evolve);
+}
+
 // ---------- Gems ----------
 let currentStreak = { days: 1, bonus: 2 };
 async function refreshGems(){
   try{
     const auth = await api("/auth");
     isAdminUser = !!auth.is_admin;
+    applyFeatures(auth.features);
     setGemsDisplay(auth.gems);
     applyPlayerRank(auth.player_rank);
     myTelegramId = auth.telegram_id;
@@ -4202,8 +4225,6 @@ function showCardsBreakdown(){
   document.getElementById("farmed-diamond").textContent = inventory.filter(c=>c.rarity==="diamond").length;
   document.getElementById("farmed-platinum").textContent = inventory.filter(c=>c.rarity==="platinum").length;
   document.getElementById("farmed-gold").textContent = inventory.filter(c=>c.rarity==="gold").length;
-  document.getElementById("farmed-silver").textContent = inventory.filter(c=>c.rarity==="silver").length;
-  document.getElementById("farmed-bronze").textContent = inventory.filter(c=>c.rarity==="bronze").length;
   document.getElementById("chance-overlay").classList.add("active");
 }
 async function showGlobalCardsBreakdown(){
@@ -4215,8 +4236,6 @@ async function showGlobalCardsBreakdown(){
     document.getElementById("farmed-diamond").textContent = data.diamond ?? 0;
     document.getElementById("farmed-platinum").textContent = data.platinum ?? 0;
     document.getElementById("farmed-gold").textContent = data.gold ?? 0;
-    document.getElementById("farmed-silver").textContent = data.silver ?? 0;
-    document.getElementById("farmed-bronze").textContent = data.bronze ?? 0;
     const total = (data.diamond ?? 0) + (data.platinum ?? 0) + (data.gold ?? 0) + (data.silver ?? 0) + (data.bronze ?? 0);
     document.getElementById("chance-total").textContent = `Всего: ${total}`;
   }catch(e){ /* non-critical, just leave whatever was there */ }
@@ -4266,6 +4285,7 @@ document.getElementById("gems-choice-overlay").addEventListener("click", (e)=>{
 });
 document.getElementById("gems-choice-sell").addEventListener("click", async ()=>{
   document.getElementById("gems-choice-overlay").classList.remove("active");
+  if(!FEATURES.withdraw){ featureOffToast("withdraw"); return; }
   try{
     const status = await api("/crypto/status");
     if(status.pending){
@@ -4962,8 +4982,8 @@ function renderSwapListings(){
 // Обмен tab: a highlighted rarity means YOU already have a pending listing
 // there (tap it to cancel); a dim one is free (tap it to open the picker). ----------
 const BLIND_SWAP_RARITIES = [
-  {key: "obsidian", label: "👑 OBSIDIAN"}, {key: "diamond", label: "DIAMOND"}, {key: "platinum", label: "PLATINUM"},
-  {key: "gold", label: "GOLD"}, {key: "silver", label: "SILVER"}, {key: "bronze", label: "BRONZE"},
+  {key: "obsidian", label: "OBSIDIAN"}, {key: "diamond", label: "DIAMOND"}, {key: "platinum", label: "PLATINUM"},
+  {key: "gold", label: "GOLD"},
 ];
 const BLIND_SWAP_TITLE = {obsidian: "Obsidian", diamond: "Diamond", platinum: "Platinum", gold: "Gold", silver: "Silver", bronze: "Bronze"};
 let blindSwapSelectedId = null;
@@ -7038,7 +7058,7 @@ function setRarityBorder(el, rarity){
 }
 
 let modelsSortMode = "best_first"; // "best_first" | "worst_first"
-const MODELS_SORT_LABELS = { best_first: "DIAMOND → BRONZE", worst_first: "BRONZE → DIAMOND" };
+const MODELS_SORT_LABELS = { best_first: "DIAMOND → GOLD", worst_first: "GOLD → DIAMOND" };
 const MODELS_SORT_CYCLE = ["best_first", "worst_first"];
 let modelsFilterRarity = null; // null = show every rarity; set by clicking a rarity-summary label
 
@@ -7074,9 +7094,9 @@ function updateModelsRaritySummary(cards, obsidianCount){
   const counts = {diamond:0, platinum:0, gold:0, silver:0, bronze:0};
   cards.forEach(c=>{ if(counts[c.rarity]!==undefined) counts[c.rarity]++; });
   const summary = document.getElementById("models-rarity-summary");
-  // Row 1: Obsidian, Diamond, Platinum -- Row 2: Gold, Silver, Bronze (3-col grid above).
+  // One row of 4: Obsidian, Diamond, Platinum, Gold.
   summary.innerHTML =
-    `<span class="obsidian" data-rarity="obsidian">👑 OBSIDIAN ${obsidianCount ?? 0}</span><span class="diamond" data-rarity="diamond">DIAMOND ${counts.diamond}</span><span class="platinum" data-rarity="platinum">PLATINUM ${counts.platinum}</span><span class="gold" data-rarity="gold">GOLD ${counts.gold}</span><span class="silver" data-rarity="silver">SILVER ${counts.silver}</span><span class="bronze" data-rarity="bronze">BRONZE ${counts.bronze}</span>`;
+    `<span class="obsidian" data-rarity="obsidian">OBSIDN ${obsidianCount ?? 0}</span><span class="diamond" data-rarity="diamond">DIAMND ${counts.diamond}</span><span class="platinum" data-rarity="platinum">PLATNM ${counts.platinum}</span><span class="gold" data-rarity="gold">GOLD ${counts.gold}</span>`;
   summary.querySelectorAll("span[data-rarity]").forEach(el=>{
     if(el.dataset.rarity === "obsidian"){
       // Not a card rarity to filter the grid by -- opens the Obsidian catalog, same as
@@ -7115,6 +7135,9 @@ document.getElementById("models-title").addEventListener("click", ()=>{
   renderModelsGrid();
 });
 document.getElementById("models-close").addEventListener("click", ()=>{
+  document.getElementById("models-overlay").classList.remove("active");
+});
+document.getElementById("models-close-bottom").addEventListener("click", ()=>{
   document.getElementById("models-overlay").classList.remove("active");
 });
 document.getElementById("models-scroll").addEventListener("scroll", (e)=>{
@@ -7266,7 +7289,7 @@ document.getElementById("withdrawals-overlay").addEventListener("click", (e)=>{
 let farmCycleTimer = null;
 let farmProgressTimer = null;
 
-const FARM_DEFAULT_HINT = '<span class="diamond">DIAMOND 0.5%</span> · <span class="platinum">PLATINUM 4%</span> · <span class="gold">GOLD 16.5%</span><br><span class="silver">SILVER 29%</span> · <span class="bronze">BRONZE 50%</span>';
+const FARM_DEFAULT_HINT = '<span class="diamond">DIAMOND 0.5%</span> · <span class="platinum">PLATINUM 5%</span> · <span class="gold">GOLD 50%</span>';
 // Preloads each image url in the browser's own HTTP cache before the cycling animation
 // touches it, so a cold cache (e.g. right after a CARD_IMG_VERSION bump invalidates
 // every card image at once) can never stall a cycle frame on a live network fetch --
@@ -7353,6 +7376,7 @@ let farmRequestSeq = 0;
 async function runFarmOnce(){
   const btn = document.getElementById("farm-btn");
   if(btn.disabled) return;
+  if(!FEATURES.farm){ featureOffToast("farm"); return; }
 
   const currentGems = gemsBalance;
   if(currentGems < FARM_COST_GEMS){
@@ -7370,6 +7394,18 @@ async function runFarmOnce(){
     const card = await api("/farm");
     if(mySeq !== farmRequestSeq) return;
     const stage = document.getElementById("farm-stage");
+    if(card.miss){
+      // Nothing dropped -- the 25 gems are gone. Same screen, just an empty result.
+      stage.innerHTML = `<div class="placeholder">💨</div><div class="drop-name">Не повезло — гемы сгорели</div>`;
+      document.getElementById("farm-result-number").textContent = "";
+      const missRarityEl = document.getElementById("farm-result-rarity");
+      missRarityEl.textContent = "";
+      missRarityEl.className = "";
+      document.getElementById("total-farmed").textContent = card.total_farmed;
+      setGemsDisplay(card.gems);
+      tg?.HapticFeedback?.notificationOccurred("warning");
+      return;
+    }
     stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}?v=${CARD_IMG_VERSION}" alt="${card.name||''}"><div class="rarity-tag ${card.rarity}">${card.rarity}</div><div class="drop-number">#${card.farm_number}</div><div class="drop-name">${card.name || "Новая картинка!"}</div>`;
     document.getElementById("farm-result-number").textContent = `№${card.farm_number}`;
     const rarityEl = document.getElementById("farm-result-rarity");
@@ -7393,6 +7429,8 @@ async function runFarmOnce(){
     clearInterval(farmProgressTimer);
     if(String(e.message).includes("not enough gems")){
       notEnoughGemsToast();
+    }else if(String(e.message).startsWith("feature_disabled")){
+      featureOffToast("farm");
     }else{
       toast("Ошибка фарма: " + e.message);
     }
@@ -7406,6 +7444,7 @@ document.getElementById("farm-btn").addEventListener("click", runFarmOnce);
 document.getElementById("farm-x10-btn").addEventListener("click", async ()=>{
   const x10Btn = document.getElementById("farm-x10-btn");
   if(x10Btn.disabled) return;
+  if(!FEATURES.farm){ featureOffToast("farm"); return; }
   x10Btn.disabled = true;
   try{
     for(let i = 0; i < 10; i++){
@@ -7425,6 +7464,7 @@ async function loadProfile(){
   try{
     const auth = await api("/auth");
     isAdminUser = !!auth.is_admin;
+    applyFeatures(auth.features);
     document.getElementById("profile-name").textContent = auth.first_name || auth.username || "Игрок";
     // @username line intentionally removed from the profile header for every player --
     // only the display name (first_name, falling back to username) is shown.
@@ -7495,7 +7535,9 @@ document.getElementById("profile-rarity-filters").addEventListener("click", (e)=
 
 function renderProfileGrid(){
   const grid = document.getElementById("profile-grid");
-  const items = profileRarityFilter ? inventory.filter(c => c.rarity === profileRarityFilter) : inventory;
+  const items = !profileRarityFilter ? inventory
+    : profileRarityFilter === "obsidian" ? inventory.filter(c => !!c.custom_name)
+    : inventory.filter(c => c.rarity === profileRarityFilter && !c.custom_name);
   if(items.length === 0){
     grid.innerHTML = "";
     document.getElementById("empty-hint")?.remove();
@@ -7591,6 +7633,7 @@ document.getElementById("wall-close-bottom").addEventListener("click", ()=>{
 // card is a pure completion check server-side -- the card itself is never
 // touched/locked, so this never needs to refetch `inventory`.
 let currentCollectionId = null;
+let collectionOrderIds = []; // ids in the order shown in the list -- swipe in the detail view walks this
 
 async function renderCollectionsList(){
   const list = document.getElementById("collections-list");
@@ -7599,6 +7642,7 @@ async function renderCollectionsList(){
   try{
     const res = await api("/collections");
     collections = res.collections;
+    collectionOrderIds = collections.map(c => c.id);
     if(typeof res.gems === "number") setGemsDisplay(res.gems);
   }catch(err){
     list.innerHTML = `<div class="empty-state">Не удалось загрузить: ${err.message}</div>`;
@@ -7797,6 +7841,27 @@ document.getElementById("collection-detail-close-bottom").addEventListener("clic
   renderCollectionsList();
 });
 
+// Swipe left/right inside a collection to jump to the next/previous collection.
+(function(){
+  const el = document.getElementById("collection-detail-modal-card");
+  let sx = 0, sy = 0;
+  el.addEventListener("touchstart", (e)=>{ sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
+  el.addEventListener("touchend", async (e)=>{
+    const dx = e.changedTouches[0].clientX - sx;
+    const dy = e.changedTouches[0].clientY - sy;
+    if(Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if(!collectionOrderIds.length){
+      try{ const res = await api("/collections"); collectionOrderIds = res.collections.map(c => c.id); }catch(err){ return; }
+    }
+    const n = collectionOrderIds.length;
+    if(n <= 1) return;
+    const i = collectionOrderIds.indexOf(currentCollectionId);
+    const next = dx < 0 ? (i + 1) % n : (i - 1 + n) % n;
+    currentCollectionId = collectionOrderIds[next];
+    renderCollectionDetail();
+  }, { passive: true });
+})();
+
 let modalIndex = -1;
 
 function openModal(userCardId){
@@ -7960,11 +8025,19 @@ function updateNumberButton(item){
   const numberMode = RARE_NUMBERS_SET.has(item.drop_number) && !busy;
   btn.style.display = numberMode ? "" : "none";
   btn.textContent = numberMode ? `Номер #${item.drop_number}` : "";
+  syncNumberCraftRow();
+}
+// The Номер + Крафт row is only shown when at least one of them is visible (no empty gap otherwise).
+function syncNumberCraftRow(){
+  const row = document.getElementById("modal-number-craft-row");
+  const n = document.getElementById("modal-number"), c = document.getElementById("modal-craft");
+  row.style.display = (n.style.display === "none" && c.style.display === "none") ? "none" : "";
 }
 
 function updateCraftButton(item){
   const btn = document.getElementById("modal-craft");
   const busy = !!(item.staked_at || item.listed_price || item.swap_listed || item.pvp_round_id || item.pinned_at || item.in_giveaway);
+  btn.style.display = item.custom_name ? "none" : ""; // Obsidian can't be crafted
   btn.disabled = busy;
   btn.classList.toggle("disabled", busy);
   if(busy){
@@ -7972,6 +8045,7 @@ function updateCraftButton(item){
   }else{
     btn.textContent = "Крафт";
   }
+  syncNumberCraftRow();
 }
 
 function updateSellButton(item){
@@ -8353,20 +8427,18 @@ document.getElementById("modal-stake").addEventListener("click", async ()=>{
 });
 
 // Mirrors database.py's CRAFT_COST_GEMS — craft price scales with the rarity being burned.
-const CRAFT_COST_BY_RARITY = { bronze: 25, silver: 25, gold: 100, platinum: 200, diamond: 200 };
+const CRAFT_COST_BY_RARITY = { gold: 50, platinum: 300, diamond: 500 };
 // Mirrors database.py's CRAFT_WEIGHTS — client-side copy for the chance-hint display only.
 // Mirrors database.py's CRAFT_WEIGHTS — crafting never produces a tier BELOW the one
 // burned, so each row only lists tiers same-or-higher (burn Gold, only Gold/Platinum/
 // Diamond are possible).
 const CRAFT_CHANCES = {
-  bronze:   { bronze: 69, silver: 16, gold: 8, platinum: 5, diamond: 2 },
-  silver:   { silver: 75, gold: 13, platinum: 8, diamond: 4 },
-  gold:     { gold: 82, platinum: 10, diamond: 8 },
-  platinum: { platinum: 84, diamond: 16 },
+  gold:     { gold: 90, platinum: 9.5, diamond: 0.5 },
+  platinum: { platinum: 90, diamond: 10 },
   diamond:  { diamond: 100 },
 };
 function craftHintHTML(rarity){
-  const t = CRAFT_CHANCES[rarity] || CRAFT_CHANCES.bronze;
+  const t = CRAFT_CHANCES[rarity] || CRAFT_CHANCES.gold;
   const fmt = (v) => (v % 1 === 0 ? v : v.toFixed(1));
   const parts = ["diamond", "platinum", "gold", "silver", "bronze"]
     .filter(r => t[r] !== undefined)
@@ -8384,17 +8456,15 @@ document.getElementById("modal-craft").addEventListener("click", async ()=>{
     toast("Сначала снимите карту с продажи/обмена/стейкинга");
     return;
   }
-  const craftCost = CRAFT_COST_BY_RARITY[selectedItem.rarity] || CRAFT_COST_BY_RARITY.bronze;
+  const craftCost = CRAFT_COST_BY_RARITY[selectedItem.rarity] || CRAFT_COST_BY_RARITY.gold;
   const currentGems = gemsBalance;
   if(currentGems < craftCost){
     toastHTML(`Не хватает гемов — нужно ${craftCost} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
     return;
   }
   const craftRarityLabel = (r) => r ? r[0].toUpperCase() + r.slice(1) : "Bronze";
-  const craftChances = CRAFT_CHANCES[selectedItem.rarity] || CRAFT_CHANCES.bronze;
-  const craftChanceLines = selectedItem.rarity === "diamond"
-    ? "Diamond: 95%\nКарта уничтожается без результата: 5%"
-    : ["diamond", "platinum", "gold", "silver", "bronze"]
+  const craftChances = CRAFT_CHANCES[selectedItem.rarity] || CRAFT_CHANCES.gold;
+  const craftChanceLines = ["diamond", "platinum", "gold"]
         .filter(r => craftChances[r] !== undefined)
         .map(r => `${craftRarityLabel(r)}: ${craftChances[r] % 1 === 0 ? craftChances[r] : craftChances[r].toFixed(1)}%`)
         .join("\n");
@@ -8411,9 +8481,7 @@ document.getElementById("modal-craft").addEventListener("click", async ()=>{
   const mySeq = ++farmRequestSeq; // also invalidates any in-flight farm, so it can't clobber this result
   try{
     const cards = await ensureAllCards();
-    const craftHint = craftInputRarity === "diamond"
-      ? `<span class="diamond">95% — новая DIAMOND карта</span><br><span class="bronze">5% — карта уничтожается без результата</span>`
-      : craftHintHTML(craftInputRarity);
+    const craftHint = craftHintHTML(craftInputRarity);
     await startFarmAnimation(cards, craftHint);
     if(mySeq !== farmRequestSeq) return;
     const card = await api("/craft", { user_card_id: craftUserCardId });
@@ -8452,11 +8520,11 @@ document.getElementById("modal-craft").addEventListener("click", async ()=>{
 // ---------- Gem cases ("Кейсы") ----------
 const CASES = [
   {key:"hamster", name:"Хомяк", price:100, image:"case/case_hamster.jpg",
-   weights:{bronze:34, silver:63, platinum:2.5, diamond:0.5}},
+   weights:{gold:97, platinum:2.5, diamond:0.5}},
   {key:"duck", name:"Уточка", price:200, image:"case/case_utya.jpg",
-   weights:{silver:38, gold:58, platinum:3, diamond:1}},
+   weights:{gold:96, platinum:3, diamond:1}},
   {key:"capybara", name:"Капибара", price:400, image:"case/case_capybara.jpg",
-   weights:{gold:33, platinum:67}},
+   weights:{gold:16, platinum:84}},
   {key:"pepe", name:"Пепе", price:1000, image:"case/case_pep.jpg",
    weights:{platinum:75, diamond:25}},
 ];
@@ -8499,6 +8567,7 @@ function showCaseInfo(caseKey){
 }
 
 document.getElementById("cases-btn").addEventListener("click", ()=>{
+  if(!FEATURES.cases){ featureOffToast("cases"); return; }
   renderCaseGrid();
   document.getElementById("case-overlay").classList.add("active");
 });
@@ -9118,16 +9187,14 @@ document.getElementById("modal-custom").addEventListener("click", openCustomNftF
 // next tier up. Free, but a real chance of total loss (unlike craft, which always
 // gives SOMETHING back). ----------
 const BURN_RECIPES = [
-  {rarity:"bronze", target:"silver", count:4},
-  {rarity:"silver", target:"gold", count:4},
-  {rarity:"gold", target:"platinum", count:4},
-  {rarity:"platinum", target:"diamond", count:4},
+  {rarity:"gold", target:"platinum", count:8},
+  {rarity:"platinum", target:"diamond", count:5},
 ];
 const RARITY_LABEL = {bronze:"Bronze", silver:"Silver", gold:"Gold", platinum:"Platinum", diamond:"Diamond"};
 const RARITY_COLOR = {bronze:"#cd7f32", silver:"#9ca3af", gold:"#facc15", platinum:"#a78bfa", diamond:"#ff2fb0"};
 
 function countEligibleCards(rarity){
-  return inventory.filter(c => c.rarity === rarity && !c.staked_at && !c.listed_price && !c.swap_listed && !c.pvp_round_id && !c.in_giveaway).length;
+  return inventory.filter(c => c.rarity === rarity && !c.custom_name && !c.staked_at && !c.listed_price && !c.swap_listed && !c.pvp_round_id && !c.in_giveaway).length;
 }
 
 function renderBurnGrid(){
@@ -9198,7 +9265,7 @@ function openBurnPicker(recipe){
 
 function renderBurnPickerGrid(){
   const grid = document.getElementById("burn-picker-grid");
-  const eligible = inventory.filter(c => c.rarity === burnPickerRarity && !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.pinned_at && !c.in_giveaway);
+  const eligible = inventory.filter(c => c.rarity === burnPickerRarity && !c.custom_name && !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.pinned_at && !c.in_giveaway);
   if(eligible.length === 0){
     grid.innerHTML = `<div class="empty-state">Нет подходящих карт</div>`;
     return;
@@ -9235,7 +9302,7 @@ document.getElementById("burn-picker-cancel").addEventListener("click", ()=>{
 // a whole stack evolves in one confirm instead of repeating the 4-card cycle by hand.
 // A second tap while something is already selected clears the selection back to zero.
 document.getElementById("burn-picker-select-all").addEventListener("click", ()=>{
-  const eligible = inventory.filter(c => c.rarity === burnPickerRarity && !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.pinned_at && !c.in_giveaway);
+  const eligible = inventory.filter(c => c.rarity === burnPickerRarity && !c.custom_name && !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.pinned_at && !c.in_giveaway);
   if(burnPickerSelected.size > 0){
     burnPickerSelected = new Set();
   }else{
@@ -9273,6 +9340,7 @@ document.getElementById("burn-picker-confirm").addEventListener("click", async (
 });
 
 document.getElementById("burn-open-btn").addEventListener("click", ()=>{
+  if(!FEATURES.evolve){ featureOffToast("evolve"); return; }
   renderBurnGrid();
   document.getElementById("burn-overlay").classList.add("active");
 });

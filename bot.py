@@ -224,7 +224,7 @@ async def handle_admin_panel(message: Message):
         f"Крафт: <b>{stats['cards_crafted']}</b>",
         f"Кейсы: <b>{stats['cases_bought']}</b>",
         f"Стейки: <b>{stats['cards_staked']}</b>",
-        f"Обмен (рандом): <b>{stats['blind_swaps_completed']}</b>",
+        f"Обмен: <b>{stats['blind_swaps_completed']}</b>",
         "",
         "📊 <b>Статистика казны по всем играм</b>\n",
     ]
@@ -518,7 +518,7 @@ async def gem_drop_100_scheduler():
                     minutes_left = (GEM_DROP_100_END_HOUR - now_local.hour) * 60 - now_local.minute
                     checks_left = max(1, minutes_left // (GEM_DROP_100_CHECK_INTERVAL_SECONDS // 60))
                     if random.random() < 1 / checks_left:
-                        ok = await _post_gem_drop(amount=GEM_DROP_100_AMOUNT, label="🎁 Дневной аирдроп")
+                        ok = await _post_gem_drop(amount=GEM_DROP_100_AMOUNT, label="🎁 Аирдроп")
                         if ok:
                             logger.info(
                                 "100-gem daily airdrop posted at %s Tallinn time",
@@ -608,14 +608,14 @@ async def handle_admin_giveaway(message: Message):
 async def handle_admin_card_giveaway(message: Message):
     """Admin-only: /cardgiveaway [редкость] [кол-во карт] [мин] [макс] — instantly gives
     away up to that many of the ADMIN'S OWN cards of that rarity (defaults:
-    bronze/100/1/5), min..max at a time, randomly among every other registered user
+    gold/100/1/5), min..max at a time, randomly among every other registered user
     (no chat-activity tracking involved — anyone who has ever started the bot is
     eligible). Resolves immediately and posts the results into PUBLIC_CHAT — unlike
     /giveaway there's no waiting window."""
     if not _is_admin(message.from_user.id):
         return
     parts = (message.text or "").split()
-    rarity, total_cards, min_c, max_c = "bronze", 100, 1, 5
+    rarity, total_cards, min_c, max_c = "gold", 100, 1, 5
     try:
         if len(parts) > 1:
             rarity = parts[1].lower()
@@ -626,7 +626,7 @@ async def handle_admin_card_giveaway(message: Message):
         if len(parts) > 4:
             max_c = int(parts[4])
     except ValueError:
-        await message.answer("Формат: /cardgiveaway [редкость] [кол-во] [мин] [макс], например /cardgiveaway bronze 100 1 5")
+        await message.answer("Формат: /cardgiveaway [редкость] [кол-во] [мин] [макс], например /cardgiveaway gold 100 1 5")
         return
 
     try:

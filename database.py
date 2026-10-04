@@ -29,6 +29,38 @@ ADMIN_ID = os.environ.get("ADMIN_ID")
 
 DB_PATH = Path(__file__).parent / "peeppo.db"
 
+# ---------------------------------------------------------------------------
+# Feature switches -- temporarily closed while the old card catalog is replaced by the
+# new "nft" set (see migrate_new_cards.py). To reopen a feature flip it to True and
+# redeploy database.py + restart peeppo_api. Anything False here answers 503
+# "feature_disabled:<name>" from the API (see api.py) and is greyed out in the webapp.
+# ---------------------------------------------------------------------------
+FEATURES = {
+    "farm": True,
+    "cases": True,
+    "craft": True,
+    "stake": False,
+    "evolve": True,
+    "withdraw": True,  # Diamond cards -> Stars payout
+}
+
+
+class FeatureDisabled(Exception):
+    """Raised by a guarded action when its FEATURES switch is off."""
+    def __init__(self, feature: str):
+        super().__init__(feature)
+        self.feature = feature
+
+
+def _require_feature(name: str) -> None:
+    if not FEATURES.get(name, False):
+        raise FeatureDisabled(name)
+
+
+def get_features() -> dict:
+    return dict(FEATURES)
+
+
 # The user is in Tallinn, Estonia — anything framed as a calendar "day" (bot uptime
 # counter, etc.) rolls over at LOCAL midnight here, not 24h after some UTC timestamp.
 TALLINN_TZ = ZoneInfo("Europe/Tallinn")
@@ -890,6 +922,13 @@ def _parse_utc(ts: str) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
+ADMIN_DAILY_EXTRA_GEMS = 1000  # perk: the admin account (ADMIN_ID) gets +1000 on top of its daily bonus
+
+
+def _admin_daily_extra(user_id: int) -> int:
+    return ADMIN_DAILY_EXTRA_GEMS if (ADMIN_ID and str(user_id) == str(ADMIN_ID)) else 0
+
+
 def _daily_bonus_amount_for(days_elapsed: int) -> int:
     """DAILY_BONUS_GEMS, +5 more for every full 30-day "month" since signup — the daily
     login reward keeps growing the longer a player sticks around (25, 30, 35, 40, ...)."""
@@ -997,7 +1036,7 @@ def get_daily_bonus_info(user_id: int) -> dict:
         return {"amount": DAILY_BONUS_GEMS, "days_until_next": 30}
     days_elapsed = (datetime.now(timezone.utc) - _parse_utc(row["created_at"])).days
     return {
-        "amount": _daily_bonus_amount_for(days_elapsed),
+        "amount": _daily_bonus_amount_for(days_elapsed) + _admin_daily_extra(user_id),
         "days_until_next": 30 - (days_elapsed % 30),
     }
 
@@ -1056,7 +1095,7 @@ def claim_daily_bonus(user_id: int) -> int:
             return 0
         new_streak = (row["streak_days"] or 0) + 1 if row["last_daily_bonus"] == yesterday else 1
         days_elapsed = (datetime.now(timezone.utc) - _parse_utc(row["created_at"])).days
-        amount = _daily_bonus_amount_for(days_elapsed) + _streak_bonus_for(new_streak)
+        amount = _daily_bonus_amount_for(days_elapsed) + _streak_bonus_for(new_streak) + _admin_daily_extra(user_id)
         conn.execute(
             "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ?, last_daily_bonus = ?, "
             "streak_days = ? WHERE telegram_id = ?",
@@ -2467,13 +2506,19 @@ def collect_gem_mining(user_id: int) -> dict:
 
 
 def get_users_missing_daily_bonus() -> list[int]:
-    """Telegram ids of every user who has NOT yet claimed today's (UTC) daily bonus —
-    used by daily_reminder.py to nudge them with a bot message."""
-    today = datetime.now(timezone.utc).date().isoformat()
+    """Telegram ids of users who have NOT yet claimed today's (UTC) daily bonus AND
+    haven't opened the app for 24h+ (last_seen_at older than a day, or never recorded) —
+    used by daily_reminder.py to nudge only the people who actually stopped coming,
+    not someone who's been playing all day and just skipped the claim button."""
+    now = datetime.now(timezone.utc)
+    today = now.date().isoformat()
+    cutoff = (now - timedelta(hours=24)).isoformat()
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT telegram_id FROM users WHERE last_daily_bonus IS NULL OR last_daily_bonus != ?",
-            (today,),
+            "SELECT telegram_id FROM users "
+            "WHERE (last_daily_bonus IS NULL OR last_daily_bonus != ?) "
+            "AND (last_seen_at IS NULL OR last_seen_at < ?)",
+            (today, cutoff),
         ).fetchall()
         return [r["telegram_id"] for r in rows]
 
@@ -2497,363 +2542,38 @@ def add_card_to_catalog(filename: str, name: str | None = None, rarity: str = "s
 # (matched against cards.filename) that make it up. A filename with no matching
 # catalog row is silently skipped by _seed_collections() rather than raising, so
 # this list can be edited freely without risk of crashing on a typo.
+# Albums are emptied while the new card set is rolled out -- flip to True once new
+# album lists (by the new cards' filenames) are written into COLLECTIONS_SEED below.
+COLLECTIONS_SEED_ENABLED = True
+# New catalog collections. Card keys are the stems of static/nft/<key>.jpg (cards.filename = ../nft/<key>.jpg)
+_NFT = lambda keys: [f"../nft/{k}.jpg" for k in keys.split()]
 COLLECTIONS_SEED = [
-    {
-        "key": "car_lover",
-        "name": "Авто Маньяк",
-        "icon": "🚗",
-        "icon_image": "bugati_chiron.jpg",
-        "filenames": [
-            "audi_cabriolet.jpg", "audi_rs6_avant.jpg",
-            "bmw_e36.jpg", "bmw_m3.jpg", "bmw_m5.jpg",
-            "bugati_chiron.jpg", "bugatti_brouillard.jpg", "bugatti_la_noire.jpg",
-            "car_restomod.jpg", "carmagedon.jpg",
-            "cybertruck.jpg", "ford_mustang_gt.jpg", "gelandewagen.jpg",
-            "honda_civic.jpg", "low_rider.jpg", "mercedes.jpg",
-            "nissan_skyline.jpg", "pagani_barchetta.jpg", "porsche_911.jpg",
-            "rr_amethyst.jpg", "rr_arcadia.jpg", "rr_boat_tail.jpg",
-            "rr_la_rose.jpg", "rr_sweptail.jpg",
-            "tesla model 3.jpg", "toyota_supra.jpg",
-            # removed as off-theme (not actually cars, despite the filename):
-            # cadillacs_dino.jpg (a "Cadillacs and Dinosaurs" ARCADE CABINET),
-            # retro_cars.jpg (a group of 3 toy cars, not a single car),
-            # tesla_mini.jpg (a "Tesla Mini" amplifier/gadget, not a car)
-        ],
-    },
-    {
-        "key": "cs_weapons",
-        "name": "Оружейный Барон",
-        "icon": "🔫",
-        "icon_image": "ak-47.jpg",
-        # Every filename here was opened and visually checked (not just name-matched) --
-        # several "obvious" candidates turned out to be characters/unrelated items and
-        # were left out: cs.jpg/terrorist.jpg/standoff.jpg (player figures, not weapons),
-        # scoprion.jpg (Mortal Kombat's Scorpion), spike.jpg (a cactus mascot),
-        # colt.jpg (a Brawl Stars character), interchange.jpg (a textile pillow),
-        # desert_eye.jpg (an Egyptian amulet), marengo_sword.jpg (a Napoleonic sabre,
-        # no CS branding), custom_blade.jpg/firearm_engrave.jpg (real-world hunting
-        # knife/shotgun, no CS styling), revolver.jpg (a generic old-west revolver, not
-        # CS's R8), vice.jpg/crimson_kimono.jpg (CS glove skins -- not weapons).
-        "filenames": [
-            "ak-47.jpg", "ak_47.jpg",
-            "awp.jpg", "awp_asiimov.jpg", "awp_gungnir.jpg", "awp_medusa.jpg",
-            "beretta.jpg", "blaze.jpg", "case_hardened.jpg",
-            "desert_eagle.jpg", "dragon_lore.jpg", "fire_serpent.jpg",
-            "glock.jpg", "glock_18_fade.jpg", "hyper_beast.jpg", "kerambit.jpg",
-            "kill_confirmed.jpg", "knife_1.5.jpg", "m16.jpg", "m4a1_s.jpg", "m4a4.jpg",
-            "mp5.jpg", "neo_noir.jpg", "printstream.jpg", "redline.jpg", "uzi.jpg",
-            "wild_lotus.jpg",
-            # removed: balisong.jpg -- not actually right for this collection
-        ],
-    },
-    {
-        "key": "diamond_colors",
-        "name": "Алмазный Король",
-        "icon": "\U0001F48E",
-        "icon_image": "gem.jpg",
-        "filenames": [
-            "black_diamond.jpg", "blue_diamond.jpg", "white_diamond.jpg",
-            "green_diamond.jpg", "orange_diamond.jpg", "pink_diamond.jpg",
-            "gem.jpg",
-        ],
-    },
-    {
-        "key": "ships",
-        "name": "Морской Волк",
-        "icon": "\U0001F6A2",
-        "icon_image": "azzam.jpg",
-        # eclipse.jpg (a superyacht with its own mini-submarine bay) and dibar.jpg
-        # (the megayacht "Dilbar") were missing here despite being Diamond-rarity
-        # ships -- added after a full re-check of the Diamond catalog.
-        "filenames": [
-            "azzam.jpg", "sailing.jpg", "lovers_deep.jpg", "koru.jpg",
-            "eclipse.jpg", "dibar.jpg",
-        ],
-    },
-    {
-        "key": "planes",
-        "name": "Небесный Магнат",
-        "icon": "\u2708\uFE0F",
-        "icon_image": "gulfstream.jpg",
-        # airbus_exclusive.jpg (an Airbus ACH160 executive helicopter) was missing
-        # here despite being Diamond-rarity elite aviation -- added after a full
-        # re-check of the Diamond catalog.
-        "filenames": [
-            "gulfstream.jpg", "dreamliner.jpg", "bombardier.jpg", "airbus.jpg", "jet.jpg",
-            "airbus_exclusive.jpg",
-        ],
-    },
-    {
-        "key": "alcohol",
-        "name": "Ликероводочник",
-        "icon": "\U0001F943",
-        "icon_image": "billionaire_vodka.jpg",
-        "filenames": [
-            "damalfi_limoncello.jpg", "billionaire_vodka.jpg", "macallan_1926.jpg",
-            "henri_iv_cognac.jpg", "bottle_cognac.jpg", "tequila_ley.jpg",
-        ],
-    },
-    {
-        "key": "jewelry",
-        "name": "Ювелир",
-        "icon": "\U0001F48D",
-        "icon_image": "hope_diamond.jpg",
-        # blue_diamond.jpg / white_diamond.jpg deliberately excluded -- those belong
-        # to the diamond_colors collection instead.
-        "filenames": [
-            "bulgari_serpenti.jpg", "bvlgari_serpenti.jpg", "shawish_all_diamond.jpg",
-            "vca_alhambra.jpg", "chopard_blue_diamond.jpg", "taylor_burton.jpg",
-            "pink_star.jpg", "hope_diamond.jpg", "gem_signet.jpg", "signet_ring.jpg",
-            "diamond_ring.jpg", "diamond_studs.jpg", "bonded_ring.jpg", "cartier_love.jpg",
-            "platina_chain.jpg", "gold_chain.jpg", "cufflinks_gold.jpg", "nail_bracelet.jpg",
-        ],
-    },
-    {
-        "key": "islands",
-        "name": "Хозяин Островов",
-        "icon": "\U0001F3DD\uFE0F",
-        "icon_image": "laucala_island.jpg",
-        "filenames": [
-            "laucala_island.jpg", "necker_island.jpg", "north_island.jpg",
-            "fregate_island.jpg", "lanai.jpg", "sa_ferradura.jpg",
-            "bali_island.jpg", "canary_islands.jpg", "cuba_island.jpg", "hawaii_islands.jpg",
-            "easter_island.jpg",
-        ],
-    },
-    {
-        "key": "patriot",
-        "name": "Патриот",
-        "icon": "\u2B50",
-        "icon_image": "volga.jpg",
-        "filenames": [
-            "volga.jpg", "niva.jpg", "moskvich.jpg", "chaika.jpg", "uaz.jpg",
-            "smz.jpg", "gaz_24.jpg", "samara.jpg", "kopeika.jpg", "zaporozhets.jpg",
-        ],
-    },
-    {
-        "key": "banks",
-        "name": "Банкир",
-        "icon": "\U0001F3E6",
-        "icon_image": "jpmorgan_chase.jpg",
-        "filenames": [
-            "bnp_paribas.jpg", "bofa_bank.jpg", "citigroup_bank.jpg", "dbs_bank.jpg",
-            "hsbc_bank.jpg", "jpmorgan_chase.jpg", "nubank_fintech.jpg",
-            "revolut_bank.jpg", "wells_fargo.jpg", "wise_bank.jpg",
-        ],
-    },
-    {
-        "key": "empires",
-        "name": "Империалист",
-        "icon": "\U0001F451",
-        "icon_image": "roman_empire.jpg",
-        "filenames": [
-            "abbasid_empire.jpg", "babylon_empire.jpg", "british_empire.jpg",
-            "byzantine_empire.jpg", "carthage_empire.jpg", "dutch_empire.jpg",
-            "french_empire.jpg", "german_empire.jpg", "inca_empire.jpg",
-            "macedon_empire.jpg", "ming_dynasty.jpg", "mongol_empire.jpg",
-            "ottoman_empire.jpg", "persian_empire.jpg", "roman_empire.jpg",
-            "russian_empire.jpg", "spanish_empire.jpg", "sparta_empire.jpg",
-            "sumerian_empire.jpg", "ussr_empire.jpg", "usa_empire.jpg",
-        ],
-    },
-    {
-        "key": "cities",
-        "name": "Города",
-        "icon": "\U0001F3D9\uFE0F",
-        "icon_image": "vatican_city.jpg",
-        "filenames": [
-            "acropolis_city.jpg", "las_vegas_city.jpg", "mecca_city.jpg",
-            "varanasi_city.jpg", "vatican_city.jpg", "jerusalem.jpg", "manhattan.jpg",
-        ],
-    },
-    {
-        "key": "paintings",
-        "name": "Меценат",
-        "icon": "\U0001F5BC\uFE0F",
-        "icon_image": "mona_lisa.jpg",
-        # Paintings plus other fine-art/museum objects (all Diamond rarity) -- every
-        # filename here was opened and visually checked. marengo_sword.jpg (Napoleon's
-        # ceremonial Marengo sabre) is included by explicit request even though it's a
-        # weapon-shaped relic, not a painting. Excluded despite looking like a candidate:
-        # number_17a.jpg (a decorative yarn-embroidered pillow, not an actual painting
-        # or gallery piece), dibar.jpg (a superyacht, wrong theme entirely despite the
-        # name looking unfamiliar).
-        "filenames": [
-            "mona_lisa.jpg", "salvator_mundi.jpg", "card_players.jpg", "nafea_faa_Ipoipo.jpg",
-            "pinner_vase.jpg", "codex_leicester.jpg", "codex_sassoon.jpg", "marengo_sword.jpg",
-        ],
-    },
-    {
-        "key": "credit_cards",
-        "name": "Воротила",
-        "icon": "\U0001F4B3",
-        "icon_image": "american_platinum.jpg",
-        "filenames": [
-            "american_platinum.jpg", "stratus_visa.jpg", "jpmorgan_reserve.jpg", "coutts_silk.jpg",
-        ],
-    },
-    {
-        "key": "watches",
-        "name": "Повелитель Времени",
-        "icon": "\u231A",
-        "icon_image": "rolex_daytona.jpg",
-        "filenames": [
-            "rolex_daytona.jpg", "ap_royal_oak.jpg", "cartier_tank_lc.jpg", "cartier_tank_must.jpg",
-            "chronos_vanguard.jpg", "matrix_watch.jpg", "g_shock.jpg", "omega_moonwatch.jpg",
-            "patek_philippe_5711.jpg", "patek_philippe_5811.jpg", "rolex_submariner.jpg",
-            "swiss_watch.jpg", "watch_vintage.jpg", "apple_watch.jpg",
-        ],
-    },
-    {
-        "key": "glasses",
-        "name": "Стиляга",
-        "icon": "\U0001F576\uFE0F",
-        "icon_image": "ray_ban_aviator.jpg",
-        "filenames": [
-            "ar_glasses.jpg", "glasses_diamond.jpg", "matrix_shades.jpg", "oakley.jpg",
-            "oakley_holbrook.jpg", "oakley_radar.jpg", "persol_649.jpg", "ray_ban_aviator.jpg",
-            "ray_ban_meta.jpg", "ray_ban_wayfarer.jpg",
-        ],
-    },
-    {
-        "key": "bags",
-        "name": "Икона Стиля",
-        "icon": "\U0001F45C",
-        "icon_image": "birkin_25_sellier.jpg",
-        "filenames": [
-            "birkin_20_sellier.jpg", "birkin_25_sellier.jpg", "birkin_himalaya30.jpg",
-            "handbag_croc.jpg", "celine.jpg", "prada.jpg", "chanel.jpg",
-        ],
-    },
-    {
-        "key": "iphones",
-        "name": "Яблочный Фанат",
-        "icon": "\U0001F4F1",
-        "icon_image": "iphone_diamond.jpg",
-        "filenames": [
-            "iphone_diamond.jpg", "iphone_platinum.jpg", "iphone_v2.jpg",
-        ],
-    },
-    {
-        "key": "pepe",
-        "name": "Царь Мемов",
-        "icon": "\U0001F438",
-        "icon_image": "green_pepe.jpg",
-        "filenames": [
-            "pepe_bronze.jpg", "pepe_silver.jpg", "pepe_gold.jpg", "pepe_platina.jpg",
-            "pepe_diamond.jpg", "green_pepe.jpg", "black_pepe.jpg",
-        ],
-    },
-    {
-        "key": "shoes",
-        "name": "Сникерхед",
-        "icon": "\U0001F45F",
-        "icon_image": "air_jordan_1.jpg",
-        "filenames": [
-            "adidas_shoes.jpg", "adidas_samba.jpg", "air_jordan_1.jpg", "nike_dunk_low.jpg",
-            "nike_shoes.jpg", "new_balance.jpg", "fake_sneakers.jpg", "hyped_sneakers.jpg",
-            "sneakers_gold.jpg", "y2k_skate_shoes.jpg", "louboutins.jpg",
-            "cyber_kicks.jpg",
-        ],
-    },
-    {
-        "key": "gamers",
-        "name": "Геймер",
-        "icon": "\U0001F3AE",
-        "icon_image": "rgb_keyboard.jpg",
-        "filenames": [
-            "gaming_chair.jpg", "rgb_keyboard.jpg", "custom_kb.jpg", "honeycomb_mouse.jpg",
-            "mouse.jpg", "keyboard.jpg", "rtx4090.jpg", "ultimate_gpu.jpg", "water_pc.jpg",
-            "pc_tower.jpg", "vr_visor.jpg", "stream_pro.jpg", "streamer_mic.jpg", "pro_mic.jpg",
-            "dual_mics.jpg", "cyber_rig.jpg",
-        ],
-    },
-    {
-        "key": "arcade",
-        "name": "Дворовый Чемпион",
-        "icon": "\U0001F579\uFE0F",
-        "icon_image": "mortal_kombat.jpg",
-        "filenames": [
-            "metal_slug.jpg", "mortal_kombat.jpg", "street_fighter.jpg", "tekken.jpg",
-        ],
-    },
-    {
-        "key": "brawl_stars",
-        "name": "Brawl Stars",
-        "icon": "\u2B50",
-        "icon_image": "shelly.jpg",
-        # Every filename here was opened and visually checked -- all 10 are genuine
-        # Brawl Stars character plushies (colt.jpg here is Brawl Stars' Colt --
-        # not to be confused with any cs_weapons revolver).
-        "filenames": [
-            "shelly.jpg", "colt.jpg", "el_primo.jpg", "mortis.jpg", "emz.jpg",
-            "bibi.jpg", "edgar.jpg", "leon.jpg", "max.jpg", "spike.jpg",
-        ],
-    },
-    {
-        "key": "blizzard",
-        "name": "Blizzard",
-        "icon": "\u2744\uFE0F",
-        "icon_image": "diablo.jpg",
-        # Every filename here was opened and visually checked. Excluded despite
-        # name-matching: zergling.jpg (a generic baby dragon plush, not a Zerg
-        # Zergling), archangel.jpg (generic winged knight, no Blizzard branding),
-        # barbarian.jpg (explicitly a Clash of Clans plush -- Supercell, not
-        # Blizzard), sorceress.jpg (generic fantasy sorceress, no Diablo styling),
-        # griffon.jpg (a generic mythological gryphon, no WoW branding).
-        "filenames": [
-            "diablo.jpg", "arthas_menethil.jpg", "deckard_cain.jpg", "jim_raynor.jpg",
-            "thrall.jpg", "tyrael.jpg", "zealot.jpg",
-        ],
-    },
-    {
-        "key": "elite_buildings",
-        "name": "Элитное Жильё",
-        "icon": "\U0001F3F0",
-        "icon_image": "royal_mansion.jpg",
-        # Diamond-rarity real estate/structures only -- every filename here was opened
-        # and visually checked. Excluded despite looking like a match: dubai_royale.jpg
-        # (actually a credit card design, not a building, despite the "royale" name),
-        # dibar.jpg (a superyacht), islands/ships collections already claim their own
-        # island and yacht cards separately.
-        "filenames": [
-            "royal_mansion.jpg", "cliffside_estate.jpg", "mark_penthouse.jpg",
-            "palm_villa.jpg", "tuscan_fortrees.jpg", "empathy_suite.jpg", "kyoto_zen.jpg",
-        ],
-    },
-    {
-        "key": "wonders_of_the_world",
-        "name": "Чудеса Света",
-        "icon": "\U0001F3DB\uFE0F",
-        "icon_image": "giza_pyramids.jpg",
-        # Famous real-world landmarks/monuments from the Diamond batch. Deliberately
-        # excludes: religious texts (see the separate "sacred_texts" collection below)
-        # and hotels (plaza_hotel.jpg, ritz_paris.jpg, de_crillon_paris.jpg,
-        # claridges_hotel.jpg -- hospitality, not a "wonder" landmark). burj_al_arab.jpg
-        # is kept here (not with hotels) since it's iconic skyline architecture, same
-        # treatment as eiffel_tower.jpg/sydney_opera.jpg.
-        "filenames": [
-            "giza_pyramids.jpg", "christ_redeemer.jpg", "moscow_kremlin.jpg", "petronas.jpg",
-            "rome_colosseum.jpg", "eiffel_tower.jpg", "athens_acropolis.jpg", "sheikh_zayed.jpg",
-            "taj_mahal.jpg", "stonehenge.jpg", "alhambra_palace.jpg", "tikal_guatemala.jpg",
-            "china_wall.jpg", "angkor_wat.jpg", "pamukkale_turkey.jpg", "petra_jordan.jpg",
-            "forbidden_city.jpg", "shwedagon_pagoda.jpg", "burj_al_arab.jpg", "machu_picchu.jpg",
-            "statue_of_liberty.jpg", "saint_michel.jpg", "chichen_itza.jpg", "sydney_opera.jpg",
-            "neuschwanstein.jpg", "british_museum.jpg", "hermitage.jpg", "twin_towers.jpg",
-            "palazzo_vecchio.jpg", "uffizi_gallery.jpg", "empire_state.jpg", "niagara_falls.jpg",
-        ],
-    },
-    {
-        "key": "sacred_texts",
-        "name": "Священные Писания",
-        "icon": "\U0001F4D6",
-        "icon_image": "holy_bible.jpg",
-        # Holy books of the major world religions from the Diamond batch.
-        "filenames": [
-            "holy_bible.jpg", "holy_quran.jpg", "hebrew_torah.jpg", "ancient_vedas.jpg",
-            "tripitaka_canon.jpg",
-        ],
-    },
+    {"key": "islands", "name": "Робинзон", "icon": "🏝️", "icon_image": "../nft/maldives.jpg",
+     "filenames": _NFT("caribbean_islands canary_islands maldives bali cuba jamaica ibiza easter_island new_zeland")},
+    {"key": "wonders", "name": "Путешественник", "icon": "🏛️", "icon_image": "../nft/giza.jpg",
+     "filenames": _NFT("giza hanging_gardens zeus china_wall petra christ__redeemer chichen_itza colosseum taj_mahal eiffel_tower")},
+    {"key": "soviet_cars", "name": "Совок", "icon": "🚙", "icon_image": "../nft/volga.jpg",
+     "filenames": _NFT("chaika moskvich uaz ural volga samara zaporozhets kopeika yava")},
+    {"key": "iphones", "name": "Яблочник", "icon": "📱", "icon_image": "../nft/iphone_1.jpg",
+     "filenames": _NFT("iphone_1 iphone_6 iphone_xx iphone_butterfly iphone_17")},
+    {"key": "luxury", "name": "Миллиардер", "icon": "💎", "icon_image": "../nft/gulfstream.jpg",
+     "filenames": _NFT("gulfstream jet_777x bombier azzam eclipse history_supreme dubai_royale centurion_card j._p._morgan stratus_rewards coutts_world")},
+    {"key": "jeweler", "name": "Ювелир", "icon": "💍", "icon_image": "../nft/hope_diamond.jpg",
+     "filenames": _NFT("hope_diamond pink_star diamond_clear diamond_black diamond_red shiels_emerald gold_bar gold_dinar golden_delicious peacock")},
+    {"key": "bags", "name": "Шопоголик", "icon": "👜", "icon_image": "../nft/hermes_matte.jpg",
+     "filenames": _NFT("hermes_matte louis_vuitton_zippy gucci_crocodile prada_ostrich gucci_stuart hermes_constance louis_vuitton_belt off_white_belt")},
+    {"key": "booze", "name": "Сомелье", "icon": "🍾", "icon_image": "../nft/heritage_cognac.jpg",
+     "filenames": _NFT("vodka_billionaire heritage_cognac eagle_cabernet valerio_adami gout_de_midas")},
+    {"key": "women", "name": "Вумен", "icon": "👙", "icon_image": "../nft/royal_fantasy.jpg",
+     "filenames": _NFT("susan_rosen hot_fantasy royal_fantasy splendor_fantasy star_fantasy")},
+    {"key": "american_cars", "name": "Король Хайвея", "icon": "🏎️", "icon_image": "../nft/ford_mustang.jpg",
+     "filenames": _NFT("barracuda_1970 camaro_1967 challenger_1970 chevelle_ss corvair_1965 dodge_charger ford_mustang pontiac_gto thunderbird_1955 shelby_cobra ford_gt40 delorean")},
+    {"key": "builder", "name": "Строитель", "icon": "🏗️", "icon_image": "../nft/burj_khalifa.jpg",
+     "filenames": _NFT("burj_khalifa burj_al_arab jin_mao sydney_opera opera_oslo atlantis las_vegas")},
+    {"key": "backpacker", "name": "Бекпекер", "icon": "🎒", "icon_image": "../nft/everest.jpg",
+     "filenames": _NFT("everest fuji_mountain etna mauna_loa grand_canyon niagara_falls baikal amazon_river nile_river sahara_desert congo_rainforest antarctica north_pole siberia alaska")},
+    {"key": "retro", "name": "Ретро", "icon": "📼", "icon_image": "../nft/game_boy.jpg",
+     "filenames": _NFT("atari_2600 apple_macintosh beeper commodore_64 dvd_pioneer game_boy ibm_pc jvc_vhs jvc__rc_m70 nokia_3310 palaroid sony_handycam sony_walkman tamagotchi zenit sgh_e330")},
 ]
 
 
@@ -2863,6 +2583,8 @@ def _seed_collections(conn: sqlite3.Connection) -> None:
     any previously-seeded card that's no longer in a collection's filename list
     (e.g. one that turned out to be off-theme and got removed) -- along with any
     player placements pointing at it, so a stale slot never lingers."""
+    if not COLLECTIONS_SEED_ENABLED:
+        return
     for coll in COLLECTIONS_SEED:
         conn.execute(
             "INSERT INTO collections (key, name, icon, icon_image, created_at) VALUES (?, ?, ?, ?, ?) "
@@ -2984,12 +2706,10 @@ def get_collections_overview(user_id: int) -> list[dict]:
                    COUNT(cc.card_id) AS total,
                    COALESCE(SUM(
                        1.0 / CASE c.rarity
-                           WHEN 'bronze' THEN 50
-                           WHEN 'silver' THEN 29
-                           WHEN 'gold' THEN 16.5
-                           WHEN 'platinum' THEN 4
+                           WHEN 'gold' THEN 50
+                           WHEN 'platinum' THEN 5
                            WHEN 'diamond' THEN 0.5
-                           ELSE 29
+                           ELSE 50
                        END
                    ), 0) AS difficulty,
                    (SELECT COUNT(*) FROM user_collection_completions ucc2
@@ -3132,7 +2852,10 @@ def get_all_cards() -> list[dict]:
 
 # Tiers: silver (was rare) < gold (was epic) < platinum (was legend) < diamond (new top tier).
 # Tiers: bronze (junk/memes, sub-$100) < silver ($100-1k) < gold ($1k-10k) < platinum ($10k-100k) < diamond (>$100k).
-RARITY_WEIGHTS = {"bronze": 50, "silver": 29, "gold": 16.5, "platinum": 4, "diamond": 0.5}
+# New catalog: only Gold / Platinum / Diamond exist as farm drops (Obsidian is created by
+# players via "Кастом"). The weights are percent chances per farm press and add up to
+# LESS than 100 on purpose -- the remainder (44.5%) is a miss: the gems are spent, no card.
+RARITY_WEIGHTS = {"gold": 50, "platinum": 5, "diamond": 0.5}
 
 
 def draw_random_card() -> sqlite3.Row | None:
@@ -3164,7 +2887,44 @@ def _draw_card_weighted(weights: dict[str, float]) -> sqlite3.Row | None:
         return random.choice(by_rarity[chosen_tier])
 
 
+def _next_free_number(conn: sqlite3.Connection) -> int:
+    """Numbers restart from #1 after the catalog reset: a new card gets the LOWEST number
+    that nobody holds. Taken = shown by a live card (pinned number_override, or the natural
+    rank of a live legacy/Obsidian card) or owned/in auction in card_numbers. 'free' rows
+    (vacated numbers waiting in the marketplace) are NOT taken -- they get handed out
+    here and removed from the marketplace by _insert_card_with_number()."""
+    used = set()
+    for r in conn.execute("SELECT number_override FROM user_cards WHERE voided = 0 AND number_override IS NOT NULL"):
+        used.add(r[0])
+    for r in conn.execute("SELECT number FROM card_numbers WHERE status IN ('owned','auction')"):
+        used.add(r[0])
+    for r in conn.execute(
+        "SELECT (SELECT COUNT(*) FROM user_cards u2 WHERE u2.obtained_at <= uc.obtained_at) "
+        "FROM user_cards uc WHERE uc.voided = 0 AND uc.number_override IS NULL"
+    ):
+        used.add(r[0])
+    n = 1
+    while n in used:
+        n += 1
+    return n
+
+
+def _insert_card_with_number(conn: sqlite3.Connection, user_id: int, card_id: int) -> tuple[int, int]:
+    """INSERTs a fresh user_cards row pinned to the lowest free number. Must run inside the
+    caller's write transaction (after its gem UPDATE). Returns (user_card_id, number)."""
+    n = _next_free_number(conn)
+    cur = conn.execute(
+        "INSERT INTO user_cards (user_id, card_id, obtained_at, number_override) VALUES (?, ?, ?, ?)",
+        (user_id, card_id, _now(), n),
+    )
+    conn.execute("DELETE FROM card_numbers WHERE number = ? AND status = 'free'", (n,))
+    return cur.lastrowid, n
+
+
 CASE_DEFS = {
+    # New catalog = Gold/Platinum/Diamond only. Old Bronze/Silver shares were folded into Gold; Capybara re-tuned
+    # (Gold 16 / Platinum 84) so a Platinum costs ~5% less than via farm (400/0.84 vs 25/0.05), same edge as before;
+    # Pepe unchanged (Diamond 1 per 4000 gems vs farm 5000, same as before). Tails of Hamster/Duck unchanged.
     # Each case draws from ONLY its two adjacent target tiers — no exposure to the other
     # three rarities at all. Per 100 gems spent, every case yields MORE of its named target
     # tier than farm does at the same gem spend, by a deliberately modest, graduated margin
@@ -3175,11 +2935,11 @@ CASE_DEFS = {
     # draws) and zero chance at anything outside its two tiers, unlike farm's small tail
     # chance at every rarity.
     "hamster": {"name": "Хомяк", "price": 100, "image": "case/case_hamster.jpg",  # was Bronze/Silver only, still worse than farm for Silver at this price (100 gems can't beat farm's ~86/Silver even at 100% weight) -- added small Platinum/Diamond tail chances as upside; trimmed from 3/1 to 2.5/0.5 after the 1% Diamond alone made overall EV ~1.39x farm (higher than every other case) -- now ~1.12x, in line with Capybara/Pepe
-                "weights": {"bronze": 34, "silver": 63, "platinum": 2.5, "diamond": 0.5}},
+                "weights": {"gold": 97, "platinum": 2.5, "diamond": 0.5}},
     "duck": {"name": "Уточка", "price": 200, "image": "case/case_utya.jpg",  # was Silver/Gold only, still worse than farm for Gold at this price (200 gems can't beat farm's ~151/Gold even at 100% weight) -- added small Platinum/Diamond tail chances as upside instead
-             "weights": {"silver": 38, "gold": 58, "platinum": 3, "diamond": 1}},
+             "weights": {"gold": 96, "platinum": 3, "diamond": 1}},
     "capybara": {"name": "Капибара", "price": 400, "image": "case/case_capybara.jpg",  # Gold/Platinum only -- price doubled (was 200) to halve return/gem, per request
-                 "weights": {"gold": 33, "platinum": 67}},
+                 "weights": {"gold": 16, "platinum": 84}},
     "pepe": {"name": "Пепе", "price": 1000, "image": "case/case_pep.jpg",  # Platinum/Diamond only -- price doubled (was 500) to halve return/gem, per request
              "weights": {"platinum": 75, "diamond": 25}},
 }
@@ -3193,6 +2953,7 @@ def open_case(user_id: int, case_key: str) -> dict:
     """Spends the case's gem price for one random card, weighted by that case's own
     (better-than-farm) odds. Raises CaseNotFound for a bad key, InsufficientGems if the
     balance check fails (checked and deducted atomically, same pattern as farm())."""
+    _require_feature("cases")
     case_def = CASE_DEFS.get(case_key)
     if case_def is None:
         raise CaseNotFound()
@@ -3204,12 +2965,7 @@ def open_case(user_id: int, case_key: str) -> dict:
         if row is None or row["gems"] < case_def["price"]:
             raise InsufficientGems()
         conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (case_def["price"], user_id))
-        cur = conn.execute(
-            "INSERT INTO user_cards (user_id, card_id, obtained_at) VALUES (?, ?, ?)",
-            (user_id, card["id"], _now()),
-        )
-        user_card_id = cur.lastrowid
-        drop_number = conn.execute("SELECT COUNT(*) FROM user_cards").fetchone()[0]
+        user_card_id, drop_number = _insert_card_with_number(conn, user_id, card["id"])
         if not (ADMIN_ID and str(user_id) == str(ADMIN_ID)):
             _bump_counter(conn, "case_open")
     return {
@@ -3315,10 +3071,11 @@ BURN_REQUIREMENTS = {
     # guaranteed BURN_SUCCESS_RATE (100%), Platinum->Diamond now costs exactly 4x the
     # cheapest-source Platinum price (~389 gems via crafting Silver) = ~1556 gems/Diamond,
     # a bit ABOVE craft-from-Platinum's own ~1250 gems/Diamond again.
-    "bronze":   {"target": "silver",   "count": 4},
-    "silver":   {"target": "gold",     "count": 4},
-    "gold":     {"target": "platinum", "count": 4},
-    "platinum": {"target": "diamond",  "count": 4},
+    # New catalog (Gold/Platinum/Diamond only). Priced vs farm cost per card (~Gold 50 gems,
+    # Platinum 500, Diamond 5000): 8 Gold ~ 400 gems (a bit under a farmed Platinum), 5 Platinum
+    # ~ 2500 gems (half a farmed Diamond) -- same edge evolution had before. Always succeeds.
+    "gold":     {"target": "platinum", "count": 8},
+    "platinum": {"target": "diamond",  "count": 5},
     # No "diamond" entry — Diamond is the top tier, nothing to burn UP into (Diamond can
     # still be re-rolled via craft_card(), which is a different mechanic).
 }
@@ -3326,8 +3083,6 @@ BURN_REQUIREMENTS = {
 # Failure chance scales with how rare/valuable the TARGET tier is — evolving into something
 # higher up is riskier. Keyed by target_rarity (not source rarity).
 BURN_SUCCESS_RATE = {
-    "silver":   1.0,  # guaranteed
-    "gold":     1.0,  # guaranteed
     "platinum": 1.0,  # guaranteed
     "diamond":  1.0,  # guaranteed
 }
@@ -3364,6 +3119,7 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
     and get_leaderboard() — so "Всего" genuinely goes down — but physically stay put so
     every historical reference stays valid. Raises BurnNotAllowed for an unrecognized/
     top-tier rarity."""
+    _require_feature("evolve")
     recipe = BURN_REQUIREMENTS.get(rarity)
     if recipe is None:
         raise BurnNotAllowed()
@@ -3378,7 +3134,7 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
             f"WHERE uc.id IN ({placeholders}) AND uc.user_id = ? AND c.rarity = ? "
             f"AND uc.listed_price IS NULL AND uc.swap_listed = 0 "
             f"AND uc.staked_at IS NULL AND uc.pvp_round_id IS NULL AND uc.voided = 0 "
-            f"AND uc.pinned_at IS NULL "
+            f"AND uc.pinned_at IS NULL AND uc.custom_name IS NULL "
             f"AND NOT EXISTS (SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = uc.id AND ng.drawn_at IS NULL)",
             (*user_card_ids, user_id, rarity),
         ).fetchall()
@@ -3405,16 +3161,17 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
             recipient_id = burn_ids[0]
             _free_number(conn, recipient_id)
             new_obtained_at = _now()
+            # take the row out of play first so its OLD number doesn't count as taken, then
+            # hand the evolved card the lowest free number (numbering restarted from #1)
+            conn.execute("UPDATE user_cards SET voided = 1, number_override = NULL WHERE id = ?", (recipient_id,))
+            new_drop_number = _next_free_number(conn)
             conn.execute(
                 "UPDATE user_cards SET card_id = ?, obtained_at = ?, listed_price = NULL, "
-                "swap_listed = 0, staked_at = NULL, pvp_round_id = NULL, voided = 0, number_override = NULL, pinned_at = NULL WHERE id = ?",
-                (new_card["id"], new_obtained_at, recipient_id),
+                "swap_listed = 0, staked_at = NULL, pvp_round_id = NULL, voided = 0, number_override = ?, pinned_at = NULL WHERE id = ?",
+                (new_card["id"], new_obtained_at, new_drop_number, recipient_id),
             )
+            conn.execute("DELETE FROM card_numbers WHERE number = ? AND status = 'free'", (new_drop_number,))
             new_user_card_id = recipient_id
-            new_drop_number = conn.execute(
-                "SELECT COUNT(*) FROM user_cards WHERE obtained_at <= ?",
-                (new_obtained_at,),
-            ).fetchone()[0]
             remaining_ids = burn_ids[1:]
         else:
             remaining_ids = burn_ids
@@ -3457,11 +3214,31 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
 
 def grant_card(user_id: int, card_id: int) -> int:
     with get_conn() as conn:
-        cur = conn.execute(
-            "INSERT INTO user_cards (user_id, card_id, obtained_at) VALUES (?, ?, ?)",
-            (user_id, card_id, _now()),
-        )
-        return cur.lastrowid
+        return _insert_card_with_number(conn, user_id, card_id)[0]
+
+
+def _farm_roll():
+    """One farm press: returns "empty" (no active cards at all), "miss" (the roll landed
+    in the 100 - sum(RARITY_WEIGHTS) gap -- gems burn, no card), or one random active card
+    row of the rolled tier (a tier with no active cards counts as a miss)."""
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM cards WHERE is_active = 1").fetchall()
+    if not rows:
+        return "empty"
+    roll = random.random() * 100
+    cumulative = 0.0
+    chosen = None
+    for tier, weight in RARITY_WEIGHTS.items():
+        cumulative += weight
+        if roll < cumulative:
+            chosen = tier
+            break
+    if chosen is None:
+        return "miss"
+    pool = [r for r in rows if r["rarity"] == chosen]
+    if not pool:
+        return "miss"
+    return random.choice(pool)
 
 
 FARM_COST_GEMS = 25
@@ -3479,9 +3256,11 @@ def farm(user_id: int) -> dict | None:
     (including a brand new account's very first ones) draws from the same RARITY_WEIGHTS --
     the old undisclosed new-player boost on the first 2 farms was removed since it was
     landing high rarities for newbies too often."""
-    card = _draw_card_weighted(RARITY_WEIGHTS)
-    if card is None:
+    _require_feature("farm")
+    rolled = _farm_roll()
+    if rolled == "empty":
         return None
+    card = None if rolled == "miss" else rolled
     with get_conn() as conn:
         row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
         if row is None or row["gems"] < FARM_COST_GEMS:
@@ -3493,16 +3272,14 @@ def farm(user_id: int) -> dict | None:
             "UPDATE users SET gems = gems - ?, last_farm_at = ? WHERE telegram_id = ?",
             (FARM_COST_GEMS, _now(), user_id),
         )
-        cur = conn.execute(
-            "INSERT INTO user_cards (user_id, card_id, obtained_at) VALUES (?, ?, ?)",
-            (user_id, card["id"], _now()),
-        )
-        user_card_id = cur.lastrowid
+        user_card_id = None
+        drop_number = None
+        if card is not None:
+            user_card_id, drop_number = _insert_card_with_number(conn, user_id, card["id"])
         if not (ADMIN_ID and str(user_id) == str(ADMIN_ID)):
             _bump_counter(conn, "farm")
         # Global drop number — position among ALL cards ever farmed/crafted by ANY user,
-        # not just this user's own collection.
-        drop_number = conn.execute("SELECT COUNT(*) FROM user_cards").fetchone()[0]
+        # not just this user's own collection. (None on a miss -- nothing was dropped.)
 
         # Anti-bot referral payout: requires BOTH a first-ever farm (checked here) AND
         # having joined PUBLIC_CHAT (chat_member_verified -- see mark_chat_verified()).
@@ -3526,14 +3303,19 @@ def farm(user_id: int) -> dict | None:
                 conn.execute("UPDATE users SET ref_reward_pending = 0 WHERE telegram_id = ?", (user_id,))
                 referral_reward = {"referrer_id": me["ref_by"], "amount": reward_amount}
 
-    result = {
-        "user_card_id": user_card_id,
-        "card_id": card["id"],
-        "filename": card["filename"],
-        "name": card["name"],
-        "rarity": card["rarity"],
-        "drop_number": drop_number,
-    }
+    if card is None:
+        result = {"miss": True, "user_card_id": None, "card_id": None, "filename": None,
+                  "name": None, "rarity": None, "drop_number": None}
+    else:
+        result = {
+            "miss": False,
+            "user_card_id": user_card_id,
+            "card_id": card["id"],
+            "filename": card["filename"],
+            "name": card["name"],
+            "rarity": card["rarity"],
+            "drop_number": drop_number,
+        }
     if referral_reward:
         result["referral_reward"] = referral_reward
     return result
@@ -3543,20 +3325,17 @@ def farm(user_id: int) -> dict | None:
 # near-lateral reroll, since it's already the top tier) costs far more than crafting a
 # cheap Bronze. Keeps craft from being a flat-rate gem sink regardless of what's at stake.
 CRAFT_COST_GEMS = {
-    # Gold/platinum raised (were 50/100) to bring craft back down to a modest premium
-    # over plain farm odds instead of a 2-13x free-money shortcut -- see CRAFT_WEIGHTS
-    # comment below for the full reasoning.
-    "bronze": 25,
-    "silver": 25,
-    "gold": 100,
-    "platinum": 200,
-    "diamond": 200,
+    # New catalog (Gold/Platinum/Diamond). Roughly farm-equivalent card values are Gold 50,
+    # Platinum 500, Diamond 5000 gems; prices keep craft a modest ~+15-20% better than that.
+    "gold": 50,
+    "platinum": 300,
+    "diamond": 500,
 }
 TRANSFER_FEE_GEMS = 25  # charged to the sender for a direct @username gift
 # Minimum gems a card can be listed/offered for on the market, scaled by rarity — a
 # pricier/rarer tier gets a higher floor. Applies to both a seller's listing price and a
 # buyer's offer (list_card()/make_offer()).
-MIN_LISTING_PRICE_BY_RARITY = {"bronze": 25, "silver": 50, "gold": 100, "platinum": 100, "diamond": 100}
+MIN_LISTING_PRICE_BY_RARITY = {"bronze": 25, "silver": 50, "gold": 50, "platinum": 250, "diamond": 100}
 
 
 def get_min_listing_price(rarity: str | None) -> int:
@@ -3568,7 +3347,7 @@ def get_min_listing_price(rarity: str | None) -> int:
 def get_craft_cost(rarity: str | None) -> int:
     """CRAFT_COST_GEMS for this rarity — falls back to the bronze cost for an
     unrecognized/missing rarity."""
-    return CRAFT_COST_GEMS.get(rarity or "bronze", CRAFT_COST_GEMS["bronze"])
+    return CRAFT_COST_GEMS.get(rarity or "gold", CRAFT_COST_GEMS["gold"])
 
 
 class ListingPriceTooLow(Exception):
@@ -3608,19 +3387,16 @@ CRAFT_WEIGHTS = {
     # Diamond column set to a clean 2/4/8/16% doubling ladder (bronze->platinum), per
     # request -- the rest of each row keeps its old relative shape, just rescaled to
     # still sum to 100 after carving out the new diamond share.
-    "bronze":   {"bronze": 69, "silver": 16, "gold": 8, "platinum": 5, "diamond": 2},
-    "silver":   {"silver": 75, "gold": 13, "platinum": 8, "diamond": 4},
-    "gold":     {"gold": 82, "platinum": 10, "diamond": 8},
-    "platinum": {"platinum": 84, "diamond": 16},
-    # Diamond is the top tier — nowhere higher to go, so crafting one just re-rolls
-    # another random Diamond (people reroll for a different Diamond card they want more).
+    "gold":     {"gold": 90, "platinum": 9.5, "diamond": 0.5},
+    "platinum": {"platinum": 90, "diamond": 10},
+    # Diamond is the top tier -- crafting one just re-rolls another random Diamond card.
     "diamond": {"diamond": 100},
 }
 
 # Diamond craft is risky: instead of a guaranteed reroll, there's a
 # CRAFT_DIAMOND_SUCCESS_RATE chance of getting a new Diamond card and a (1 - rate) chance
 # the card is destroyed outright. Gems are still spent either way.
-CRAFT_DIAMOND_SUCCESS_RATE = 0.95
+CRAFT_DIAMOND_SUCCESS_RATE = 1.0  # Diamond reroll is guaranteed now (500 gems)
 
 
 class CraftNotOwned(Exception):
@@ -3630,7 +3406,7 @@ class CraftNotOwned(Exception):
 def draw_card_for_craft(input_rarity: str) -> sqlite3.Row | None:
     """Like draw_random_card(), but weighted by CRAFT_WEIGHTS[input_rarity] instead of the
     normal farm odds. Falls back to the bronze table for an unrecognized input tier."""
-    weights_for_tier = CRAFT_WEIGHTS.get(input_rarity, CRAFT_WEIGHTS["bronze"])
+    weights_for_tier = CRAFT_WEIGHTS.get(input_rarity, CRAFT_WEIGHTS["gold"])
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM cards WHERE is_active = 1").fetchall()
         if not rows:
@@ -3655,12 +3431,13 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
     Diamond card back — the rest of the time the card is destroyed outright (gems are still
     spent either way, same as burn_cards()'s risk mechanic). Raises InsufficientGems if the
     gem balance is too low, CraftNotOwned if user_card_id isn't this user's."""
+    _require_feature("craft")
     with get_conn() as conn:
         owned = conn.execute(
             "SELECT uc.id, uc.obtained_at, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, uc.pinned_at, c.rarity, "
             "(SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = uc.id AND ng.drawn_at IS NULL) AS in_giveaway "
             "FROM user_cards uc JOIN cards c ON c.id = uc.card_id "
-            "WHERE uc.id = ? AND uc.user_id = ?",
+            "WHERE uc.id = ? AND uc.user_id = ? AND uc.voided = 0 AND uc.custom_name IS NULL",
             (user_card_id, user_id),
         ).fetchone()
         if owned is None:
@@ -3672,7 +3449,7 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
         if gems_row is None or gems_row["gems"] < cost:
             raise InsufficientGems()
 
-    rarity = owned["rarity"] or "bronze"
+    rarity = owned["rarity"] or "gold"
     success = random.random() < CRAFT_DIAMOND_SUCCESS_RATE if rarity == "diamond" else True
 
     new_card = draw_card_for_craft(rarity) if success else None
@@ -4108,8 +3885,12 @@ def extract_card_number(user_id: int, user_card_id: int) -> dict:
         )
         # Next number ever to be assigned by a real farm right now — never held by any
         # existing card, so pinning it here can't collide with anything on the board.
-        next_number = conn.execute("SELECT COUNT(*) FROM user_cards").fetchone()[0] + 1
+        # (compute BEFORE re-pinning: this card itself still shows the extracted number)
+        conn.execute("UPDATE user_cards SET number_override = NULL WHERE id = ?", (user_card_id,))
+        conn.execute("UPDATE card_numbers SET user_card_id = NULL WHERE user_card_id = ?", (user_card_id,))
+        next_number = _next_free_number(conn)
         conn.execute("UPDATE user_cards SET number_override = ? WHERE id = ?", (next_number, user_card_id))
+        conn.execute("DELETE FROM card_numbers WHERE number = ? AND status = 'free'", (next_number,))
         gems_left = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()["gems"]
     return {"extracted_number": current_number, "new_number": next_number, "gems": gems_left}
 
@@ -5787,6 +5568,7 @@ def stake_card(user_card_id: int, owner_id: int) -> bool:
     card's own daily staking rate (STAKE_DAILY_RATES). Blocked if it's already staked, or
     currently listed for sale/swap (unlist first). Raises InsufficientGems if the fee
     can't be covered, StakeLimitReached if the player already has MAX_STAKED_CARDS staked."""
+    _require_feature("stake")
     with get_conn() as conn:
         row = conn.execute(
             "SELECT uc.user_id, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, c.rarity, "
@@ -6429,12 +6211,12 @@ def join_pvp_round(user_id: int, user_card_ids: list[int]) -> dict:
 
         for ucid in user_card_ids:
             row = conn.execute(
-                "SELECT user_id, listed_price, swap_listed, staked_at, pvp_round_id, pinned_at, card_id, "
+                "SELECT user_id, listed_price, swap_listed, staked_at, pvp_round_id, pinned_at, card_id, voided, "
                 "(SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = user_cards.id AND ng.drawn_at IS NULL) AS in_giveaway "
                 "FROM user_cards WHERE id = ?",
                 (ucid,),
             ).fetchone()
-            if row is None or row["user_id"] != user_id:
+            if row is None or row["user_id"] != user_id or row["voided"]:
                 raise PvpCardNotOwned()
             if (row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None
                     or row["pvp_round_id"] is not None or row["pinned_at"] is not None or row["in_giveaway"]):
@@ -7125,6 +6907,7 @@ def get_pending_withdrawal(user_id: int) -> dict | None:
 
 
 def request_crypto_withdrawal(user_id: int, user_card_ids: list[int], wallet_address: str = "") -> dict:
+    _require_feature("withdraw")
     # wallet_address is now optional/unused for real — this used to be a crypto (GRAM)
     # payout requiring an external wallet; it now pays out in Telegram Stars straight to
     # the user's own account, so there's nothing to collect from them here. Kept as a
@@ -7218,9 +7001,22 @@ def admin_cancel_withdrawal(withdrawal_id: int) -> dict | None:
         card_ids = [r["user_card_id"] for r in conn.execute(
             "SELECT user_card_id FROM crypto_withdrawal_cards WHERE withdrawal_id = ?", (withdrawal_id,)
         ).fetchall()]
-        if card_ids:
-            placeholders = ",".join("?" for _ in card_ids)
-            conn.execute(f"UPDATE user_cards SET voided = 0 WHERE id IN ({placeholders})", card_ids)
+        for cid in card_ids:
+            conn.execute("UPDATE user_cards SET voided = 0 WHERE id = ?", (cid,))
+            # While the card sat voided its pinned number may have been handed to someone else
+            # (numbers restart from #1 now) -- if so, give the restored card a fresh free number.
+            ov = conn.execute("SELECT number_override FROM user_cards WHERE id = ?", (cid,)).fetchone()["number_override"]
+            if ov is not None:
+                clash = conn.execute(
+                    "SELECT 1 FROM user_cards WHERE voided = 0 AND number_override = ? AND id != ?", (ov, cid)
+                ).fetchone() or conn.execute(
+                    "SELECT 1 FROM card_numbers WHERE number = ? AND status IN ('owned','auction') "
+                    "AND (user_card_id IS NULL OR user_card_id != ?)", (ov, cid)
+                ).fetchone()
+                if clash:
+                    new_n = _next_free_number(conn)
+                    conn.execute("UPDATE user_cards SET number_override = ? WHERE id = ?", (new_n, cid))
+                    conn.execute("DELETE FROM card_numbers WHERE number = ? AND status = 'free'", (new_n,))
         conn.execute(
             "UPDATE crypto_withdrawals SET status = 'cancelled', resolved_at = ? WHERE id = ?",
             (_now(), withdrawal_id),
