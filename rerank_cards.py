@@ -1,12 +1,14 @@
-import sqlite3, random, shutil, sys, time, os, json
+"""Синхронизирует каталог БД с new_cards.py (источник правды): добавляет новые карты, правит ранги. Идемпотентно: меняет только то,
+что отличается. Владельцам карты, у которой меняется ранг, выдаётся ДРУГАЯ карта их прежнего
+ранга (карта в user_cards заменяется на месте, номер/место сохраняются).
+  python3 rerank_cards.py          - сухой прогон (ничего не меняет)
+  python3 rerank_cards.py --apply  - применить (перед этим делает бэкап БД)"""
+import sqlite3, random, sys, time, os, json
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from new_cards import NEW_CARDS
 DB = "/root/peeppo/peeppo.db"
 APPLY = "--apply" in sys.argv
-CHANGES = {  # key -> new rarity
-    "mma_belt": "diamond", "burj_khalifa": "platinum", "burj_al_arab": "platinum",
-    "cannes_palme": "diamond", "j._p._morgan": "diamond", "stratus_rewards": "diamond",
-    "coutts_world": "diamond", "davinci_trophy": "diamond", "diamond_black": "diamond",
-    "diamond_red": "diamond",
-}
+TARGET = {f"../nft/{k}.jpg": (name, r) for k, name, r in NEW_CARDS}
 if APPLY:
     os.makedirs("/root/peeppo/backups", exist_ok=True)
     bk = f"/root/peeppo/backups/peeppo_pre_rerank_{time.strftime('%Y%m%d_%H%M%S')}.db"
@@ -14,28 +16,47 @@ if APPLY:
     print("backup ->", bk)
 c = sqlite3.connect(DB, timeout=60); c.row_factory = sqlite3.Row
 c.execute("BEGIN IMMEDIATE")
-files = {k: f"../nft/{k}.jpg" for k in CHANGES}
-rows = {k: c.execute("SELECT id, rarity, name FROM cards WHERE filename=?", (f,)).fetchone() for k, f in files.items()}
-missing = [k for k, r in rows.items() if r is None]
+# сначала добавляем карты, которых ещё нет в каталоге (новые файлы в static/nft)
+added = []
+for f, (name, r_) in TARGET.items():
+    if not c.execute("SELECT 1 FROM cards WHERE filename=?", (f,)).fetchone():
+        c.execute("INSERT INTO cards (filename, name, rarity, is_active, created_at) VALUES (?, ?, ?, 1, ?)",
+                  (f, name, r_, time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime())))
+        added.append(f[7:-4])
+    else:
+        c.execute("UPDATE cards SET name=? WHERE filename=? AND name != ?", (name, f, name))
+rows = {r["filename"]: r for r in c.execute("SELECT id, filename, rarity, name FROM cards WHERE is_active=1")}
+missing = [f for f in TARGET if f not in rows]
 assert not missing, missing
-changing_ids = {r["id"] for r in rows.values()}
-report = {"cards": {}, "swapped_total": 0, "users": {}}
-for k, new_r in CHANGES.items():
-    r = rows[k]; old_r = r["rarity"]
-    entry = {"name": r["name"], "old": old_r, "new": new_r, "owned_rows": 0}
-    if old_r == new_r:
-        report["cards"][k] = entry; continue
-    pool = [x["id"] for x in c.execute("SELECT id FROM cards WHERE is_active=1 AND rarity=?", (old_r,)) if x["id"] not in changing_ids]
+changing = {f: (rows[f]["rarity"], TARGET[f][1]) for f in TARGET if rows[f]["rarity"] != TARGET[f][1]}
+changing_ids = {rows[f]["id"] for f in changing}
+pool_by_rarity = {}
+for r in rows.values():
+    if r["id"] not in changing_ids:
+        pool_by_rarity.setdefault(r["rarity"], []).append(r["id"])
+pending = {x[0] for x in c.execute(
+    "SELECT wc.user_card_id FROM crypto_withdrawal_cards wc JOIN crypto_withdrawals w ON w.id=wc.withdrawal_id WHERE w.status='pending'")}
+owned_by_user = {}
+for x in c.execute("SELECT user_id, card_id FROM user_cards WHERE voided=0"):
+    owned_by_user.setdefault(x["user_id"], set()).add(x["card_id"])
+report = {"cards_added": added, "cards": {}, "swapped_total": 0, "users": {}}
+for f, (old_r, new_r) in sorted(changing.items(), key=lambda kv: kv[0]):
+    r = rows[f]
+    pool = pool_by_rarity.get(old_r)
     assert pool, f"no replacement pool for {old_r}"
-    owned = c.execute("SELECT id, user_id FROM user_cards WHERE card_id=?", (r["id"],)).fetchall()
-    entry["owned_rows"] = len(owned)
+    owned = [o for o in c.execute("SELECT id, user_id, voided FROM user_cards WHERE card_id=?", (r["id"],))
+             if o["voided"] == 0 or o["id"] in pending]
+    report["cards"][f[7:-4]] = {"old": old_r, "new": new_r, "owned_rows": len(owned)}
     for o in owned:
-        repl = random.choice(pool)
+        have = owned_by_user.setdefault(o["user_id"], set())
+        fresh = [x for x in pool if x not in have]
+        repl = random.choice(fresh or pool)
         c.execute("UPDATE user_cards SET card_id=? WHERE id=?", (repl, o["id"]))
+        have.add(repl)
         report["users"][str(o["user_id"])] = report["users"].get(str(o["user_id"]), 0) + 1
     report["swapped_total"] += len(owned)
     c.execute("UPDATE cards SET rarity=? WHERE id=?", (new_r, r["id"]))
-    report["cards"][k] = entry
+report["cards_changed"] = len(changing)
 report["rarity_totals_now"] = [tuple(x) for x in c.execute("SELECT rarity, COUNT(*) FROM cards WHERE is_active=1 GROUP BY rarity")]
 print(json.dumps(report, ensure_ascii=False, indent=1))
 if APPLY:

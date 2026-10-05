@@ -2551,7 +2551,7 @@ COLLECTIONS_SEED = [
     {"key": "islands", "name": "Робинзон", "icon": "🏝️", "icon_image": "../nft/maldives.jpg",
      "filenames": _NFT("caribbean_islands canary_islands maldives bali cuba jamaica ibiza easter_island new_zeland")},
     {"key": "wonders", "name": "Путешественник", "icon": "🏛️", "icon_image": "../nft/giza.jpg",
-     "filenames": _NFT("giza hanging_gardens zeus china_wall petra christ__redeemer chichen_itza colosseum taj_mahal eiffel_tower")},
+     "filenames": _NFT("giza hanging_gardens china_wall petra chichen_itza colosseum taj_mahal eiffel_tower")},
     {"key": "soviet_cars", "name": "Совок", "icon": "🚙", "icon_image": "../nft/volga.jpg",
      "filenames": _NFT("chaika moskvich uaz ural volga samara zaporozhets kopeika yava")},
     {"key": "iphones", "name": "Яблочник", "icon": "📱", "icon_image": "../nft/iphone_1.jpg",
@@ -2559,7 +2559,7 @@ COLLECTIONS_SEED = [
     {"key": "luxury", "name": "Миллиардер", "icon": "💎", "icon_image": "../nft/gulfstream.jpg",
      "filenames": _NFT("gulfstream jet_777x bombier azzam eclipse history_supreme dubai_royale centurion_card j._p._morgan stratus_rewards coutts_world")},
     {"key": "jeweler", "name": "Ювелир", "icon": "💍", "icon_image": "../nft/hope_diamond.jpg",
-     "filenames": _NFT("hope_diamond pink_star diamond_clear diamond_black diamond_red shiels_emerald gold_bar gold_dinar golden_delicious peacock")},
+     "filenames": _NFT("hope_diamond pink_star diamond_clear diamond_black diamond_red peacock")},
     {"key": "bags", "name": "Шопоголик", "icon": "👜", "icon_image": "../nft/hermes_matte.jpg",
      "filenames": _NFT("hermes_matte louis_vuitton_zippy gucci_crocodile prada_ostrich gucci_stuart hermes_constance louis_vuitton_belt off_white_belt")},
     {"key": "booze", "name": "Сомелье", "icon": "🍾", "icon_image": "../nft/heritage_cognac.jpg",
@@ -2572,6 +2572,26 @@ COLLECTIONS_SEED = [
      "filenames": _NFT("burj_khalifa burj_al_arab jin_mao sydney_opera opera_oslo atlantis las_vegas")},
     {"key": "backpacker", "name": "Бекпекер", "icon": "🎒", "icon_image": "../nft/everest.jpg",
      "filenames": _NFT("everest fuji_mountain etna mauna_loa grand_canyon niagara_falls baikal amazon_river nile_river sahara_desert congo_rainforest antarctica north_pole siberia alaska")},
+    {"key": "monuments", "name": "Памятники", "icon": "🗽", "icon_image": "../nft/statue_of_liberty.jpg",
+     "filenames": _NFT("statue_of_liberty mount_rushmore lincoln_memorial mother_statue zeus christ__redeemer castillo_maya angkor_thom")},
+    {"key": "teenager", "name": "Тинейджер", "icon": "🎮", "icon_image": "../nft/nike_jordan_1.jpg",
+     "filenames": _NFT("adidas_samba nike_jordan_1 new_balance alienware ibuy_power vengeance nintendo_switch ps_5_pro xbox_x ipod ipad apple_watch")},
+    {"key": "german_cars", "name": "Германец", "icon": "🚘", "icon_image": "../nft/audi_r8.jpg",
+     "filenames": _NFT("audi_a6 audi_q7 audi_r8 bmw_e30 bmw_e31 bmw_e39 benz_w126 benz_sls_amg gelandewagen")},
+    {"key": "supercars", "name": "Суперкар", "icon": "🏎️", "icon_image": "../nft/bugatti.jpg",
+     "filenames": _NFT("bugatti lamborghini mclaren maserati")},
+    {"key": "biker", "name": "Байкер", "icon": "🏍️", "icon_image": "../nft/harley_davidson.jpg",
+     "filenames": _NFT("harley_davidson honda_fireblade kawasaki_ninja bmw_adventure")},
+    {"key": "champion", "name": "Чемпион", "icon": "🏆", "icon_image": "../nft/fifa_trophy.jpg",
+     "filenames": _NFT("cannes_palme davinci_trophy fifa_trophy mma_belt nobel_medal oscar_trophy")},
+    {"key": "knight", "name": "Рыцарь", "icon": "🏰", "icon_image": "../nft/chambord_castle.jpg",
+     "filenames": _NFT("chambord_castle himeji_castle osaka_castle wartburg_castle mont_michel")},
+    {"key": "pilgrim", "name": "Паломник", "icon": "⛪", "icon_image": "../nft/sagrada_familia.jpg",
+     "filenames": _NFT("cologne_cathedral sagrada_familia jerusalem wailing_wall holy_bible quran torah")},
+    {"key": "perfumer", "name": "Парфюмер", "icon": "🧴", "icon_image": "../nft/chanel_5.jpg",
+     "filenames": _NFT("chanel_5 morreale_paris baccarat_les clive_christian golden_delicious")},
+    {"key": "pepe", "name": "Жаба", "icon": "🐸", "icon_image": "../nft/pepe_diamond.jpg",
+     "filenames": _NFT("pepe_gold pepe_platinum pepe_diamond")},
     {"key": "retro", "name": "Ретро", "icon": "📼", "icon_image": "../nft/game_boy.jpg",
      "filenames": _NFT("atari_2600 apple_macintosh beeper commodore_64 dvd_pioneer game_boy ibm_pc jvc_vhs jvc__rc_m70 nokia_3310 palaroid sony_handycam sony_walkman tamagotchi zenit sgh_e330")},
 ]
@@ -3387,8 +3407,8 @@ CRAFT_WEIGHTS = {
     # Diamond column set to a clean 2/4/8/16% doubling ladder (bronze->platinum), per
     # request -- the rest of each row keeps its old relative shape, just rescaled to
     # still sum to 100 after carving out the new diamond share.
-    "gold":     {"gold": 90, "platinum": 9.5, "diamond": 0.5},
-    "platinum": {"platinum": 90, "diamond": 10},
+    "gold":     {"gold": 79, "platinum": 20, "diamond": 1},
+    "platinum": {"platinum": 80, "diamond": 20},
     # Diamond is the top tier -- crafting one just re-rolls another random Diamond card.
     "diamond": {"diamond": 100},
 }
@@ -5989,11 +6009,12 @@ def get_global_rarity_breakdown() -> dict:
     the Farm screen."""
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT c.rarity, COUNT(*) AS n FROM user_cards uc "
-            "JOIN cards c ON c.id = uc.card_id WHERE uc.voided = 0 GROUP BY c.rarity"
+            "SELECT CASE WHEN uc.custom_name IS NOT NULL AND uc.custom_name != '' "
+            "THEN 'obsidian' ELSE c.rarity END AS r, COUNT(*) AS n FROM user_cards uc "
+            "JOIN cards c ON c.id = uc.card_id WHERE uc.voided = 0 GROUP BY r"
         ).fetchall()
-    counts = {r["rarity"]: r["n"] for r in rows}
-    return {rarity: counts.get(rarity, 0) for rarity in ("bronze", "silver", "gold", "platinum", "diamond")}
+    counts = {r["r"]: r["n"] for r in rows}
+    return {rarity: counts.get(rarity, 0) for rarity in ("obsidian", "bronze", "silver", "gold", "platinum", "diamond")}
 
 
 # Accounts kept off every public leaderboard/ranking, whatever their stats say --

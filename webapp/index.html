@@ -3374,6 +3374,7 @@
       <div id="chance-title">Твоя коллекция</div>
       <div id="chance-sub">Разбивка по редкости — только твои карты</div>
       <div id="chance-total"></div>
+      <div class="chance-row"><span class="rarity-tag obsidian">obsidian</span><span class="chance-pct" id="farmed-obsidian">0</span></div>
       <div class="chance-row"><span class="rarity-tag diamond">diamond</span><span class="chance-pct" id="farmed-diamond">0</span></div>
       <div class="chance-row"><span class="rarity-tag platinum">platinum</span><span class="chance-pct" id="farmed-platinum">0</span></div>
       <div class="chance-row"><span class="rarity-tag gold">gold</span><span class="chance-pct" id="farmed-gold">0</span></div>
@@ -3903,7 +3904,7 @@ const API_BASE = "/api";
 // artwork swap) so browsers/Telegram's WebView don't keep serving a cached, stale
 // picture from before the swap -- every /static/cards/ URL below carries this as a
 // query string, which is enough to bust the cache without renaming any files.
-const CARD_IMG_VERSION = 3;
+const CARD_IMG_VERSION = 4;
 const FARM_COST_GEMS = 25;
 // Mirrors database.py's MIN_LISTING_PRICE_BY_RARITY — client-side copy for the price
 // prompt + pre-check (server still enforces it for real via ListingPriceTooLow).
@@ -4222,9 +4223,10 @@ function showCardsBreakdown(){
   document.getElementById("chance-title").textContent = "Твоя коллекция";
   document.getElementById("chance-sub").textContent = "Разбивка по редкости — только твои карты";
   document.getElementById("chance-total").textContent = `Всего: ${inventory.length}`;
-  document.getElementById("farmed-diamond").textContent = inventory.filter(c=>c.rarity==="diamond").length;
-  document.getElementById("farmed-platinum").textContent = inventory.filter(c=>c.rarity==="platinum").length;
-  document.getElementById("farmed-gold").textContent = inventory.filter(c=>c.rarity==="gold").length;
+  document.getElementById("farmed-obsidian").textContent = inventory.filter(c=>!!c.custom_name).length;
+  document.getElementById("farmed-diamond").textContent = inventory.filter(c=>c.rarity==="diamond" && !c.custom_name).length;
+  document.getElementById("farmed-platinum").textContent = inventory.filter(c=>c.rarity==="platinum" && !c.custom_name).length;
+  document.getElementById("farmed-gold").textContent = inventory.filter(c=>c.rarity==="gold" && !c.custom_name).length;
   document.getElementById("chance-overlay").classList.add("active");
 }
 async function showGlobalCardsBreakdown(){
@@ -4233,10 +4235,11 @@ async function showGlobalCardsBreakdown(){
   try{
     const res = await fetch(API_BASE + "/stats/breakdown");
     const data = await res.json();
+    document.getElementById("farmed-obsidian").textContent = data.obsidian ?? 0;
     document.getElementById("farmed-diamond").textContent = data.diamond ?? 0;
     document.getElementById("farmed-platinum").textContent = data.platinum ?? 0;
     document.getElementById("farmed-gold").textContent = data.gold ?? 0;
-    const total = (data.diamond ?? 0) + (data.platinum ?? 0) + (data.gold ?? 0) + (data.silver ?? 0) + (data.bronze ?? 0);
+    const total = (data.obsidian ?? 0) + (data.diamond ?? 0) + (data.platinum ?? 0) + (data.gold ?? 0) + (data.silver ?? 0) + (data.bronze ?? 0);
     document.getElementById("chance-total").textContent = `Всего: ${total}`;
   }catch(e){ /* non-critical, just leave whatever was there */ }
   document.getElementById("chance-overlay").classList.add("active");
@@ -8433,8 +8436,8 @@ const CRAFT_COST_BY_RARITY = { gold: 50, platinum: 300, diamond: 500 };
 // burned, so each row only lists tiers same-or-higher (burn Gold, only Gold/Platinum/
 // Diamond are possible).
 const CRAFT_CHANCES = {
-  gold:     { gold: 90, platinum: 9.5, diamond: 0.5 },
-  platinum: { platinum: 90, diamond: 10 },
+  gold:     { gold: 79, platinum: 20, diamond: 1 },
+  platinum: { platinum: 80, diamond: 20 },
   diamond:  { diamond: 100 },
 };
 function craftHintHTML(rarity){
@@ -8684,11 +8687,13 @@ function renderNumbersList(){
     });
   }else if(numbersMode === "listings"){
     sub.textContent = "Номера, которые другие игроки выставили на продажу";
-    if(!numbersBoard.listings.length){
+    // own lots live under "Мои" -- never shown in the public sale list
+    const numListings = numbersBoard.listings.filter(l => Number(l.owner_id) !== Number(myTelegramId));
+    if(!numListings.length){
       list.innerHTML = `<div class="empty-state">Пока никто ничего не продаёт</div>`;
       return;
     }
-    list.innerHTML = numbersBoard.listings.map(l=>{
+    list.innerHTML = numListings.map(l=>{
       const seller = l.username ? (maskedName(l.username) === "Бот" ? "Бот" : `@${l.username}`) : (l.first_name || "Игрок");
       return `
         <div class="number-row" data-number="${l.number}">
@@ -8936,10 +8941,11 @@ function renderNamesList(){
     }
   }else if(namesMode === "listings"){
     sub.textContent = "Имена, которые другие игроки выставили на продажу";
-    if(!namesBoard.listings.length){
+    const nameListings = namesBoard.listings.filter(l => Number(l.owner_id) !== Number(myTelegramId));
+    if(!nameListings.length){
       list.innerHTML = `<div class="empty-state">Пока никто ничего не продаёт</div>`;
     }else{
-      list.innerHTML = namesBoard.listings.map(l=>{
+      list.innerHTML = nameListings.map(l=>{
         const seller = l.username ? (maskedName(l.username) === "Бот" ? "Бот" : `@${l.username}`) : (l.first_name || "Игрок");
         return `
         <div class="number-row" data-name="${l.name}">
