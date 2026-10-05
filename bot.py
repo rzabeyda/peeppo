@@ -15,9 +15,11 @@ same pattern as the other bots on this server.
 """
 
 import asyncio
+import html
 import logging
 import os
 import random
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -31,6 +33,7 @@ from aiogram.types import (
     BotCommand,
     CallbackQuery,
     ChatMemberUpdated,
+    ChatPermissions,
     ForceReply,
     FSInputFile,
     InlineQuery,
@@ -92,9 +95,7 @@ BOT_USERNAME = os.environ.get("BOT_USERNAME", "Peeppobot")  # no leading @
 ADMIN_ID = os.environ.get("ADMIN_ID")  # your own telegram_id — set in .env to get "new user" pings
 PUBLIC_CHAT = os.environ.get("PUBLIC_CHAT_USERNAME", "@peeppo_chat")  # public chat: PvP stakes + admin /gem drops
 CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "@peeppo_channel")  # channel: admin /giveaway posts
-# One-time referral-race leaderboard announcement, posted to PUBLIC_CHAT. 15:00 Moscow
-# time on Sep 30 2026 — see ref_race_scheduler() below.
-REF_RACE_ANNOUNCE_AT = datetime(2026, 9, 30, 15, 0, tzinfo=ZoneInfo("Europe/Moscow"))
+# The referral race end time lives in the DB (admin /refend) — see ref_race_scheduler().
 STATIC_CARDS_DIR = Path(__file__).parent / "static" / "cards"
 
 logging.basicConfig(level=logging.INFO)
@@ -262,17 +263,17 @@ async def handle_mines_stats(message: Message):
         f"Поставлено: <b>{s['wagered']}</b> 💎\n"
         f"Выплачено: <b>{s['paid']}</b> 💎\n"
         f"Итог: {sign} на <b>{abs(s['profit'])}</b> 💎\n"
-        f"Фактический RTP: <b>{s['effective_rtp']}%</b> (целевой — 97%)",
+        f"Фактический RTP: <b>{s['effective_rtp']}%</b> (целевой — 98%)",
         parse_mode="HTML",
     )
 
 
 _HOUSE_STATS_LABELS = {
-    "mines": ("💣", "Минные поля", 97),
+    "mines": ("💣", "Минные поля", 98),
     "redblack": ("🔴⚫", "Red&Black", 100),
-    "aviator": ("🚀", "Ракетка", 97),
-    "poker": ("🃏", "Покер", None),
-    "plinko": ("🎱", "Плинко", 97),
+    "aviator": ("🚀", "Ракетка", 98),
+    "poker": ("🃏", "Покер", 98),
+    "plinko": ("🎱", "Плинко", 98),
 }
 
 
@@ -440,6 +441,184 @@ async def handle_admin_gem_drop(message: Message):
     ok = await _post_gem_drop()
     if not ok:
         await message.answer(f"Не удалось отправить дроп в {PUBLIC_CHAT} — бот точно там состоит?")
+
+
+# ---------------------------------------------------------------------------
+# Mute in the chat. Who can use it: the bot admin (ADMIN_ID) and the chat's own Telegram
+# admins. The bot itself must be an admin of the chat with the "Ban users" right.
+# In PUBLIC_CHAT (group):
+#   /mute                      (as a reply to the user's message)  -> 1 hour
+#   /mute 30 | 30m | 2h | 1d   (as a reply)                        -> that long (a bare number = minutes)
+#   /mute @username 60         or  /mute 123456789 60              -> by handle / id
+# In a private chat with the bot (admin only), the target is always in PUBLIC_CHAT:
+#   /mute @username 60   -> 60 minutes (also "60 минут", "2ч", "1d")
+#   /unmute @username
+# Durations: bare number = minutes; 30m / 2h / 1d (also м/ч/д, "минут/часа/дней"); default 1 hour;
+# min 1 minute, max 30 days.
+# ---------------------------------------------------------------------------
+MUTE_DEFAULT_SECONDS = 3600
+MUTE_MIN_SECONDS = 60
+MUTE_MAX_SECONDS = 30 * 86400
+_MUTE_UNIT_SECONDS = (
+    (re.compile(r"^(?:м|мин|минут|минуты|минуту|m|min|mins|minute|minutes)$", re.IGNORECASE), 60),
+    (re.compile(r"^(?:ч|час|часа|часов|h|hr|hour|hours)$", re.IGNORECASE), 3600),
+    (re.compile(r"^(?:д|дн|день|дня|дней|d|day|days)$", re.IGNORECASE), 86400),
+)
+_MUTE_NUM_UNIT_RE = re.compile(r"^(\d+)([^\d\s]*)$")
+
+
+def _unit_seconds(unit: str) -> int | None:
+    if unit == "":
+        return 60  # a bare number means minutes
+    for rx, secs in _MUTE_UNIT_SECONDS:
+        if rx.match(unit):
+            return secs
+    return None
+
+
+def _parse_mute_duration(token: str) -> int | None:
+    """'30', '30m', '2h', '1d', '60минут' (also Cyrillic) -> seconds, or None if not a duration.
+    A bare number with 6+ digits is a telegram id, not minutes."""
+    m = _MUTE_NUM_UNIT_RE.match(token.strip())
+    if not m:
+        return None
+    if m.group(2) == "" and len(m.group(1)) >= 6:
+        return None
+    unit = _unit_seconds(m.group(2))
+    if unit is None:
+        return None
+    return int(m.group(1)) * unit
+
+
+def _parse_mute_args(args: list[str]) -> tuple[int, list[str]]:
+    """Splits command arguments into (seconds, leftover tokens that may name the user).
+    Handles both '60m' and the spaced '60 минут' / '2 часа'."""
+    seconds = None
+    rest: list[str] = []
+    i = 0
+    while i < len(args):
+        tok = args[i]
+        d = None
+        if tok.isdigit() and len(tok) < 6 and i + 1 < len(args):
+            unit = _unit_seconds(args[i + 1])  # spaced form first: "2 часа", "60 минут"
+            if unit is not None:
+                d = int(tok) * unit
+                i += 1
+        if d is None:
+            d = _parse_mute_duration(tok)
+        if d is not None and seconds is None:
+            seconds = d
+        else:
+            rest.append(tok)
+        i += 1
+    seconds = MUTE_DEFAULT_SECONDS if seconds is None else seconds
+    return max(MUTE_MIN_SECONDS, min(seconds, MUTE_MAX_SECONDS)), rest
+
+
+def _format_mute_duration(seconds: int) -> str:
+    if seconds % 86400 == 0:
+        return f"{seconds // 86400} дн."
+    if seconds % 3600 == 0:
+        return f"{seconds // 3600} ч."
+    return f"{max(1, seconds // 60)} мин."
+
+
+async def _can_moderate(message: Message) -> bool:
+    if _is_admin(message.from_user.id):
+        return True
+    if message.chat.type == "private":
+        return False
+    try:
+        member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+        return member.status in ("administrator", "creator")
+    except Exception:
+        return False
+
+
+def _mute_chat_id(message: Message):
+    """The chat the mute applies to: the current group, or PUBLIC_CHAT when typed in a DM."""
+    return PUBLIC_CHAT if message.chat.type == "private" else message.chat.id
+
+
+def _mute_target(message: Message, tokens: list[str]):
+    """(user_id, display_name) from the replied-to message, else from an @username/id token
+    (looked up in our own users table), else (None, None)."""
+    if message.reply_to_message and message.reply_to_message.from_user and not message.reply_to_message.from_user.is_bot:
+        u = message.reply_to_message.from_user
+        return u.id, (f"@{u.username}" if u.username else u.full_name)
+    for tok in tokens:
+        row = _resolve_user(tok)
+        if row is not None:
+            return row["telegram_id"], (f"@{row['username']}" if row["username"] else (row["first_name"] or str(row["telegram_id"])))
+    return None, None
+
+
+@dp.message(Command("mute"), F.chat.type.in_({"group", "supergroup", "private"}))
+async def handle_mute(message: Message):
+    if not await _can_moderate(message):
+        return
+    seconds, tokens = _parse_mute_args((message.text or "").split()[1:])
+    user_id, name = _mute_target(message, tokens)
+    if user_id is None:
+        await message.reply("Укажи юзера: ответом на его сообщение или /mute @ник 60 (минут)")
+        return
+    if _is_admin(user_id) or user_id == bot.id:
+        return
+    chat_id = _mute_chat_id(message)
+    try:
+        target = await bot.get_chat_member(chat_id, user_id)
+        if target.status in ("administrator", "creator"):
+            await message.reply("Админов мутить нельзя.")
+            return
+        until = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+        await bot.restrict_chat_member(
+            chat_id, user_id,
+            permissions=ChatPermissions(
+                can_send_messages=False, can_send_audios=False, can_send_documents=False,
+                can_send_photos=False, can_send_videos=False, can_send_video_notes=False,
+                can_send_voice_notes=False, can_send_polls=False, can_send_other_messages=False,
+                can_add_web_page_previews=False,
+            ),
+            until_date=until,
+        )
+    except Exception as e:
+        logger.warning("mute failed for %s in %s: %s", user_id, chat_id, e)
+        await message.reply("Не получилось: бот должен быть админом чата с правом «Блокировка участников», а юзер — состоять в чате.")
+        return
+    where = f" (в {PUBLIC_CHAT})" if message.chat.type == "private" else ""
+    await message.answer(f"🔇 {html.escape(name)} в муте на {_format_mute_duration(seconds)}{where}", parse_mode="HTML")
+    if message.chat.type != "private":
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+
+@dp.message(Command("unmute"), F.chat.type.in_({"group", "supergroup", "private"}))
+async def handle_unmute(message: Message):
+    if not await _can_moderate(message):
+        return
+    _, tokens = _parse_mute_args((message.text or "").split()[1:])
+    user_id, name = _mute_target(message, tokens)
+    if user_id is None:
+        await message.reply("Укажи юзера: ответом на его сообщение или /unmute @ник")
+        return
+    chat_id = _mute_chat_id(message)
+    try:
+        chat = await bot.get_chat(chat_id)
+        perms = chat.permissions or ChatPermissions(can_send_messages=True, can_send_other_messages=True)
+        await bot.restrict_chat_member(chat_id, user_id, permissions=perms)
+    except Exception as e:
+        logger.warning("unmute failed for %s in %s: %s", user_id, chat_id, e)
+        await message.reply("Не получилось снять мут: бот должен быть админом чата с правом «Блокировка участников».")
+        return
+    where = f" (в {PUBLIC_CHAT})" if message.chat.type == "private" else ""
+    await message.answer(f"🔈 {html.escape(name)} снова может писать{where}", parse_mode="HTML")
+    if message.chat.type != "private":
+        try:
+            await message.delete()
+        except Exception:
+            pass
 
 
 async def gem_drop_scheduler():
@@ -1634,7 +1813,7 @@ async def send_pvp_invite(name: str) -> bool:
 # Referral race — /ref shows a top-5 leaderboard, counting only referrals who've
 # farmed at least one card AND joined PUBLIC_CHAT (see database.py's
 # get_unverified_ref_candidates()/mark_chat_verified()/get_ref_leaderboard()). A
-# one-time scheduled message re-posts the same leaderboard at REF_RACE_ANNOUNCE_AT.
+# scheduler posts countdown warnings and the final leaderboard around the /refend time.
 # ---------------------------------------------------------------------------
 
 def _is_public_chat(chat) -> bool:
@@ -1694,15 +1873,23 @@ async def sync_referral_chat_verification():
             logger.warning("sync_referral_chat_verification: getChatMember failed for %s: %s", user_id, e)
 
 
+REF_RACE_RULES_LINE = "Условия: реферал должен войти в чат и сфармить карту в боте!"
+
+
+def _ref_race_end_line() -> str:
+    end = _ref_race_end_dt()
+    if end is None or end <= datetime.now(timezone.utc):
+        return ""
+    return f"Конец гонки: {end.astimezone(REF_RACE_TZ):%d.%m.%Y %H:%M} (Таллин)"
+
+
 def format_ref_leaderboard(rows: list[dict]) -> str:
+    end_line = _ref_race_end_line()
+    rules = REF_RACE_RULES_LINE + (f"\n{end_line}" if end_line else "")
     if not rows:
-        return (
-            f"🏆 Топ-5 по рефералам\n\n"
-            f"Пока пусто — рефералы засчитываются, когда друг зашёл в бота по твоей "
-            f"ссылке, вступил в {PUBLIC_CHAT} и сделал первый фарм карты."
-        )
+        return f"🏆 Топ-5 по реф гонке:\n\n{rules}"
     medals = ["🥇", "🥈", "🥉", "4.", "5."]
-    lines = ["🏆 Топ-5 по рефералам:", ""]
+    lines = ["🏆 Топ-5 по реф гонке:", "", rules, ""]
     for i, row in enumerate(rows):
         name = f"@{row['username']}" if row["username"] else (row["first_name"] or f"id{row['telegram_id']}")
         lines.append(f"{medals[i]} {name} — {row['n']}")
@@ -2173,53 +2360,126 @@ async def handle_aviator_cashout(call: CallbackQuery):
         logger.warning("could not edit aviator result message for user %s", call.from_user.id)
 
 
-# Countdown pings before the race ends, each fired exactly once (db.ref_race_countdown_sent
-# guards it, same idempotency pattern as the final announcement below). Ordered soonest-
-# first so the loop can just iterate and check each one every tick.
+# Countdown pings before the race ends, each fired exactly once. The guard key is
+# '<end_at iso>|<stage>' in db.ref_race_countdown_sent, so moving the end date with
+# /refend re-arms every warning (and the final post) for the new date. Ordered
+# soonest-first only for readability; the loop checks each every tick.
 REF_RACE_COUNTDOWN_STAGES = [
-    ("24h", timedelta(hours=24), "⏰ До конца реферальной гонки остались сутки! Успей пригласить друзей и попасть в топ-5 🏆"),
-    ("4h", timedelta(hours=4), "🔥 До конца реферальной гонки осталось 4 часа! Финальный рывок"),
+    ("3d", timedelta(days=3), "⏰ До конца реферальной гонки осталось 3 дня! Приглашай друзей и попади в топ-5 🏆"),
+    ("1d", timedelta(days=1), "🔥 До конца реферальной гонки остались сутки! Успей пригласить друзей"),
     ("1h", timedelta(hours=1), "⌛ До конца реферальной гонки остался 1 час! Последний шанс попасть в топ-5"),
     ("5m", timedelta(minutes=5), "🚨 До конца реферальной гонки осталось 5 минут!"),
 ]
+REF_RACE_TZ = ZoneInfo("Europe/Tallinn")  # /refend input and displayed end time
+
+
+def _ref_race_end_dt() -> datetime | None:
+    raw = db.get_ref_race_end()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _parse_refend_args(text: str) -> datetime | None:
+    """'2026-10-12 20:00', '12.10.2026 20:00' or '12.10 20:00' (Tallinn time) -> aware dt."""
+    text = re.sub(r"\s+", " ", text.strip())
+    now = datetime.now(REF_RACE_TZ)
+    for fmt in ("%Y-%m-%d %H:%M", "%d.%m.%Y %H:%M", "%d.%m %H:%M"):
+        try:
+            dt = datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+        if fmt == "%d.%m %H:%M":
+            dt = dt.replace(year=now.year)
+        return dt.replace(tzinfo=REF_RACE_TZ)
+    return None
+
+
+@dp.message(Command("refend"))
+async def handle_refend(message: Message):
+    """Admin-only: /refend 12.10 20:00 (Tallinn time) sets the end of the referral race;
+    /refend shows it; /refend off clears it. Warnings (3d/1d/1h/5m) and the final
+    results post go to PUBLIC_CHAT automatically from ref_race_scheduler()."""
+    if not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split(maxsplit=1)
+    arg = parts[1].strip() if len(parts) > 1 else ""
+    if not arg:
+        end = _ref_race_end_dt()
+        if end is None:
+            await message.answer("Конец реф-гонки не задан. Пример: /refend 12.10 20:00 (время Таллина)")
+        else:
+            await message.answer(f"Реф-гонка заканчивается: {end.astimezone(REF_RACE_TZ):%d.%m.%Y %H:%M} (Таллин)")
+        return
+    if arg.lower() in ("off", "стоп", "сброс"):
+        db.set_ref_race_end(None)
+        await message.answer("Конец реф-гонки сброшен, предупреждения отключены.")
+        return
+    end = _parse_refend_args(arg)
+    if end is None:
+        await message.answer("Не понял дату. Пример: /refend 12.10 20:00 (время Таллина)")
+        return
+    now = datetime.now(REF_RACE_TZ)
+    if end <= now:
+        await message.answer("Эта дата уже прошла.")
+        return
+    end_iso = end.astimezone(timezone.utc).isoformat()
+    db.set_ref_race_end(end_iso)
+    # Warnings whose moment has already passed are marked as sent so they don't all fire at once.
+    skipped = []
+    for stage, remaining, _ in REF_RACE_COUNTDOWN_STAGES:
+        if now >= end - remaining:
+            db.mark_ref_race_countdown_sent(f"{end_iso}|{stage}")
+            skipped.append(stage)
+    text = f"✅ Реф-гонка закончится {end:%d.%m.%Y %H:%M} (Таллин). Предупреждения: за 3 дня, 1 день, 1 час и 5 минут."
+    if skipped:
+        text += f"\nУже прошли и пропущены: {', '.join(skipped)}."
+    await message.answer(text)
 
 
 async def ref_race_scheduler():
-    """Background loop living for the lifetime of the bot process: posts a countdown
-    ping to PUBLIC_CHAT at 24h/4h/1h/5m before REF_RACE_ANNOUNCE_AT (each exactly once,
-    guarded by db.has_ref_race_countdown_been_sent()), then once real time passes
-    REF_RACE_ANNOUNCE_AT itself, posts the final leaderboard exactly once (guarded by
-    db.has_ref_race_been_announced(), same idempotency pattern as check_hundred_club/
-    hundred_club) and keeps looping harmlessly forever after."""
+    """Background loop living for the lifetime of the bot process: while an end time is
+    set (/refend), posts a countdown ping to PUBLIC_CHAT at 3d/1d/1h/5m before it (each
+    exactly once per end date) and the final leaderboard once the end passes. With no
+    end set it just idles."""
     logger.info("referral race scheduler started")
     while True:
         try:
-            now = datetime.now(ZoneInfo("Europe/Moscow"))
-            if not db.has_ref_race_been_announced() and now >= REF_RACE_ANNOUNCE_AT:
-                await sync_referral_chat_verification()
-                rows = db.get_ref_leaderboard(5, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)
-                text = "🏁 Реферальная гонка завершена!\n\n" + format_ref_leaderboard(rows)
-                try:
-                    await bot.send_message(PUBLIC_CHAT, text)
-                except Exception:
-                    logger.warning("could not post ref race results to %s", PUBLIC_CHAT)
-                db.mark_ref_race_announced()
-            elif not db.has_ref_race_been_announced():
-                for stage, remaining, headline in REF_RACE_COUNTDOWN_STAGES:
-                    if db.has_ref_race_countdown_been_sent(stage):
-                        continue
-                    if now >= REF_RACE_ANNOUNCE_AT - remaining:
+            end = _ref_race_end_dt()
+            if end is not None:
+                end_iso = db.get_ref_race_end()
+                now = datetime.now(timezone.utc)
+                final_key = f"{end_iso}|final"
+                if now >= end:
+                    if not db.has_ref_race_countdown_been_sent(final_key):
+                        db.mark_ref_race_countdown_sent(final_key)  # mark first: never double-post
                         await sync_referral_chat_verification()
                         rows = db.get_ref_leaderboard(5, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)
-                        text = headline + "\n\n" + format_ref_leaderboard(rows)
+                        text = "🏁 Реферальная гонка завершена!\n\n" + format_ref_leaderboard(rows)
                         try:
                             await bot.send_message(PUBLIC_CHAT, text)
                         except Exception:
-                            logger.warning("could not post ref race %s countdown to %s", stage, PUBLIC_CHAT)
-                        db.mark_ref_race_countdown_sent(stage)
+                            logger.warning("could not post ref race results to %s", PUBLIC_CHAT)
+                else:
+                    for stage, remaining, headline in REF_RACE_COUNTDOWN_STAGES:
+                        key = f"{end_iso}|{stage}"
+                        if db.has_ref_race_countdown_been_sent(key):
+                            continue
+                        if now >= end - remaining:
+                            db.mark_ref_race_countdown_sent(key)
+                            await sync_referral_chat_verification()
+                            rows = db.get_ref_leaderboard(5, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)
+                            text = headline + "\n\n" + format_ref_leaderboard(rows)
+                            try:
+                                await bot.send_message(PUBLIC_CHAT, text)
+                            except Exception:
+                                logger.warning("could not post ref race %s countdown to %s", stage, PUBLIC_CHAT)
         except Exception:
             logger.exception("ref race scheduler iteration failed")
-        await asyncio.sleep(60)  # tight enough that the 5-minute checkpoint stays meaningful
+        await asyncio.sleep(30)  # tight enough that the 5-minute checkpoint stays meaningful
 
 
 async def referral_chat_verification_scheduler():

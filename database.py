@@ -13,6 +13,7 @@ Design notes (per project decisions):
   - All game state lives here (server-side) — Telegram WebApp has no localStorage.
 """
 
+import math
 import os
 import sqlite3
 import random
@@ -217,6 +218,14 @@ CREATE TABLE IF NOT EXISTS ref_race_announced (
 CREATE TABLE IF NOT EXISTS ref_race_countdown_sent (
     stage    TEXT PRIMARY KEY,
     sent_at  TEXT NOT NULL
+);
+
+-- Single-row-per-key config for the referral race (key 'end_at' = UTC ISO end moment,
+-- set by the admin's /refend command). Countdown/final guards in ref_race_countdown_sent
+-- are keyed by '<end_at>|<stage>', so moving the end date re-arms every warning.
+CREATE TABLE IF NOT EXISTS ref_race_config (
+    key    TEXT PRIMARY KEY,
+    value  TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS daily_command_broadcast (
@@ -838,23 +847,22 @@ def init_db():
 
 
 DAILY_BONUS_GEMS = 25
-# Graduated referral payout: bigger rewards for the referrer's later invites (in the
-# same signup), to encourage inviting more than just one friend. Simple flat step:
-# 25, 50, 75, 100, 125, ... up to the 20th referral. Referrals past
-# MAX_REWARDED_REFERRALS still count (get_referral_count/leaderboards keep growing)
-# but never pay out gems.
-REFERRAL_REWARD_STEP_GEMS = 25  # reward for position N is STEP * (N+1)
-MAX_REWARDED_REFERRALS = 20  # after this many, referrals still count but stop paying out
+# Graduated referral payout: bigger rewards for the referrer's later invites, to encourage
+# inviting more than just one friend. 25, 50, 75, 100, ... up to the 20th referral (500),
+# and from the 21st referral on a flat REFERRAL_FLAT_REWARD_GEMS per referral, no cap.
+REFERRAL_REWARD_STEP_GEMS = 25  # reward for position N is STEP * (N+1) while N < MAX_REWARDED_REFERRALS
+MAX_REWARDED_REFERRALS = 20  # length of the graduated ladder; after it the flat reward applies
+REFERRAL_FLAT_REWARD_GEMS = 100  # per referral after the ladder (21st, 22nd, ...)
 
 
 def _referral_reward_for_position(position: int) -> int:
-    """position is 0-indexed (0 = this referrer's 1st referral this run). Returns
-    REFERRAL_REWARD_STEP_GEMS * (position + 1) -- 25, 50, 75, 100, ... -- 0 once past
-    MAX_REWARDED_REFERRALS."""
+    """position is 0-indexed (0 = this referrer's 1st referral). Returns
+    REFERRAL_REWARD_STEP_GEMS * (position + 1) -- 25, 50, 75, ..., 500 -- for the first
+    MAX_REWARDED_REFERRALS, then REFERRAL_FLAT_REWARD_GEMS for every one after that."""
     if position >= MAX_REWARDED_REFERRALS:
-        return 0
+        return REFERRAL_FLAT_REWARD_GEMS
     return REFERRAL_REWARD_STEP_GEMS * (position + 1)
-SIGNUP_BONUS_GEMS = 50
+SIGNUP_BONUS_GEMS = 100
 EARLY_SIGNUP_BONUS_GEMS = 100
 EARLY_SIGNUP_LIMIT = 100  # the first 100 users ever to register get EARLY_SIGNUP_BONUS_GEMS
                           # instead of SIGNUP_BONUS_GEMS (checked against the users count
@@ -897,7 +905,7 @@ def get_or_create_user(telegram_id: int, username: str | None, first_name: str |
         # Anti-bot: don't pay the referrer yet, just for opening the bot — that's free
         # for anyone to fake. Flag it pending; farm() pays out once this new player makes
         # their first real farm, proving there's an actual person behind the account.
-        # Still capped at their first MAX_REWARDED_REFERRALS invites, same as before —
+        # Graduated for the first MAX_REWARDED_REFERRALS invites, then a flat reward each —
         # referrals beyond that still count (get_referral_count keeps growing) but never
         # flip this flag, so they simply never pay out.
         ref_reward_pending = _referral_reward_for_position(prior_referrals) if ref_by is not None else 0
@@ -1214,8 +1222,8 @@ def play_redblack(user_id: int, bet: int, choice: str) -> dict:
 # Plinko -- ball drops through PLINKO_ROWS pegs, each an independent fair 50/50
 # left/right bounce (a binomial walk), landing in one of PLINKO_ROWS+1 slots.
 # Multiplier tables below are symmetric and each hand-tuned (via simulation) to a
-# specific target RTP: LOW/MEDIUM ~97%, HIGH ~96% (within the requested 95-97%
-# band) -- higher risk trades a lower floor multiplier for a much bigger jackpot
+# specific target RTP: all three risk levels ~98.0% (exact binomial expectation: low 98.04,
+# medium 98.05, high 98.04) -- higher risk trades a lower floor multiplier for a much bigger jackpot
 # at the edges, same shape real Plinko games use, not copied from any of them.
 # ---------------------------------------------------------------------------
 
@@ -1223,9 +1231,9 @@ PLINKO_ROWS = 16
 PLINKO_MIN_BET = 25
 
 PLINKO_MULTIPLIERS = {
-    "low": [16, 8.8, 2.9, 1.5, 1.3, 1.2, 1.1, 0.98, 0.44, 0.98, 1.1, 1.2, 1.3, 1.5, 2.9, 8.8, 16],
-    "medium": [110, 28, 8.3, 4.1, 2.1, 1.7, 1.1, 0.55, 0.25, 0.55, 1.1, 1.7, 2.1, 4.1, 8.3, 28, 110],
-    "high": [1146, 138, 34, 11, 3.4, 1.1, 0.46, 0.23, 0.09, 0.23, 0.46, 1.1, 3.4, 11, 34, 138, 1146],
+    "low": [16, 8.8, 2.9, 1.5, 1.3, 1.2, 1.1, 0.98, 0.49, 0.98, 1.1, 1.2, 1.3, 1.5, 2.9, 8.8, 16],
+    "medium": [110, 28, 8.3, 4.1, 2.1, 1.7, 1.1, 0.55, 0.3, 0.55, 1.1, 1.7, 2.1, 4.1, 8.3, 28, 110],
+    "high": [1146, 138, 34, 11, 3.4, 1.1, 0.46, 0.23, 0.19, 0.23, 0.46, 1.1, 3.4, 11, 34, 138, 1146],
 }
 
 
@@ -1357,7 +1365,7 @@ def get_plinko_house_stats() -> dict:
 
 AVIATOR_DEFAULT_BET = 25
 AVIATOR_MIN_BET = 25
-AVIATOR_HOUSE_EDGE = 0.03  # RTP 97%
+AVIATOR_HOUSE_EDGE = 0.02  # RTP 98%
 AVIATOR_TICKS = [1.00, 1.15, 1.30, 1.50, 1.75, 2.00, 2.50, 3.00, 4.00, 5.00, 7.00, 10.00, 15.00, 20.00, 25.00, 35.00, 50.00, 75.00, 100.00]
 
 
@@ -1378,7 +1386,11 @@ def start_aviator(user_id: int, bet: int) -> dict:
     if r < AVIATOR_HOUSE_EDGE:
         crash_point = 1.00
     else:
-        crash_point = int(((1 - AVIATOR_HOUSE_EDGE) / (1 - r)) * 100) / 100
+        # ceil (not floor) to the cent: the rocket crashes at the first tick m with
+        # crash_point <= m, so a cash-out at tick T survives iff crash_point > T, i.e.
+        # raw > T when rounded UP -- that makes P(survive T) = (1-edge)/T exactly and the
+        # RTP exactly 1-edge at every tick (floor made it (1-edge)*T/(T+0.01), up to ~1% lower).
+        crash_point = math.ceil(round(((1 - AVIATOR_HOUSE_EDGE) / (1 - r)) * 100, 6)) / 100
     with get_conn() as conn:
         row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
         if row is None or row["gems"] < bet:
@@ -1559,7 +1571,7 @@ def count_active_aviator_rounds_for_user(user_id: int) -> int:
 MINES_GRID_TILES = 25
 MINES_DEFAULT_BET = 25
 MINES_MIN_BET = 25
-MINES_RTP = 0.97  # RTP 97%
+MINES_RTP = 0.98  # RTP 98%
 MINES_ALLOWED_MINE_COUNTS = [3, 5, 10]
 
 
@@ -1578,7 +1590,7 @@ def _mines_multiplier(mine_count: int, revealed_count: int) -> float:
     fair = 1.0
     for i in range(revealed_count):
         fair *= (n - i) / (n - mine_count - i)
-    return int(fair * MINES_RTP * 100) / 100
+    return round(fair * MINES_RTP, 2)  # nearest cent (floor() made the effective RTP ~0.2% lower than the nominal one)
 
 
 def count_active_mines_rounds_for_user(user_id: int) -> int:
@@ -1975,7 +1987,7 @@ POKER_PAYTABLE = {
     "royal_flush": 150,
     "straight_flush": 40,
     "four_kind": 20,
-    "full_house": 5,
+    "full_house": 6,  # 5 -> 6 (2026-10-05): lifts base-game RTP from 96.73% to ~98.15% (120M-hand simulation with the client pokerSuggestHold strategy, no double-up)
     "flush": 5,
     "straight": 4,
     "three_kind": 3,
@@ -2732,8 +2744,16 @@ def get_collections_overview(user_id: int) -> list[dict]:
                            ELSE 50
                        END
                    ), 0) AS difficulty,
-                   (SELECT COUNT(*) FROM user_collection_completions ucc2
-                    WHERE ucc2.collection_id = co.id) AS completers_count
+                   (SELECT COUNT(*) FROM (
+                        SELECT user_id FROM user_collection_completions WHERE collection_id = co.id
+                        UNION
+                        SELECT uc3.user_id FROM collection_cards cc3
+                        JOIN user_cards uc3 ON uc3.card_id = cc3.card_id AND uc3.voided = 0
+                        WHERE cc3.collection_id = co.id
+                        GROUP BY uc3.user_id
+                        HAVING COUNT(DISTINCT cc3.card_id) =
+                               (SELECT COUNT(*) FROM collection_cards WHERE collection_id = co.id)
+                   )) AS completers_count
             FROM collections co
             LEFT JOIN collection_cards cc ON cc.collection_id = co.id
             LEFT JOIN cards c ON c.id = cc.card_id
@@ -2813,18 +2833,36 @@ def get_collection_detail(user_id: int, collection_id: int) -> dict:
 
 
 def get_collection_completers(collection_id: int, limit: int = 200) -> list[dict]:
-    """Every player who has completed this collection (has a user_collection_completions
-    row for it), most recent first -- for the "?" info button next to each row in the
-    Коллекции list. Returns username (may be None) and first_name so the client can
-    fall back sensibly; the client is the one that strips any leading "@"."""
+    """Every player who has completed this collection -- either has a
+    user_collection_completions row (recorded when they opened the Коллекции screen) OR
+    currently owns every card of it (completion rows are only written lazily when a player
+    opens that screen, so counting rows alone showed 0/1 for everyone who just hadn't
+    looked yet). Same set as get_collections_overview()'s completers_count. Most recent
+    first; the date is the recorded completion time, or the moment they got their last
+    missing card. Returns username (may be None) and first_name; the client strips "@"."""
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT u.username, u.first_name, ucc.completed_at "
-            "FROM user_collection_completions ucc "
-            "JOIN users u ON u.telegram_id = ucc.user_id "
-            "WHERE ucc.collection_id = ? "
-            "ORDER BY ucc.completed_at DESC LIMIT ?",
-            (collection_id, limit),
+            """
+            WITH owners AS (
+                SELECT uc.user_id AS user_id, MAX(uc.obtained_at) AS got_at
+                FROM collection_cards cc
+                JOIN user_cards uc ON uc.card_id = cc.card_id AND uc.voided = 0
+                WHERE cc.collection_id = ?
+                GROUP BY uc.user_id
+                HAVING COUNT(DISTINCT cc.card_id) =
+                       (SELECT COUNT(*) FROM collection_cards WHERE collection_id = ?)
+            ),
+            everyone AS (
+                SELECT user_id, completed_at FROM user_collection_completions WHERE collection_id = ?
+                UNION ALL
+                SELECT user_id, got_at FROM owners
+                WHERE user_id NOT IN (SELECT user_id FROM user_collection_completions WHERE collection_id = ?)
+            )
+            SELECT u.username, u.first_name, e.completed_at
+            FROM everyone e JOIN users u ON u.telegram_id = e.user_id
+            ORDER BY e.completed_at DESC LIMIT ?
+            """,
+            (collection_id, collection_id, collection_id, collection_id, limit),
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -2959,9 +2997,9 @@ CASE_DEFS = {
     "duck": {"name": "Уточка", "price": 200, "image": "case/case_utya.jpg",  # was Silver/Gold only, still worse than farm for Gold at this price (200 gems can't beat farm's ~151/Gold even at 100% weight) -- added small Platinum/Diamond tail chances as upside instead
              "weights": {"gold": 96, "platinum": 3, "diamond": 1}},
     "capybara": {"name": "Капибара", "price": 400, "image": "case/case_capybara.jpg",  # Gold/Platinum only -- price doubled (was 200) to halve return/gem, per request
-                 "weights": {"gold": 16, "platinum": 84}},
+                 "weights": {"gold": 15, "platinum": 85}},
     "pepe": {"name": "Пепе", "price": 1000, "image": "case/case_pep.jpg",  # Platinum/Diamond only -- price doubled (was 500) to halve return/gem, per request
-             "weights": {"platinum": 75, "diamond": 25}},
+             "weights": {"platinum": 85, "diamond": 15}},
 }
 
 
@@ -3094,8 +3132,8 @@ BURN_REQUIREMENTS = {
     # New catalog (Gold/Platinum/Diamond only). Priced vs farm cost per card (~Gold 50 gems,
     # Platinum 500, Diamond 5000): 8 Gold ~ 400 gems (a bit under a farmed Platinum), 5 Platinum
     # ~ 2500 gems (half a farmed Diamond) -- same edge evolution had before. Always succeeds.
-    "gold":     {"target": "platinum", "count": 8},
-    "platinum": {"target": "diamond",  "count": 5},
+    "gold":     {"target": "platinum", "count": 10},
+    "platinum": {"target": "diamond",  "count": 10},
     # No "diamond" entry — Diamond is the top tier, nothing to burn UP into (Diamond can
     # still be re-rolled via craft_card(), which is a different mechanic).
 }
@@ -3355,7 +3393,7 @@ TRANSFER_FEE_GEMS = 25  # charged to the sender for a direct @username gift
 # Minimum gems a card can be listed/offered for on the market, scaled by rarity — a
 # pricier/rarer tier gets a higher floor. Applies to both a seller's listing price and a
 # buyer's offer (list_card()/make_offer()).
-MIN_LISTING_PRICE_BY_RARITY = {"bronze": 25, "silver": 50, "gold": 50, "platinum": 250, "diamond": 100}
+MIN_LISTING_PRICE_BY_RARITY = {"bronze": 25, "silver": 50, "gold": 50, "platinum": 500, "diamond": 1000}
 
 
 def get_min_listing_price(rarity: str | None) -> int:
@@ -5904,6 +5942,12 @@ def mark_chat_verified(user_id: int) -> None:
         set_referral_notice(payout["referrer_id"], payout["who_name"], payout["amount"])
 
 
+# Start of the CURRENT referral race: /ref only counts referrals who registered at/after
+# this moment, so bumping it zeroes the leaderboard without touching anyone's real
+# referral links (ref_by) or the lifetime counts / reward ladder.
+REF_RACE_START_AT = "2026-10-05T06:23:44+00:00"
+
+
 def get_ref_leaderboard(limit: int = 5, exclude_id: int | None = None) -> list[dict]:
     """Top referrers by qualified (farmed + chat-verified) referral count, highest first.
     exclude_id (bot.py passes ADMIN_ID) leaves one telegram_id out of the ranking
@@ -5914,10 +5958,10 @@ def get_ref_leaderboard(limit: int = 5, exclude_id: int | None = None) -> list[d
             "SELECT u.telegram_id AS telegram_id, u.username AS username, u.first_name AS first_name, "
             "COUNT(r.telegram_id) AS n "
             "FROM users u JOIN users r ON r.ref_by = u.telegram_id "
-            "WHERE r.chat_member_verified = 1 "
+            "WHERE r.chat_member_verified = 1 AND r.created_at >= ? "
             f"AND LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})"
         )
-        params: list = list(LEADERBOARD_EXCLUDED_USERNAMES)
+        params: list = [REF_RACE_START_AT, *LEADERBOARD_EXCLUDED_USERNAMES]
         if exclude_id is not None:
             query += " AND u.telegram_id != ?"
             params.append(exclude_id)
@@ -5925,6 +5969,24 @@ def get_ref_leaderboard(limit: int = 5, exclude_id: int | None = None) -> list[d
         params.append(limit)
         rows = conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
+
+
+def get_ref_race_end() -> str | None:
+    """UTC ISO string of the current race's end, or None when no end is scheduled."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT value FROM ref_race_config WHERE key = 'end_at'").fetchone()
+        return row["value"] if row else None
+
+
+def set_ref_race_end(end_iso: str | None) -> None:
+    with get_conn() as conn:
+        if end_iso is None:
+            conn.execute("DELETE FROM ref_race_config WHERE key = 'end_at'")
+        else:
+            conn.execute(
+                "INSERT INTO ref_race_config (key, value) VALUES ('end_at', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (end_iso,)
+            )
 
 
 def has_ref_race_been_announced() -> bool:
@@ -6902,7 +6964,7 @@ def get_card_by_id(card_id: int) -> sqlite3.Row | None:
 # ---------------------------------------------------------------------------
 
 GRAM_CARDS_PER_UNIT = 10  # 10 Diamond cards = 1 payout unit
-STARS_PER_UNIT = 50  # lowered from 100 -- only affects NEW requests, already-pending ones keep their stored gram_amount
+STARS_PER_UNIT = 100  # raised back from 50 -- only affects NEW requests, already-pending ones keep their stored gram_amount
 
 
 class CryptoWithdrawalError(Exception):
