@@ -700,6 +700,18 @@ def init_db():
         if "rarity" not in c_cols:
             conn.execute("ALTER TABLE cards ADD COLUMN rarity TEXT NOT NULL DEFAULT 'silver'")
             conn.execute("UPDATE users SET gems_earned = gems WHERE gems_earned = 0")
+        # Stars series ("Виллы"): one-of-one cards sold for Telegram Stars (see seed_villas.py)
+        c_cols = {row["name"] for row in conn.execute("PRAGMA table_info(cards)")}
+        if "series" not in c_cols:
+            conn.execute("ALTER TABLE cards ADD COLUMN series TEXT")
+        if "villa_number" not in c_cols:
+            conn.execute("ALTER TABLE cards ADD COLUMN villa_number INTEGER")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_cards_villa_number ON cards(villa_number) WHERE villa_number IS NOT NULL")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS villa_purchases ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, charge_id TEXT UNIQUE, "
+            "card_id INTEGER NOT NULL, user_card_id INTEGER NOT NULL, stars INTEGER NOT NULL, created_at TEXT NOT NULL)"
+        )
         # migration for DBs created before the daily login bonus existed
         if "last_daily_bonus" not in u_cols:
             conn.execute("ALTER TABLE users ADD COLUMN last_daily_bonus TEXT")
@@ -3189,7 +3201,7 @@ def burn_cards(user_id: int, rarity: str, user_card_ids: list[int]) -> dict:
         placeholders = ",".join("?" for _ in user_card_ids)
         rows = conn.execute(
             f"SELECT uc.id FROM user_cards uc JOIN cards c ON c.id = uc.card_id "
-            f"WHERE uc.id IN ({placeholders}) AND uc.user_id = ? AND c.rarity = ? "
+            f"WHERE uc.id IN ({placeholders}) AND uc.user_id = ? AND c.rarity = ? AND c.series IS NULL "
             f"AND uc.listed_price IS NULL AND uc.swap_listed = 0 "
             f"AND uc.staked_at IS NULL AND uc.pvp_round_id IS NULL AND uc.voided = 0 "
             f"AND uc.pinned_at IS NULL AND uc.custom_name IS NULL "
@@ -3379,6 +3391,247 @@ def farm(user_id: int) -> dict | None:
     return result
 
 
+FARM_BATCH_MAX = 500  # most presses a single batch ("+" modal) may spend in one request
+
+
+def farm_many(user_id: int, count: int) -> dict | None:
+    """N farm presses in ONE transaction: checks the balance covers count * FARM_COST_GEMS up
+    front (raises InsufficientGems otherwise -- nothing is spent or granted), rolls every
+    press with the same RARITY_WEIGHTS as farm(), grants all dropped cards and counts them
+    all. Returns {"count", "misses", "cards": [...], "referral_reward"?}, or None if the
+    catalog is empty."""
+    _require_feature("farm")
+    count = int(count)
+    if count < 1 or count > FARM_BATCH_MAX:
+        raise ValueError(f"count must be 1..{FARM_BATCH_MAX}")
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM cards WHERE is_active = 1").fetchall()
+    if not rows:
+        return None
+    by_rarity: dict[str, list] = {}
+    for r in rows:
+        by_rarity.setdefault(r["rarity"], []).append(r)
+    rolled = []
+    for _ in range(count):
+        roll = random.random() * 100
+        cumulative = 0.0
+        chosen = None
+        for tier, weight in RARITY_WEIGHTS.items():
+            cumulative += weight
+            if roll < cumulative:
+                chosen = tier
+                break
+        pool = by_rarity.get(chosen) if chosen else None
+        rolled.append(random.choice(pool) if pool else None)
+    total_cost = FARM_COST_GEMS * count
+    cards = []
+    referral_reward = None
+    with get_conn() as conn:
+        row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        if row is None or row["gems"] < total_cost:
+            raise InsufficientGems()
+        prior_cards = conn.execute(
+            "SELECT COUNT(*) FROM user_cards WHERE user_id = ?", (user_id,)
+        ).fetchone()[0]
+        conn.execute(
+            "UPDATE users SET gems = gems - ?, last_farm_at = ? WHERE telegram_id = ?",
+            (total_cost, _now(), user_id),
+        )
+        for card in rolled:
+            if card is None:
+                continue
+            user_card_id, drop_number = _insert_card_with_number(conn, user_id, card["id"])
+            cards.append({
+                "user_card_id": user_card_id,
+                "card_id": card["id"],
+                "filename": card["filename"],
+                "name": card["name"],
+                "rarity": card["rarity"],
+                "drop_number": drop_number,
+            })
+        if not (ADMIN_ID and str(user_id) == str(ADMIN_ID)):
+            _bump_counter(conn, "farm", count)
+        if prior_cards == 0:
+            me = conn.execute(
+                "SELECT ref_by, ref_reward_pending, chat_member_verified FROM users WHERE telegram_id = ?",
+                (user_id,),
+            ).fetchone()
+            if me["ref_by"] is not None and me["ref_reward_pending"] and me["chat_member_verified"]:
+                reward_amount = me["ref_reward_pending"]
+                conn.execute(
+                    "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
+                    (reward_amount, reward_amount, me["ref_by"]),
+                )
+                conn.execute("UPDATE users SET ref_reward_pending = 0 WHERE telegram_id = ?", (user_id,))
+                referral_reward = {"referrer_id": me["ref_by"], "amount": reward_amount}
+    result = {"count": count, "misses": count - len(cards), "cards": cards}
+    if referral_reward:
+        result["referral_reward"] = referral_reward
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Stars series ("Виллы"): every card exists in ONE copy. Bought only for Telegram Stars
+# (random draw from the not-yet-sold ones), then freely tradeable on the gem market.
+# Rows live in `cards` with series='villa', is_active=0 (so farm/cases/craft/evolve draws,
+# which all read is_active=1, never see them), rarity = glow tier (gold/platinum/diamond).
+# A villa's own number (1, 2, 3... by order of sale) is stored in cards.villa_number; the
+# user_cards row pins number_override = VILLA_NUMBER_BASE + n so it never collides with the
+# shared #-numbering (the webapp shows anything >= VILLA_NUMBER_BASE as "V<n>").
+# ---------------------------------------------------------------------------
+VILLA_PRICE_STARS = 25
+VILLA_NUMBER_BASE = 1_000_000
+VILLA_BATCH_MAX = 100  # most villas one Stars payment may buy
+
+
+def get_villa_overview() -> dict:
+    """Counters for the buy button: how many villas are left, per tier."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT rarity, COUNT(*) AS total, "
+            "SUM(CASE WHEN villa_number IS NULL THEN 1 ELSE 0 END) AS free "
+            "FROM cards WHERE series = 'villa' GROUP BY rarity"
+        ).fetchall()
+    tiers = {r["rarity"]: {"total": r["total"], "free": r["free"] or 0} for r in rows}
+    return {
+        "price_stars": VILLA_PRICE_STARS,
+        "total": sum(t["total"] for t in tiers.values()),
+        "free": sum(t["free"] for t in tiers.values()),
+        "tiers": tiers,
+    }
+
+
+def get_villa_catalog() -> list[dict]:
+    """All villas with their state: 'free' (not sold yet), 'owned' (a player has it) or
+    'listed' (that player put it on the gem market, listed_price set)."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT c.id AS card_id, c.filename, c.name, c.rarity, c.villa_number,
+                   uc.id AS user_card_id, uc.user_id AS owner_id, uc.listed_price,
+                   u.username AS owner_username, u.first_name AS owner_first_name
+            FROM cards c
+            LEFT JOIN user_cards uc ON uc.card_id = c.id AND uc.voided = 0
+            LEFT JOIN users u ON u.telegram_id = uc.user_id
+            WHERE c.series = 'villa'
+            """
+        ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        if d["villa_number"] is None:
+            d["status"] = "free"
+        elif d["listed_price"] is not None:
+            d["status"] = "listed"
+        else:
+            d["status"] = "owned"
+        d["owner_name"] = (f"@{d['owner_username']}" if d["owner_username"] else d["owner_first_name"]) if d["owner_id"] else None
+        out.append(d)
+    return out
+
+
+def get_latest_villa(user_id: int) -> dict | None:
+    """The newest villa this user holds (by user_cards.id) -- the webapp polls this after
+    paying to find the card the bot just granted."""
+    with get_conn() as conn:
+        r = conn.execute(
+            """
+            SELECT uc.id AS user_card_id, c.id AS card_id, c.filename, c.name, c.rarity, c.villa_number
+            FROM user_cards uc JOIN cards c ON c.id = uc.card_id
+            WHERE uc.user_id = ? AND c.series = 'villa' AND uc.voided = 0
+            ORDER BY uc.id DESC LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+    return dict(r) if r else None
+
+
+def buy_random_villa(user_id: int, charge_id: str | None = None, stars: int = VILLA_PRICE_STARS) -> dict | None:
+    """Called by bot.py once Telegram confirms the Stars payment: picks ONE random villa
+    out of all still-unsold ones, gives it its sale number and grants it. Returns the
+    card dict, {"duplicate": True} if this exact payment was already processed, or None
+    when nothing is left (the caller then refunds the Stars). Runs under BEGIN IMMEDIATE
+    so two simultaneous payments can never get the same card or the same number."""
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if charge_id:
+            if conn.execute("SELECT 1 FROM villa_purchases WHERE charge_id = ?", (charge_id,)).fetchone():
+                return {"duplicate": True}
+        free = conn.execute("SELECT id, filename, name, rarity FROM cards WHERE series = 'villa' AND villa_number IS NULL").fetchall()
+        if not free:
+            return None
+        card = random.choice(free)
+        n = conn.execute("SELECT COALESCE(MAX(villa_number), 0) + 1 FROM cards WHERE series = 'villa'").fetchone()[0]
+        conn.execute("UPDATE cards SET villa_number = ? WHERE id = ?", (n, card["id"]))
+        cur = conn.execute(
+            "INSERT INTO user_cards (user_id, card_id, obtained_at, number_override) VALUES (?, ?, ?, ?)",
+            (user_id, card["id"], _now(), VILLA_NUMBER_BASE + n),
+        )
+        conn.execute(
+            "INSERT INTO villa_purchases (user_id, charge_id, card_id, user_card_id, stars, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, charge_id, card["id"], cur.lastrowid, stars, _now()),
+        )
+        return {"user_card_id": cur.lastrowid, "card_id": card["id"], "filename": card["filename"],
+                "name": card["name"], "rarity": card["rarity"], "villa_number": n}
+
+
+def buy_random_villas(user_id: int, charge_id: str | None, count: int, stars_total: int) -> list[dict] | dict | None:
+    """Batch version of buy_random_villa(): ONE payment of `stars_total` Stars buys `count`
+    distinct random unsold villas, all-or-nothing (a Telegram refund is all-or-nothing too).
+    Returns the cards in sale order, {"duplicate": True} if this charge was already processed,
+    or None when fewer than `count` villas are left (the caller then refunds everything).
+    Only the first purchase row carries the charge_id (it is UNIQUE) -- that is the
+    idempotency key for the whole batch."""
+    count = max(1, int(count))
+    per = stars_total // count if count else stars_total
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if charge_id:
+            if conn.execute("SELECT 1 FROM villa_purchases WHERE charge_id = ?", (charge_id,)).fetchone():
+                return {"duplicate": True}
+        free = conn.execute("SELECT id, filename, name, rarity FROM cards WHERE series = 'villa' AND villa_number IS NULL").fetchall()
+        if len(free) < count:
+            return None
+        picked = random.sample(free, count)
+        n = conn.execute("SELECT COALESCE(MAX(villa_number), 0) FROM cards WHERE series = 'villa'").fetchone()[0]
+        out = []
+        for i, card in enumerate(picked):
+            n += 1
+            conn.execute("UPDATE cards SET villa_number = ? WHERE id = ?", (n, card["id"]))
+            cur = conn.execute(
+                "INSERT INTO user_cards (user_id, card_id, obtained_at, number_override) VALUES (?, ?, ?, ?)",
+                (user_id, card["id"], _now(), VILLA_NUMBER_BASE + n),
+            )
+            conn.execute(
+                "INSERT INTO villa_purchases (user_id, charge_id, card_id, user_card_id, stars, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, charge_id if i == 0 else None, card["id"], cur.lastrowid, per, _now()),
+            )
+            out.append({"user_card_id": cur.lastrowid, "card_id": card["id"], "filename": card["filename"],
+                        "name": card["name"], "rarity": card["rarity"], "villa_number": n})
+        return out
+
+
+def get_last_villa_purchase_id(user_id: int) -> int:
+    with get_conn() as conn:
+        return conn.execute("SELECT COALESCE(MAX(id), 0) FROM villa_purchases WHERE user_id = ?", (user_id,)).fetchone()[0]
+
+
+def get_villa_purchases_since(user_id: int, after_id: int) -> list[dict]:
+    """Villas this user bought (via Stars) after purchase row `after_id`, oldest first -- the
+    webapp polls this after paying to show exactly what the payment just granted."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT p.id AS purchase_id, p.user_card_id, c.id AS card_id, c.filename, c.name, c.rarity, c.villa_number
+            FROM villa_purchases p JOIN cards c ON c.id = p.card_id
+            WHERE p.user_id = ? AND p.id > ?
+            ORDER BY p.id
+            """,
+            (user_id, after_id),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 # Craft cost scales with the rarity of the card being burned — crafting a Diamond (a
 # near-lateral reroll, since it's already the top tier) costs far more than crafting a
 # cheap Bronze. Keeps craft from being a flat-rate gem sink regardless of what's at stake.
@@ -3492,14 +3745,14 @@ def craft_card(user_id: int, user_card_id: int) -> dict:
     _require_feature("craft")
     with get_conn() as conn:
         owned = conn.execute(
-            "SELECT uc.id, uc.obtained_at, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, uc.pinned_at, c.rarity, "
+            "SELECT uc.id, uc.obtained_at, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, uc.pinned_at, c.rarity, c.series, "
             "(SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = uc.id AND ng.drawn_at IS NULL) AS in_giveaway "
             "FROM user_cards uc JOIN cards c ON c.id = uc.card_id "
             "WHERE uc.id = ? AND uc.user_id = ? AND uc.voided = 0 AND uc.custom_name IS NULL",
             (user_card_id, user_id),
         ).fetchone()
-        if owned is None:
-            raise CraftNotOwned()
+        if owned is None or owned["series"] == "villa":
+            raise CraftNotOwned()  # villas are one-of-one -- never craft fuel
         if owned["listed_price"] is not None or owned["swap_listed"] or owned["staked_at"] is not None or owned["pvp_round_id"] is not None or owned["pinned_at"] is not None or owned["in_giveaway"]:
             raise CraftNotOwned()
         cost = get_craft_cost(owned["rarity"])
@@ -3615,6 +3868,7 @@ class NumberNotRare(Exception):
 def _usable_owned_card(conn: sqlite3.Connection, user_id: int, user_card_id: int) -> sqlite3.Row | None:
     return conn.execute(
         "SELECT id, obtained_at FROM user_cards WHERE id = ? AND user_id = ? AND voided = 0 "
+        "AND card_id NOT IN (SELECT id FROM cards WHERE series = 'villa') "
         "AND listed_price IS NULL AND swap_listed = 0 AND staked_at IS NULL AND pvp_round_id IS NULL "
         "AND NOT EXISTS (SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = user_cards.id AND ng.drawn_at IS NULL)",
         (user_card_id, user_id),
@@ -5148,7 +5402,7 @@ def list_card(user_card_id: int, seller_id: int, price_gems: int) -> bool:
     get_min_listing_price())."""
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT uc.user_id, uc.swap_listed, uc.staked_at, uc.pvp_round_id, uc.pinned_at, c.rarity, "
+            "SELECT uc.user_id, uc.swap_listed, uc.staked_at, uc.pvp_round_id, uc.pinned_at, c.rarity, c.series, "
             "(SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = uc.id AND ng.drawn_at IS NULL) AS in_giveaway "
             "FROM user_cards uc JOIN cards c ON c.id = uc.card_id WHERE uc.id = ?",
             (user_card_id,),
@@ -5157,7 +5411,7 @@ def list_card(user_card_id: int, seller_id: int, price_gems: int) -> bool:
             return False
         if row["swap_listed"] or row["staked_at"] is not None or row["pvp_round_id"] is not None or row["pinned_at"] is not None or row["in_giveaway"]:
             return False
-        min_price = get_min_listing_price(row["rarity"])
+        min_price = 1 if row["series"] == "villa" else get_min_listing_price(row["rarity"])
         if price_gems < min_price:
             raise ListingPriceTooLow(min_price)
         conn.execute(
@@ -5253,7 +5507,7 @@ def make_offer(user_card_id: int, buyer_id: int, price_gems: int) -> dict | None
     with get_conn() as conn:
         row = conn.execute(
             """
-            SELECT uc.user_id AS seller_id, uc.listed_price, c.filename, c.name, c.rarity
+            SELECT uc.user_id AS seller_id, uc.listed_price, c.filename, c.name, c.rarity, c.series
             FROM user_cards uc JOIN cards c ON c.id = uc.card_id
             WHERE uc.id = ?
             """,
@@ -5261,7 +5515,7 @@ def make_offer(user_card_id: int, buyer_id: int, price_gems: int) -> dict | None
         ).fetchone()
         if row is None or row["listed_price"] is None or row["seller_id"] == buyer_id:
             return None
-        min_price = get_min_listing_price(row["rarity"])
+        min_price = 1 if row["series"] == "villa" else get_min_listing_price(row["rarity"])
         if price_gems < min_price:
             raise ListingPriceTooLow(min_price)
         cur = conn.execute(
@@ -6056,11 +6310,15 @@ def get_total_farmed(exclude_id: int | None = None) -> int:
     with get_conn() as conn:
         if exclude_id is not None:
             row = conn.execute(
-                "SELECT COUNT(*) AS n FROM user_cards WHERE voided = 0 AND user_id != ?",
+                "SELECT COUNT(*) AS n FROM user_cards uc JOIN cards c ON c.id = uc.card_id "
+                "WHERE uc.voided = 0 AND c.series IS NULL AND uc.user_id != ?",
                 (exclude_id,),
             ).fetchone()
         else:
-            row = conn.execute("SELECT COUNT(*) AS n FROM user_cards WHERE voided = 0").fetchone()
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM user_cards uc JOIN cards c ON c.id = uc.card_id "
+                "WHERE uc.voided = 0 AND c.series IS NULL"
+            ).fetchone()
         return row["n"]
 
 
@@ -6073,7 +6331,7 @@ def get_global_rarity_breakdown() -> dict:
         rows = conn.execute(
             "SELECT CASE WHEN uc.custom_name IS NOT NULL AND uc.custom_name != '' "
             "THEN 'obsidian' ELSE c.rarity END AS r, COUNT(*) AS n FROM user_cards uc "
-            "JOIN cards c ON c.id = uc.card_id WHERE uc.voided = 0 GROUP BY r"
+            "JOIN cards c ON c.id = uc.card_id WHERE uc.voided = 0 AND c.series IS NULL GROUP BY r"
         ).fetchall()
     counts = {r["r"]: r["n"] for r in rows}
     return {rarity: counts.get(rarity, 0) for rarity in ("obsidian", "bronze", "silver", "gold", "platinum", "diamond")}
@@ -6106,8 +6364,8 @@ def get_leaderboard() -> list[dict]:
         rows = conn.execute(
             f"""
             SELECT u.telegram_id, u.username, u.first_name, u.photo_url,
-                   COUNT(uc.id) AS total_cards, u.gems AS current_gems,
-                   COUNT(CASE WHEN c.rarity = 'diamond' THEN 1 END) AS diamond_cards
+                   COUNT(CASE WHEN uc.id IS NOT NULL AND c.series IS NULL THEN 1 END) AS total_cards, u.gems AS current_gems,
+                   COUNT(CASE WHEN c.rarity = 'diamond' AND c.series IS NULL THEN 1 END) AS diamond_cards
             FROM users u
             LEFT JOIN user_cards uc ON uc.user_id = u.telegram_id AND uc.voided = 0
             LEFT JOIN cards c ON c.id = uc.card_id
@@ -7016,7 +7274,7 @@ def request_crypto_withdrawal(user_id: int, user_card_ids: list[int], wallet_add
             # as selectable in the picker (which reads the same coalesced inventory field)
             # but then get rejected here as "not an eligible Diamond card". Match the same
             # coalesced rule everywhere.
-            f"AND COALESCE(uc.custom_rarity, c.rarity) = 'diamond' "
+            f"AND COALESCE(uc.custom_rarity, c.rarity) = 'diamond' AND c.series IS NULL "
             f"AND uc.listed_price IS NULL AND uc.swap_listed = 0 "
             f"AND uc.staked_at IS NULL AND uc.pvp_round_id IS NULL AND uc.voided = 0 "
             f"AND NOT EXISTS (SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = uc.id AND ng.drawn_at IS NULL)",

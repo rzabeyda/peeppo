@@ -430,6 +430,104 @@ async def farm(body: InitDataBody):
     return result
 
 
+class FarmBatchBody(InitDataBody):
+    count: int
+
+
+@app.post("/api/farm_batch")
+async def farm_batch(body: FarmBatchBody):
+    """The "+" modal on the Farm button: N presses at once (same odds/price as /farm, balance
+    for ALL of them must be there up front, otherwise nothing is spent)."""
+    user = _authenticate(body.initData)
+    if body.count < 1 or body.count > db.FARM_BATCH_MAX:
+        raise HTTPException(400, f"count must be 1..{db.FARM_BATCH_MAX}")
+    try:
+        result = db.farm_many(user["telegram_id"], body.count)
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
+    if result is None:
+        raise HTTPException(503, "card catalog is empty — add images first")
+    for c in result["cards"]:
+        c["farm_number"] = c["drop_number"]
+    result["total_farmed"] = db.get_total_farmed()
+    result["gems"] = db.get_gems(user["telegram_id"])
+
+    referral_reward = result.pop("referral_reward", None)
+    if referral_reward:
+        who_name = f"@{user['username']}" if user.get("username") else (user.get("first_name") or "Реферал")
+        db.set_referral_notice(referral_reward["referrer_id"], who_name, referral_reward["amount"])
+
+    if (user.get("username") or "").lower() not in ("rzabeyda", "zzabeyda"):
+        import bot as bot_module
+        display_name = f"@{user['username']}" if user.get("username") else (user.get("first_name") or "Игрок")
+        for c in result["cards"]:
+            if c["rarity"] == "diamond":
+                await bot_module.notify_diamond_farmed(display_name, c["name"])
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Stars series ("Виллы")
+# ---------------------------------------------------------------------------
+
+@app.post("/api/villa/status")
+def villa_status(body: InitDataBody):
+    user = _authenticate(body.initData)
+    latest = db.get_latest_villa(user["telegram_id"])
+    return {**db.get_villa_overview(), "my_latest_uc_id": latest["user_card_id"] if latest else None,
+            "my_last_purchase_id": db.get_last_villa_purchase_id(user["telegram_id"]),
+            "batch_max": db.VILLA_BATCH_MAX}
+
+
+class VillaInvoiceBody(InitDataBody):
+    count: int = 1
+
+
+class VillaSinceBody(InitDataBody):
+    after_id: int = 0
+
+
+@app.post("/api/villa/since")
+def villa_since(body: VillaSinceBody):
+    """Villas bought with Stars after purchase row `after_id` (see /api/villa/status)."""
+    user = _authenticate(body.initData)
+    return {"cards": db.get_villa_purchases_since(user["telegram_id"], body.after_id)}
+
+
+@app.post("/api/villa/catalog")
+def villa_catalog(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"cards": db.get_villa_catalog(), **db.get_villa_overview()}
+
+
+@app.post("/api/villa/invoice")
+async def villa_invoice(body: VillaInvoiceBody):
+    """Telegram Stars invoice for `count` random villas (one payment, count x price). The
+    cards are drawn by bot.py's successful_payment handler -- nothing is granted from here."""
+    user = _authenticate(body.initData)
+    count = body.count
+    if count < 1 or count > db.VILLA_BATCH_MAX:
+        raise HTTPException(400, f"count must be 1..{db.VILLA_BATCH_MAX}")
+    free = db.get_villa_overview()["free"]
+    if free <= 0:
+        raise HTTPException(400, "all villas are sold")
+    if count > free:
+        raise HTTPException(400, f"only {free} villas left")
+
+    import bot as bot_module
+
+    link = await bot_module.create_villa_invoice(user["telegram_id"], db.VILLA_PRICE_STARS, count)
+    return {"invoice_link": link, "stars": db.VILLA_PRICE_STARS * count, "count": count}
+
+
+@app.post("/api/villa/latest")
+def villa_latest(body: InitDataBody):
+    """The newest villa this player holds -- polled after paying, until my_latest_uc_id changes."""
+    user = _authenticate(body.initData)
+    return {"card": db.get_latest_villa(user["telegram_id"])}
+
+
 @app.post("/api/profile")
 def profile(body: InitDataBody):
     user = _authenticate(body.initData)

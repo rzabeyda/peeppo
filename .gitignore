@@ -8,3 +8,5 @@ venv/
 nul
 _patch_*.py
 _verify_*.js
+
+villa_originals/

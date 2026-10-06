@@ -224,7 +224,6 @@ async def handle_admin_panel(message: Message):
         f"Эволюция: <b>{stats['cards_evolved']}</b>",
         f"Крафт: <b>{stats['cards_crafted']}</b>",
         f"Кейсы: <b>{stats['cases_bought']}</b>",
-        f"Стейки: <b>{stats['cards_staked']}</b>",
         f"Обмен: <b>{stats['blind_swaps_completed']}</b>",
         "",
         "📊 <b>Статистика казны по всем играм</b>\n",
@@ -400,15 +399,16 @@ GEM_DROP_AMOUNT = 25  # still the default for the manual /gem command when no am
 GEM_DROP_MIN_AMOUNT = 15
 GEM_DROP_MAX_AMOUNT = 25
 
-# Auto-scheduler: fires roughly once every hour, only during the active window
-# 06:00-02:00 Tallinn time (quiet 02:00-06:00) -- the window WRAPS past midnight, see
-# the hour check below. GEM_DROP_MIN_GAP_SECONDS guards against firing a second drop
+# Auto-scheduler: fires roughly once every hour, around the clock (window 00:00-24:00
+# Tallinn time -- the old quiet 02:00-06:00 night gap was removed on request; set
+# START/END back to 6/2 to restore it, the window then WRAPS past midnight, see
+# the hour check below). GEM_DROP_MIN_GAP_SECONDS guards against firing a second drop
 # too soon if the bot process restarts a few times in a row (e.g. during a deploy) --
 # kept a bit below GEM_DROP_INTERVAL_SECONDS so the +/-180s jitter on the sleep below
 # never causes a legitimate hourly drop to be skipped.
 GEM_DROP_TZ = ZoneInfo("Europe/Tallinn")
-GEM_DROP_START_HOUR = 6   # window opens 06:00
-GEM_DROP_END_HOUR = 2     # window closes 02:00 (next day) -- start > end means it wraps
+GEM_DROP_START_HOUR = 0   # window opens 00:00
+GEM_DROP_END_HOUR = 24    # window closes 24:00 -> drops all day and night (start > end would wrap past midnight)
 GEM_DROP_INTERVAL_SECONDS = 3600
 GEM_DROP_MIN_GAP_SECONDS = 3000
 
@@ -627,7 +627,7 @@ async def gem_drop_scheduler():
     gem drop (a random amount between GEM_DROP_MIN_AMOUNT and GEM_DROP_MAX_AMOUNT,
     rolled fresh each time) into PUBLIC_CHAT."""
     logger.info(
-        "gem drop scheduler started (06:00-02:00 Tallinn, ~every 1h, %d-%d gems)",
+        "gem drop scheduler started (24h, ~every 1h, %d-%d gems)",
         GEM_DROP_MIN_AMOUNT, GEM_DROP_MAX_AMOUNT,
     )
     while True:
@@ -1292,8 +1292,39 @@ async def create_rank_invoice(user_id: int, rank: str, stars: int) -> str:
     )
 
 
+async def create_villa_invoice(user_id: int, stars: int, count: int = 1) -> str:
+    """Stars series ("Виллы"): `count` random not-yet-sold villas for stars*count Stars in ONE
+    payment. Cards are NOT reserved here -- they are drawn in handle_successful_payment()."""
+    return await bot.create_invoice_link(
+        title="Вилла Peeppo" if count == 1 else f"Виллы Peeppo × {count}",
+        description="Случайная вилла из серии Stars — в одном экземпляре, только у тебя" if count == 1
+                    else f"{count} случайных вилл из серии Stars — каждая в одном экземпляре, только у тебя",
+        payload=f"villa:{user_id}:{count}",
+        provider_token="",  # empty provider_token is required for Telegram Stars
+        currency="XTR",
+        prices=[LabeledPrice(label="Случайная вилла" if count == 1 else f"Случайные виллы × {count}", amount=stars * count)],
+    )
+
+
+def _villa_payload_count(payload: str) -> int:
+    parts = payload.split(":")
+    try:
+        return max(1, int(parts[2])) if len(parts) > 2 else 1
+    except ValueError:
+        return 1
+
+
 @dp.pre_checkout_query()
 async def handle_pre_checkout(pre_checkout_q: PreCheckoutQuery):
+    payload = pre_checkout_q.invoice_payload or ""
+    if payload.startswith("villa:"):
+        free = db.get_villa_overview()["free"]
+        if free <= 0:
+            await bot.answer_pre_checkout_query(pre_checkout_q.id, ok=False, error_message="Все виллы уже разобраны")
+            return
+        if free < _villa_payload_count(payload):
+            await bot.answer_pre_checkout_query(pre_checkout_q.id, ok=False, error_message=f"Осталось только {free} вилл — выбери меньше")
+            return
     await bot.answer_pre_checkout_query(pre_checkout_q.id, ok=True)
 
 
@@ -1327,6 +1358,32 @@ async def handle_successful_payment(message: Message):
         await message.answer(f"Ранг {new_rank.upper()} куплен! 🏆")
         db.log_stars_payment(int(uid_str), stars, f"ранг {new_rank.upper()}")
         await notify_admin_payment(message.from_user, stars, f"ранг {new_rank.upper()}")
+    elif payload.startswith("villa:"):
+        uid = int(payload.split(":")[1])
+        count = _villa_payload_count(payload)
+        charge_id = message.successful_payment.telegram_payment_charge_id
+        res = db.buy_random_villas(uid, charge_id, count, stars)
+        if res is None:
+            # Not enough villas left between pre-checkout and payment: give ALL the Stars back.
+            try:
+                await bot.refund_star_payment(user_id=uid, telegram_payment_charge_id=charge_id)
+                await message.answer("Виллы уже разобраны — твои ⭐ возвращены.")
+            except Exception:
+                logger.exception("villa refund failed for %s charge %s", uid, charge_id)
+                await message.answer("Виллы разобраны, возврат ⭐ оформит администратор.")
+                await notify_admin_payment(message.from_user, stars, f"{count} вилл (НЕТ СВОБОДНЫХ — нужен ручной возврат)")
+        elif isinstance(res, list):
+            if len(res) == 1:
+                v = res[0]
+                await message.answer(f"🏠 Тебе выпала вилла «{v['name']}» ({v['rarity'].upper()}) — V#{v['villa_number']}!")
+                db.log_stars_payment(uid, stars, f"вилла {v['name']}")
+                await notify_admin_payment(message.from_user, stars, f"виллу «{v['name']}» ({v['rarity']}) V#{v['villa_number']}")
+            else:
+                lines = "\n".join(f"• «{v['name']}» ({v['rarity'].upper()}) — V#{v['villa_number']}" for v in res[:30])
+                more = f"\n…и ещё {len(res) - 30}" if len(res) > 30 else ""
+                await message.answer(f"🏠 Тебе выпало вилл: {len(res)}\n{lines}{more}")
+                db.log_stars_payment(uid, stars, f"виллы ×{len(res)}")
+                await notify_admin_payment(message.from_user, stars, f"{len(res)} вилл")
 
 
 # ---------------------------------------------------------------------------
@@ -1880,7 +1937,7 @@ def _ref_race_end_line() -> str:
     end = _ref_race_end_dt()
     if end is None or end <= datetime.now(timezone.utc):
         return ""
-    return f"Конец гонки: {end.astimezone(REF_RACE_TZ):%d.%m.%Y %H:%M} (Таллин)"
+    return f"Итоги: {end.astimezone(REF_RACE_TZ):%d.%m.%y %H:%M}"
 
 
 def format_ref_leaderboard(rows: list[dict]) -> str:
