@@ -154,6 +154,31 @@ CREATE TABLE IF NOT EXISTS pvp_entries (
 
 CREATE INDEX IF NOT EXISTS idx_pvp_entries_round ON pvp_entries(round_id);
 
+CREATE TABLE IF NOT EXISTS villa_giveaways (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id       TEXT,
+    message_id    INTEGER,
+    winners_count INTEGER NOT NULL DEFAULT 5,
+    draw_at       TEXT NOT NULL,
+    drawn_at      TEXT,
+    created_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS villa_giveaway_entries (
+    giveaway_id   INTEGER NOT NULL REFERENCES villa_giveaways(id),
+    user_id       INTEGER NOT NULL,
+    username      TEXT,
+    first_name    TEXT,
+    created_at    TEXT NOT NULL,
+    PRIMARY KEY (giveaway_id, user_id)
+);
+
+-- free villa "attempts" won in the villa giveaway; spent from Farm -> Villa
+CREATE TABLE IF NOT EXISTS villa_free_credits (
+    user_id       INTEGER PRIMARY KEY,
+    credits       INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS gem_drops (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     amount        INTEGER NOT NULL,
@@ -712,6 +737,30 @@ def init_db():
             "id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, charge_id TEXT UNIQUE, "
             "card_id INTEGER NOT NULL, user_card_id INTEGER NOT NULL, stars INTEGER NOT NULL, created_at TEXT NOT NULL)"
         )
+        # One row per (local Tallinn day, user) who opened the app that day -- the data behind /users
+        # (record number of distinct players in a single day). Filled on every /api/auth.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS daily_active ("
+            "day TEXT NOT NULL, user_id INTEGER NOT NULL, PRIMARY KEY (day, user_id))"
+        )
+        if conn.execute("SELECT 1 FROM daily_active LIMIT 1").fetchone() is None:
+            # One-time backfill so /users has history from day one: the app never recorded opens
+            # before, so use the traces we do have -- registration day, any card received (farm,
+            # case, craft, ...) and last open -- one row per user per day.
+            seen = set()
+            def _add(ts, uid):
+                if ts and uid is not None:
+                    try:
+                        d = _parse_utc(ts).astimezone(TALLINN_TZ).date().isoformat()
+                    except Exception:
+                        return
+                    seen.add((d, uid))
+            seen_col = "last_seen_at" if "last_seen_at" in u_cols else "NULL"
+            for r in conn.execute(f"SELECT telegram_id, created_at, {seen_col} AS last_seen_at FROM users").fetchall():
+                _add(r["created_at"], r["telegram_id"]); _add(r["last_seen_at"], r["telegram_id"])
+            for r in conn.execute("SELECT user_id, obtained_at FROM user_cards").fetchall():
+                _add(r["obtained_at"], r["user_id"])
+            conn.executemany("INSERT OR IGNORE INTO daily_active (day, user_id) VALUES (?, ?)", list(seen))
         # migration for DBs created before the daily login bonus existed
         if "last_daily_bonus" not in u_cols:
             conn.execute("ALTER TABLE users ADD COLUMN last_daily_bonus TEXT")
@@ -897,6 +946,10 @@ def get_or_create_user(telegram_id: int, username: str | None, first_name: str |
                 "UPDATE users SET username = ?, first_name = ?, photo_url = ?, last_seen_at = ? WHERE telegram_id = ?",
                 (username, first_name, photo_url, _now(), telegram_id),
             )
+            conn.execute(
+                "INSERT OR IGNORE INTO daily_active (day, user_id) VALUES (?, ?)",
+                (datetime.now(timezone.utc).astimezone(TALLINN_TZ).date().isoformat(), telegram_id),
+            )
             return conn.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone(), False
 
         # don't let someone set themselves as their own referrer
@@ -928,6 +981,10 @@ def get_or_create_user(telegram_id: int, username: str | None, first_name: str |
             "last_daily_bonus, streak_days, created_at, ref_reward_pending, last_seen_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (telegram_id, username, first_name, photo_url, ref_by, signup_bonus, signup_bonus, today, 1, _now(), ref_reward_pending, _now()),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO daily_active (day, user_id) VALUES (?, ?)",
+            (datetime.now(timezone.utc).astimezone(TALLINN_TZ).date().isoformat(), telegram_id),
         )
         return conn.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone(), True
 
@@ -977,16 +1034,16 @@ def get_bot_uptime_days() -> int:
 # registered, shown next to their name in Profile with the avatar ring + profile card
 # border colored to match. Bronze for the first month, one tier up per month after,
 # Diamond from month 5 onward.
-PLAYER_RANK_COLORS = {"bronze": "#cd7f32", "silver": "#9ca3af", "gold": "#facc15", "platinum": "#a78bfa", "diamond": "#ff2fb0"}
+PLAYER_RANK_COLORS = {"bronze": "#cd7f32", "silver": "#9ca3af", "gold": "#facc15", "platinum": "#a78bfa", "diamond": "#ff2fb0", "obsidian": "#e5e7eb", "rare": "#3b82f6", "epic": "#22c55e", "legend": "#ef4444"}
 
 # Ordered low -> high, index doubles as the numeric "tier" used everywhere below.
-RANK_TIERS = ["bronze", "silver", "gold", "platinum", "diamond"]
+RANK_TIERS = ["bronze", "silver", "gold", "platinum", "diamond", "obsidian", "rare", "epic", "legend"]  # obsidian: top rank, Stars-only (never reached by time)
 
 # Skip the rank straight to a tier with Telegram Stars — sets a floor under the normal
 # time-based rank (purchased_rank_tier on users), so it never downgrades and the
 # time-based rank can still carry a player past it later for free. No bronze entry —
 # it's the free starting tier, nothing to buy.
-RANK_STARS_PRICE = {"silver": 200, "gold": 300, "platinum": 400, "diamond": 500}
+RANK_STARS_PRICE = {"silver": 200, "gold": 300, "platinum": 400, "diamond": 500, "obsidian": 1000, "rare": 2000, "epic": 3000, "legend": 5000}
 
 
 def _time_based_rank_tier(created_at: str) -> int:
@@ -1178,12 +1235,14 @@ def spin_fortune_wheel(user_id: int) -> dict:
 # ---------------------------------------------------------------------------
 # Red/Black — a simple double-or-nothing chat game (/redblack in bot.py). One round:
 # player stakes `bet` gems and picks "red" or "black"; a fair coin flip either doubles
-# their stake (net +bet) or loses it outright (net -bet). No house edge, no third
-# outcome (no "green zero") — deliberately simpler than real roulette.
+# their stake (net +bet) or loses it outright (net -bet). House edge via a "green zero":
+# REDBLACK_GREEN_CHANCE of rounds land on green and EVERY bet loses; the rest is a fair
+# red/black split, so a win pays x2 at 49% = 98% RTP.
 # ---------------------------------------------------------------------------
 
 REDBLACK_DEFAULT_BET = 25
 REDBLACK_MIN_BET = 25
+REDBLACK_GREEN_CHANCE = 0.02  # green: everyone loses -> 98% RTP
 
 
 class RedBlackError(Exception):
@@ -1198,7 +1257,7 @@ def play_redblack(user_id: int, bet: int, choice: str) -> dict:
     and gems_earned); on a loss the stake is simply removed (net -bet, gems_earned
     untouched — same convention as every other spend). Raises InsufficientGems if the
     balance can't cover the bet, RedBlackError for a bad bet amount or choice. Returns
-    {"result": "red"|"black", "won": bool, "bet": int, "payout": 0 or 2*bet,
+    {"result": "red"|"black"|"green", "won": bool, "bet": int, "payout": 0 or 2*bet,
     "gems": new balance}."""
     if choice not in ("red", "black"):
         raise RedBlackError("choice must be 'red' or 'black'")
@@ -1208,7 +1267,10 @@ def play_redblack(user_id: int, bet: int, choice: str) -> dict:
         row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
         if row is None or row["gems"] < bet:
             raise InsufficientGems()
-        result = random.choice(("red", "black"))
+        if random.random() < REDBLACK_GREEN_CHANCE:
+            result = "green"  # house wins, whatever was picked
+        else:
+            result = random.choice(("red", "black"))
         won = result == choice
         if won:
             conn.execute(
@@ -2733,12 +2795,89 @@ def _maybe_complete_collection(conn: sqlite3.Connection, user_id: int, collectio
     return False
 
 
+# ---- Special count-based collection: "Виллы" -- own any 10 villas ----
+VILLA_COLLECTION_KEY = "villas10"
+VILLA_COLLECTION_TARGET = 10
+
+
+def _ensure_villa_collection(conn: sqlite3.Connection) -> int:
+    """Creates the "Виллы" collection row (no fixed card slots -- progress is simply how many
+    villas the player owns, up to VILLA_COLLECTION_TARGET) and returns its id."""
+    conn.execute(
+        "INSERT INTO collections (key, name, icon, icon_image, created_at) VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET name = excluded.name, icon = excluded.icon, icon_image = excluded.icon_image",
+        (VILLA_COLLECTION_KEY, "Виллы", "🏰", "../villa/como_luxury.jpg", _now()),
+    )
+    return conn.execute("SELECT id FROM collections WHERE key = ?", (VILLA_COLLECTION_KEY,)).fetchone()["id"]
+
+
+def _owned_villas(conn: sqlite3.Connection, user_id: int) -> list[dict]:
+    """The villas this player currently owns, best tier first (diamond, platinum, gold)."""
+    rows = conn.execute(
+        "SELECT c.id AS card_id, c.filename, c.name, c.rarity, c.villa_number "
+        "FROM user_cards uc JOIN cards c ON c.id = uc.card_id "
+        "WHERE uc.user_id = ? AND c.series = 'villa' AND uc.voided = 0",
+        (user_id,),
+    ).fetchall()
+    order = {"diamond": 0, "platinum": 1, "gold": 2}
+    out = [dict(r) for r in rows]
+    out.sort(key=lambda r: (order.get(r["rarity"], 3), r["villa_number"] or 0))
+    return out
+
+
+def _maybe_complete_villa_collection(conn: sqlite3.Connection, user_id: int, coll_id: int) -> bool:
+    """Records the completion (and pays the usual reward, once) when the player owns
+    VILLA_COLLECTION_TARGET villas. Returns True only for the call that just completed it."""
+    already = conn.execute(
+        "SELECT 1 FROM user_collection_completions WHERE user_id = ? AND collection_id = ?",
+        (user_id, coll_id),
+    ).fetchone()
+    if already is not None:
+        return False
+    n = conn.execute(
+        "SELECT COUNT(*) AS n FROM user_cards uc JOIN cards c ON c.id = uc.card_id "
+        "WHERE uc.user_id = ? AND c.series = 'villa' AND uc.voided = 0",
+        (user_id,),
+    ).fetchone()["n"]
+    if n < VILLA_COLLECTION_TARGET:
+        return False
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO user_collection_completions (user_id, collection_id, completed_at) VALUES (?, ?, ?)",
+        (user_id, coll_id, _now()),
+    )
+    if cur.rowcount > 0:
+        conn.execute(
+            "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
+            (COLLECTION_COMPLETE_REWARD_GEMS, COLLECTION_COMPLETE_REWARD_GEMS, user_id),
+        )
+        return True
+    return False
+
+
+def _villa_collection_completers_count(conn: sqlite3.Connection, coll_id: int) -> int:
+    return conn.execute(
+        """
+        SELECT COUNT(*) AS n FROM (
+            SELECT user_id FROM user_collection_completions WHERE collection_id = ?
+            UNION
+            SELECT uc.user_id FROM user_cards uc JOIN cards c ON c.id = uc.card_id
+            WHERE c.series = 'villa' AND uc.voided = 0
+            GROUP BY uc.user_id HAVING COUNT(*) >= ?
+        )
+        """,
+        (coll_id, VILLA_COLLECTION_TARGET),
+    ).fetchone()["n"]
+
+
 def get_collections_overview(user_id: int) -> list[dict]:
     """List of every defined collection with this player's progress -- for the
     collections list screen opened from the "Коллекция" button in Профиль."""
     with get_conn() as conn:
         _seed_collections(conn)
+        villa_coll_id = _ensure_villa_collection(conn)
         newly_completed_ids = _sync_collection_placements(conn, user_id)
+        if _maybe_complete_villa_collection(conn, user_id, villa_coll_id):
+            newly_completed_ids.add(villa_coll_id)
         # Hardest-to-complete collections first: "difficulty" is the sum, over every
         # member card, of 1/farm-drop-weight -- i.e. roughly how many farms it'd take
         # to pull that one card on average (same RARITY_WEIGHTS farm() itself draws
@@ -2783,14 +2922,23 @@ def get_collections_overview(user_id: int) -> list[dict]:
                 "SELECT completed_at FROM user_collection_completions WHERE user_id = ? AND collection_id = ?",
                 (user_id, c["id"]),
             ).fetchone()
-            out.append({
+            item = {
                 "id": c["id"], "key": c["key"], "name": c["name"], "icon": c["icon"],
                 "icon_image": c["icon_image"],
                 "total": c["total"], "placed": placed,
                 "completed": completed_row is not None,
                 "completers_count": c["completers_count"],
                 "just_completed": c["id"] in newly_completed_ids,
-            })
+            }
+            if c["key"] == VILLA_COLLECTION_KEY:
+                owned_n = len(_owned_villas(conn, user_id))
+                item["total"] = VILLA_COLLECTION_TARGET
+                item["placed"] = VILLA_COLLECTION_TARGET if item["completed"] else min(owned_n, VILLA_COLLECTION_TARGET)
+                item["completers_count"] = _villa_collection_completers_count(conn, c["id"])
+                item["desc"] = f"Собери {VILLA_COLLECTION_TARGET} вилл"
+            out.append(item)
+        # the villa collection goes first in the list
+        out.sort(key=lambda it: 0 if it["key"] == VILLA_COLLECTION_KEY else 1)
         return out
 
 
@@ -2804,6 +2952,26 @@ def get_collection_detail(user_id: int, collection_id: int) -> dict:
         coll = conn.execute("SELECT id, key, name, icon, icon_image FROM collections WHERE id = ?", (collection_id,)).fetchone()
         if coll is None:
             raise ValueError("collection not found")
+        if coll["key"] == VILLA_COLLECTION_KEY:
+            owned = _owned_villas(conn, user_id)
+            just_completed = _maybe_complete_villa_collection(conn, user_id, coll["id"])
+            slots = [
+                {"card_id": v["card_id"], "filename": v["filename"], "name": v["name"],
+                 "rarity": v["rarity"], "owned": True, "placed": True}
+                for v in owned[:VILLA_COLLECTION_TARGET]
+            ]
+            while len(slots) < VILLA_COLLECTION_TARGET:
+                slots.append({"card_id": -len(slots) - 1, "filename": None, "name": "", "rarity": None,
+                              "owned": False, "placed": False, "empty": True})
+            done_row = conn.execute(
+                "SELECT completed_at FROM user_collection_completions WHERE user_id = ? AND collection_id = ?",
+                (user_id, coll["id"]),
+            ).fetchone()
+            return {
+                "id": coll["id"], "key": coll["key"], "name": coll["name"], "icon": coll["icon"],
+                "icon_image": coll["icon_image"], "cards": slots, "total": VILLA_COLLECTION_TARGET,
+                "completed": done_row is not None, "just_completed": just_completed,
+            }
         card_rows = conn.execute(
             "SELECT c.id, c.filename, c.name, c.rarity FROM collection_cards cc "
             "JOIN cards c ON c.id = cc.card_id WHERE cc.collection_id = ? ORDER BY c.id",
@@ -2853,6 +3021,29 @@ def get_collection_completers(collection_id: int, limit: int = 200) -> list[dict
     first; the date is the recorded completion time, or the moment they got their last
     missing card. Returns username (may be None) and first_name; the client strips "@"."""
     with get_conn() as conn:
+        key_row = conn.execute("SELECT key FROM collections WHERE id = ?", (collection_id,)).fetchone()
+        if key_row is not None and key_row["key"] == VILLA_COLLECTION_KEY:
+            rows = conn.execute(
+                """
+                WITH owners AS (
+                    SELECT uc.user_id AS user_id, MAX(uc.obtained_at) AS got_at
+                    FROM user_cards uc JOIN cards c ON c.id = uc.card_id
+                    WHERE c.series = 'villa' AND uc.voided = 0
+                    GROUP BY uc.user_id HAVING COUNT(*) >= ?
+                ),
+                everyone AS (
+                    SELECT user_id, completed_at FROM user_collection_completions WHERE collection_id = ?
+                    UNION ALL
+                    SELECT user_id, got_at FROM owners
+                    WHERE user_id NOT IN (SELECT user_id FROM user_collection_completions WHERE collection_id = ?)
+                )
+                SELECT u.username, u.first_name, e.completed_at
+                FROM everyone e JOIN users u ON u.telegram_id = e.user_id
+                ORDER BY e.completed_at DESC LIMIT ?
+                """,
+                (VILLA_COLLECTION_TARGET, collection_id, collection_id, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
         rows = conn.execute(
             """
             WITH owners AS (
@@ -3005,13 +3196,13 @@ CASE_DEFS = {
     # draws) and zero chance at anything outside its two tiers, unlike farm's small tail
     # chance at every rarity.
     "hamster": {"name": "Хомяк", "price": 100, "image": "case/case_hamster.jpg",  # was Bronze/Silver only, still worse than farm for Silver at this price (100 gems can't beat farm's ~86/Silver even at 100% weight) -- added small Platinum/Diamond tail chances as upside; trimmed from 3/1 to 2.5/0.5 after the 1% Diamond alone made overall EV ~1.39x farm (higher than every other case) -- now ~1.12x, in line with Capybara/Pepe
-                "weights": {"gold": 97, "platinum": 2.5, "diamond": 0.5}},
+                "weights": {"gold": 74.2, "platinum": 23, "diamond": 2.8}},
     "duck": {"name": "Уточка", "price": 200, "image": "case/case_utya.jpg",  # was Silver/Gold only, still worse than farm for Gold at this price (200 gems can't beat farm's ~151/Gold even at 100% weight) -- added small Platinum/Diamond tail chances as upside instead
-             "weights": {"gold": 96, "platinum": 3, "diamond": 1}},
+             "weights": {"gold": 25.4, "platinum": 70, "diamond": 4.6}},
     "capybara": {"name": "Капибара", "price": 400, "image": "case/case_capybara.jpg",  # Gold/Platinum only -- price doubled (was 200) to halve return/gem, per request
-                 "weights": {"gold": 15, "platinum": 85}},
+                 "weights": {"platinum": 85.3, "diamond": 14.7}},
     "pepe": {"name": "Пепе", "price": 1000, "image": "case/case_pep.jpg",  # Platinum/Diamond only -- price doubled (was 500) to halve return/gem, per request
-             "weights": {"platinum": 85, "diamond": 15}},
+             "weights": {"platinum": 50, "diamond": 50}},
 }
 
 
@@ -3153,8 +3344,8 @@ BURN_REQUIREMENTS = {
 # Failure chance scales with how rare/valuable the TARGET tier is — evolving into something
 # higher up is riskier. Keyed by target_rarity (not source rarity).
 BURN_SUCCESS_RATE = {
-    "platinum": 1.0,  # guaranteed
-    "diamond":  1.0,  # guaranteed
+    "platinum": 0.90,  # 10% chance to lose the burned cards
+    "diamond":  0.90,  # 10% chance to lose the burned cards
 }
 
 
@@ -3632,6 +3823,104 @@ def get_villa_purchases_since(user_id: int, after_id: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+# ---- Villa giveaway: 5 winners each get one FREE villa attempt (Farm -> Villa) ----
+
+def create_villa_giveaway(draw_at_iso: str, winners_count: int = 5) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO villa_giveaways (winners_count, draw_at, created_at) VALUES (?, ?, ?)",
+            (winners_count, draw_at_iso, _now()),
+        )
+        return cur.lastrowid
+
+
+def set_villa_giveaway_message(gid: int, chat_id, message_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE villa_giveaways SET chat_id = ?, message_id = ? WHERE id = ?", (str(chat_id), message_id, gid))
+
+
+def get_villa_giveaway(gid: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM villa_giveaways WHERE id = ?", (gid,)).fetchone()
+    return dict(row) if row else None
+
+
+def join_villa_giveaway(gid: int, user_id: int, username: str | None, first_name: str | None) -> str:
+    """'joined' | 'already_joined' | 'drawn' | 'missing'."""
+    with get_conn() as conn:
+        g = conn.execute("SELECT drawn_at FROM villa_giveaways WHERE id = ?", (gid,)).fetchone()
+        if g is None:
+            return "missing"
+        if g["drawn_at"] is not None:
+            return "drawn"
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO villa_giveaway_entries (giveaway_id, user_id, username, first_name, created_at) "
+            "VALUES (?, ?, ?, ?, ?)", (gid, user_id, username, first_name, _now()),
+        )
+        return "joined" if cur.rowcount else "already_joined"
+
+
+def get_villa_giveaway_entries(gid: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT user_id, username, first_name FROM villa_giveaway_entries WHERE giveaway_id = ? ORDER BY created_at, user_id",
+            (gid,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_due_villa_giveaways() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM villa_giveaways WHERE drawn_at IS NULL AND draw_at <= ?", (_now(),)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def draw_villa_giveaway(gid: int) -> list[dict]:
+    """Picks up to winners_count random entrants, gives each one free-villa credit, marks the giveaway
+    drawn (once -- a second call returns []). Returns the winners' entry rows."""
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        g = conn.execute("SELECT winners_count, drawn_at FROM villa_giveaways WHERE id = ?", (gid,)).fetchone()
+        if g is None or g["drawn_at"] is not None:
+            return []
+        entries = [dict(r) for r in conn.execute(
+            "SELECT user_id, username, first_name FROM villa_giveaway_entries WHERE giveaway_id = ?", (gid,)
+        ).fetchall()]
+        winners = random.sample(entries, min(g["winners_count"], len(entries)))
+        for w in winners:
+            conn.execute(
+                "INSERT INTO villa_free_credits (user_id, credits) VALUES (?, 1) "
+                "ON CONFLICT(user_id) DO UPDATE SET credits = credits + 1", (w["user_id"],),
+            )
+        conn.execute("UPDATE villa_giveaways SET drawn_at = ? WHERE id = ?", (_now(), gid))
+    return winners
+
+
+def get_villa_free_credits(user_id: int) -> int:
+    with get_conn() as conn:
+        row = conn.execute("SELECT credits FROM villa_free_credits WHERE user_id = ?", (user_id,)).fetchone()
+    return row["credits"] if row else 0
+
+
+def claim_free_villa(user_id: int) -> dict | None:
+    """Spends one free-villa credit and draws one random villa (same draw/numbering as a paid one).
+    Returns the card, or None if there was no credit / no villas left (credit is given back then)."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE villa_free_credits SET credits = credits - 1 WHERE user_id = ? AND credits > 0", (user_id,)
+        )
+        if cur.rowcount == 0:
+            return None
+    res = buy_random_villas(user_id, None, 1, 0)
+    if not isinstance(res, list) or not res:
+        with get_conn() as conn:
+            conn.execute("UPDATE villa_free_credits SET credits = credits + 1 WHERE user_id = ?", (user_id,))
+        return None
+    return res[0]
+
+
 # Craft cost scales with the rarity of the card being burned — crafting a Diamond (a
 # near-lateral reroll, since it's already the top tier) costs far more than crafting a
 # cheap Bronze. Keeps craft from being a flat-rate gem sink regardless of what's at stake.
@@ -3646,6 +3935,7 @@ TRANSFER_FEE_GEMS = 25  # charged to the sender for a direct @username gift
 # Minimum gems a card can be listed/offered for on the market, scaled by rarity — a
 # pricier/rarer tier gets a higher floor. Applies to both a seller's listing price and a
 # buyer's offer (list_card()/make_offer()).
+VILLA_MIN_LISTING_PRICE = 1000  # villas: floor for both a listing price and an offer
 MIN_LISTING_PRICE_BY_RARITY = {"bronze": 25, "silver": 50, "gold": 50, "platinum": 500, "diamond": 1000}
 
 
@@ -4549,6 +4839,7 @@ def create_custom_nft(user_id: int, user_card_id: int, name: str, number: int) -
     codebase's convention: public entry points open their own connection, so they're
     never nested inside one another)."""
     canonical = (name or "").strip().lower()
+    keep_name = canonical == ""  # no new name picked: the card keeps the name it already shows
     with get_conn() as conn:
         _finalize_expired_name_auctions(conn)
         _finalize_expired_number_auctions(conn)
@@ -4561,15 +4852,28 @@ def create_custom_nft(user_id: int, user_card_id: int, name: str, number: int) -
             "SELECT custom_name FROM user_cards WHERE id = ?", (user_card_id,)
         ).fetchone()["custom_name"]
         is_edit = bool(existing_custom_name)
+        if keep_name:
+            # Already-Obsidian card: keep its current custom name. Plain card: the Obsidian
+            # label (custom_name) is simply set to the card's own original name -- it needs no
+            # name from the name-bank, so no card_names row is touched.
+            if existing_custom_name:
+                canonical = existing_custom_name
+            else:
+                canonical = conn.execute(
+                    "SELECT c.name FROM user_cards uc JOIN cards c ON c.id = uc.card_id WHERE uc.id = ?",
+                    (user_card_id,),
+                ).fetchone()["name"] or ""
         cost = CUSTOM_NFT_EDIT_COST_GEMS if is_edit else CUSTOM_NFT_CREATE_COST_GEMS
 
         gems_row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
         if gems_row is None or gems_row["gems"] < cost:
             raise InsufficientGems()
 
-        name_row = conn.execute("SELECT * FROM card_names WHERE name = ?", (canonical,)).fetchone()
-        if name_row is None or name_row["owner_id"] != user_id or name_row["status"] != "owned":
-            raise NameNotAvailable()
+        name_row = None
+        if not keep_name:
+            name_row = conn.execute("SELECT * FROM card_names WHERE name = ?", (canonical,)).fetchone()
+            if name_row is None or name_row["owner_id"] != user_id or name_row["status"] != "owned":
+                raise NameNotAvailable()
 
         number_row = conn.execute("SELECT * FROM card_numbers WHERE number = ?", (number,)).fetchone()
         if number_row is None or number_row["owner_id"] != user_id or number_row["status"] != "owned":
@@ -4577,7 +4881,7 @@ def create_custom_nft(user_id: int, user_card_id: int, name: str, number: int) -
 
         # A name/number can only ever show on one card at a time -- detach from
         # wherever it sat before (if anywhere else).
-        if name_row["user_card_id"] is not None and name_row["user_card_id"] != user_card_id:
+        if not keep_name and name_row["user_card_id"] is not None and name_row["user_card_id"] != user_card_id:
             conn.execute("UPDATE user_cards SET custom_name = NULL WHERE id = ?", (name_row["user_card_id"],))
 
         # Re-running this on an already-Obsidian card (swapping its name for a
@@ -4585,16 +4889,17 @@ def create_custom_nft(user_id: int, user_card_id: int, name: str, number: int) -
         # before, or that old name's card_names row keeps pointing at this card forever
         # (permanently stuck "in use", even though the card no longer shows it).
         prev_name_row = conn.execute("SELECT custom_name FROM user_cards WHERE id = ?", (user_card_id,)).fetchone()
-        if prev_name_row and prev_name_row["custom_name"] and prev_name_row["custom_name"] != canonical:
+        if not keep_name and prev_name_row and prev_name_row["custom_name"] and prev_name_row["custom_name"] != canonical:
             conn.execute(
                 "UPDATE card_names SET user_card_id = NULL, updated_at = ? WHERE name = ? AND user_card_id = ?",
                 (_now(), prev_name_row["custom_name"], user_card_id),
             )
 
-        conn.execute(
-            "UPDATE card_names SET user_card_id = ?, updated_at = ? WHERE name = ?",
-            (user_card_id, _now(), canonical),
-        )
+        if not keep_name:
+            conn.execute(
+                "UPDATE card_names SET user_card_id = ?, updated_at = ? WHERE name = ?",
+                (user_card_id, _now(), canonical),
+            )
 
         prev_number_card_id = number_row["user_card_id"]
         if prev_number_card_id is not None and prev_number_card_id != user_card_id:
@@ -5411,7 +5716,7 @@ def list_card(user_card_id: int, seller_id: int, price_gems: int) -> bool:
             return False
         if row["swap_listed"] or row["staked_at"] is not None or row["pvp_round_id"] is not None or row["pinned_at"] is not None or row["in_giveaway"]:
             return False
-        min_price = 1 if row["series"] == "villa" else get_min_listing_price(row["rarity"])
+        min_price = VILLA_MIN_LISTING_PRICE if row["series"] == "villa" else get_min_listing_price(row["rarity"])
         if price_gems < min_price:
             raise ListingPriceTooLow(min_price)
         conn.execute(
@@ -5515,7 +5820,7 @@ def make_offer(user_card_id: int, buyer_id: int, price_gems: int) -> dict | None
         ).fetchone()
         if row is None or row["listed_price"] is None or row["seller_id"] == buyer_id:
             return None
-        min_price = 1 if row["series"] == "villa" else get_min_listing_price(row["rarity"])
+        min_price = VILLA_MIN_LISTING_PRICE if row["series"] == "villa" else get_min_listing_price(row["rarity"])
         if price_gems < min_price:
             raise ListingPriceTooLow(min_price)
         cur = conn.execute(
@@ -5671,8 +5976,11 @@ def get_swap_listings() -> list[dict]:
 # even though it counts as Diamond for Stars-withdrawal eligibility elsewhere.
 # ---------------------------------------------------------------------------
 
-def _blind_rarity_bucket(rarity: str, custom_name) -> str:
-    return "obsidian" if custom_name else rarity
+def _blind_rarity_bucket(rarity: str, custom_name, series=None) -> str:
+    """Blind-swap pools: gold / platinum / diamond for regular cards, and one pool per
+    villa tier (villa_gold = RARE, villa_platinum = EPIC, villa_diamond = LEGEND).
+    Obsidian cards are not part of the blind swap."""
+    return f"villa_{rarity}" if series == "villa" else rarity
 
 
 def list_for_blind_swap(user_card_id: int, user_id: int) -> dict | None:
@@ -5685,17 +5993,19 @@ def list_for_blind_swap(user_card_id: int, user_id: int) -> dict | None:
     with get_conn() as conn:
         row = conn.execute(
             "SELECT uc.user_id, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, uc.pinned_at, uc.voided, "
-            "uc.custom_name, COALESCE(uc.custom_rarity, c.rarity) AS rarity, "
+            "uc.custom_name, COALESCE(uc.custom_rarity, c.rarity) AS rarity, c.series, "
             "(SELECT 1 FROM number_giveaways ng WHERE ng.user_card_id = uc.id AND ng.drawn_at IS NULL) AS in_giveaway "
             "FROM user_cards uc JOIN cards c ON c.id = uc.card_id WHERE uc.id = ?",
             (user_card_id,),
         ).fetchone()
         if row is None or row["user_id"] != user_id or row["voided"]:
             return None
+        if row["custom_name"] and row["series"] != "villa":
+            return None  # Obsidian cards are not part of the blind swap
         if (row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None
                 or row["pvp_round_id"] is not None or row["pinned_at"] is not None or row["in_giveaway"]):
             return None
-        bucket = _blind_rarity_bucket(row["rarity"], row["custom_name"])
+        bucket = _blind_rarity_bucket(row["rarity"], row["custom_name"], row["series"])
         already = conn.execute(
             "SELECT id FROM blind_swap_listings WHERE user_id = ? AND rarity_bucket = ?",
             (user_id, bucket),
@@ -5786,6 +6096,15 @@ def unlist_blind_swap(user_card_id: int, user_id: int) -> bool:
 def get_blind_swap_status(user_id: int) -> list[dict]:
     """This player's own pending blind listings -- at most one per rarity bucket."""
     with get_conn() as conn:
+        # Obsidian is no longer a blind-swap pool: release any leftover pending obsidian
+        # listings so those cards aren't stuck.
+        stale = conn.execute(
+            "SELECT user_card_id FROM blind_swap_listings WHERE rarity_bucket IN ('obsidian', 'villa')"
+        ).fetchall()
+        for st in stale:
+            conn.execute("UPDATE user_cards SET swap_listed = 0 WHERE id = ?", (st["user_card_id"],))
+        if stale:
+            conn.execute("DELETE FROM blind_swap_listings WHERE rarity_bucket IN ('obsidian', 'villa')")
         rows = conn.execute(
             """
             SELECT bsl.rarity_bucket, bsl.user_card_id, c.filename, COALESCE(uc.custom_name, c.name) AS name
@@ -5932,7 +6251,7 @@ def propose_swap(user_card_id: int, buyer_id: int, offered_user_card_ids: list[i
     with get_conn() as conn:
         listing = conn.execute(
             """
-            SELECT uc.user_id AS seller_id, uc.swap_listed, c.filename, c.name
+            SELECT uc.user_id AS seller_id, uc.swap_listed, c.filename, c.name, c.series
             FROM user_cards uc JOIN cards c ON c.id = uc.card_id
             WHERE uc.id = ?
             """,
@@ -5940,12 +6259,13 @@ def propose_swap(user_card_id: int, buyer_id: int, offered_user_card_ids: list[i
         ).fetchone()
         if listing is None or not listing["swap_listed"] or listing["seller_id"] == buyer_id:
             return None
+        villa_listing = listing["series"] == "villa"
 
         offered_cards = []
         for oid in offered_user_card_ids:
             row = conn.execute(
                 """
-                SELECT uc.user_id, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, c.name, c.rarity
+                SELECT uc.user_id, uc.listed_price, uc.swap_listed, uc.staked_at, uc.pvp_round_id, c.name, c.rarity, uc.custom_rarity
                 FROM user_cards uc JOIN cards c ON c.id = uc.card_id
                 WHERE uc.id = ?
                 """,
@@ -5953,6 +6273,8 @@ def propose_swap(user_card_id: int, buyer_id: int, offered_user_card_ids: list[i
             ).fetchone()
             if row is None or row["user_id"] != buyer_id:
                 return None  # buyer doesn't actually own one of the offered cards
+            if villa_listing and (row["custom_rarity"] or row["rarity"]) != "diamond":
+                return None  # a villa can only be bought with Diamond cards
             if (row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None
                     or row["pvp_round_id"] is not None):
                 return None  # offered card is busy — on sale, already in another swap, or staked in PvP
@@ -6334,7 +6656,15 @@ def get_global_rarity_breakdown() -> dict:
             "JOIN cards c ON c.id = uc.card_id WHERE uc.voided = 0 AND c.series IS NULL GROUP BY r"
         ).fetchall()
     counts = {r["r"]: r["n"] for r in rows}
-    return {rarity: counts.get(rarity, 0) for rarity in ("obsidian", "bronze", "silver", "gold", "platinum", "diamond")}
+    out = {rarity: counts.get(rarity, 0) for rarity in ("obsidian", "bronze", "silver", "gold", "platinum", "diamond")}
+    with get_conn() as conn:
+        v = conn.execute(
+            "SELECT COUNT(*) AS total, SUM(CASE WHEN villa_number IS NOT NULL THEN 1 ELSE 0 END) AS sold "
+            "FROM cards WHERE series = 'villa'"
+        ).fetchone()
+    out["villa_sold"] = v["sold"] or 0
+    out["villa_total"] = v["total"] or 0
+    return out
 
 
 # Accounts kept off every public leaderboard/ranking, whatever their stats say --
@@ -6478,6 +6808,7 @@ PVP_JOIN_CUTOFF_SECONDS = 0
 # Rarity -> "power" in the pot. Mirrors real-world value tiers (bronze junk vs.
 # diamond-grade), not farm drop odds — a single Diamond outweighs many Bronze cards.
 PVP_RARITY_WEIGHTS = {"bronze": 1, "silver": 3, "gold": 8, "platinum": 20, "diamond": 50}
+PVP_VILLA_MULTIPLIER = 4  # Villa Rare/Epic/Legend = 32/80/200
 
 
 class PvpCardNotOwned(Exception):
@@ -6533,7 +6864,7 @@ def join_pvp_test_bot() -> dict:
     return join_pvp_round(PVP_TEST_BOT_ID, [ucid])
 
 
-def join_pvp_round(user_id: int, user_card_ids: list[int]) -> dict:
+def join_pvp_round(user_id: int, user_card_ids: list[int], expected_round_id: int | None = None) -> dict:
     """Stakes one or more of the caller's own cards into the current open PvP round
     (joining it if it's their first entry this round, or topping up if they already
     have). Starts the 60s countdown the moment a 2nd distinct player has any card in
@@ -6544,6 +6875,10 @@ def join_pvp_round(user_id: int, user_card_ids: list[int]) -> dict:
     now = datetime.now(timezone.utc)
     with get_conn() as conn:
         round_id = _get_or_create_open_round(conn)
+        # The player staked cards into the round they SAW on screen. If that round has
+        # already resolved (a new one is open now), the cards must NOT fall into the new game.
+        if expected_round_id is not None and expected_round_id != round_id:
+            raise PvpRoundLocked()
         round_row = conn.execute("SELECT lock_at FROM pvp_rounds WHERE id = ?", (round_id,)).fetchone()
         if round_row["lock_at"] is not None:
             seconds_left = (datetime.fromisoformat(round_row["lock_at"]) - now).total_seconds()
@@ -6562,9 +6897,11 @@ def join_pvp_round(user_id: int, user_card_ids: list[int]) -> dict:
             if (row["listed_price"] is not None or row["swap_listed"] or row["staked_at"] is not None
                     or row["pvp_round_id"] is not None or row["pinned_at"] is not None or row["in_giveaway"]):
                 raise PvpCardNotOwned()
-            card_row = conn.execute("SELECT rarity FROM cards WHERE id = ?", (row["card_id"],)).fetchone()
+            card_row = conn.execute("SELECT rarity, series FROM cards WHERE id = ?", (row["card_id"],)).fetchone()
             rarity = (card_row["rarity"] if card_row else None) or "bronze"
             weight = PVP_RARITY_WEIGHTS.get(rarity, 1)
+            if card_row and card_row["series"] == "villa":
+                weight *= PVP_VILLA_MULTIPLIER  # villas are 4x as strong as a normal card of the same rarity
             conn.execute("UPDATE user_cards SET pvp_round_id = ? WHERE id = ?", (round_id, ucid))
             conn.execute(
                 "INSERT INTO pvp_entries (round_id, user_id, user_card_id, rarity, weight, created_at) "
@@ -6809,6 +7146,20 @@ def get_pvp_history(limit: int = 50) -> list[dict]:
                 masked_winner_username if masked_winner_username
                 else (r["winner_first_name"] or "игрок")
             )
+            loser_name = None
+            loser_win_pct = None
+            if total_players == 2:
+                lo = conn.execute(
+                    "SELECT u.username, u.first_name FROM pvp_entries pe "
+                    "JOIN users u ON u.telegram_id = pe.user_id "
+                    "WHERE pe.round_id = ? AND pe.user_id != ? LIMIT 1",
+                    (r["id"], r["winner_id"]),
+                ).fetchone()
+                if lo is not None:
+                    masked_loser = _mask_username(lo["username"])
+                    loser_name = masked_loser if masked_loser else (lo["first_name"] or "игрок")
+                    if r["winner_win_pct"] is not None:
+                        loser_win_pct = 100 - r["winner_win_pct"]
             out.append({
                 "round_id": r["id"],
                 "resolved_at": r["resolved_at"],
@@ -6816,6 +7167,8 @@ def get_pvp_history(limit: int = 50) -> list[dict]:
                 "total_cards": total_cards,
                 "total_players": total_players,
                 "winner_win_pct": r["winner_win_pct"],
+                "loser_name": loser_name,
+                "loser_win_pct": loser_win_pct,
             })
     return out
 
@@ -7200,6 +7553,20 @@ def get_admin_stats() -> dict:
     }
     stats.update(get_action_counters())
     return stats
+
+
+def get_daily_active_stats() -> dict:
+    """For /users: total registered, players active today, and the record day(s) -- the most
+    distinct players seen in one local (Tallinn) day -- plus the top days."""
+    today = datetime.now(timezone.utc).astimezone(TALLINN_TZ).date().isoformat()
+    with get_conn() as conn:
+        total = conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
+        today_n = conn.execute("SELECT COUNT(*) AS n FROM daily_active WHERE day = ?", (today,)).fetchone()["n"]
+        top = conn.execute(
+            "SELECT day, COUNT(*) AS n FROM daily_active GROUP BY day ORDER BY day"
+        ).fetchall()
+        days = conn.execute("SELECT COUNT(DISTINCT day) AS n FROM daily_active").fetchone()["n"]
+    return {"total": total, "today": today_n, "all_days": [(r["day"], r["n"]) for r in top], "days": days}
 
 
 def get_card_by_id(card_id: int) -> sqlite3.Row | None:

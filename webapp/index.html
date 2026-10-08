@@ -339,15 +339,21 @@
   /* Same box as before the villa mode existed: only the button wrap takes layout space. The ФАРМ|ВИЛЛА switch hangs off the bottom edge of the button (absolute), so nothing else moves. */
   .farm-action{order:5; margin-top:auto; margin-bottom:94px; display:flex; justify-content:center;}
   .farm-btn-wrap{position:relative; display:inline-block;}
-  .farm-mode{position:absolute; top:calc(100% + 10px); left:50%; transform:translateX(-50%); z-index:2; display:flex; gap:2px; padding:2px; background:#141414; border:1px solid #2e2e2e; border-radius:999px; box-shadow:0 4px 10px rgba(0,0,0,.45);}
+  /* countdown to the end of villa sales: shown in the big stage field (instead of the "?") in ВИЛЛЫ mode */
+  .farm-stage .placeholder.villa-timer-ph{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; font-size:13px; line-height:1.2; text-align:center; padding:0 10px;}
+  .villa-timer-ph{gap:6px !important;}
+  .villa-timer-ph .vt-cap{font-size:19px; font-weight:800; letter-spacing:.3px; color:#5eead4; text-shadow:0 0 14px rgba(45,212,191,.4);}
+  .villa-timer-ph .vt-days{font-size:26px; font-weight:800; color:#5eead4; text-shadow:0 0 14px rgba(45,212,191,.4);}
+  .villa-timer-ph .vt-big{font-size:30px; font-weight:800; color:#ff2fb0; font-variant-numeric:tabular-nums; text-shadow:0 0 16px rgba(255,47,176,.5);}
+  .farm-mode{position:absolute; top:calc(100% + 5px); left:50%; transform:translateX(-50%); z-index:2; display:flex; gap:2px; padding:2px; background:#141414; border:1px solid #2e2e2e; border-radius:999px; box-shadow:0 4px 10px rgba(0,0,0,.45);}
   .farm-mode button{border:none; background:none; color:#999; font-size:11px; font-weight:800; letter-spacing:.3px; padding:3px 11px; border-radius:999px; cursor:pointer; white-space:nowrap;}
   .farm-mode button img{width:12px; height:12px; object-fit:contain; vertical-align:-2px; margin-left:1px;}
   .farm-mode button.active{background:linear-gradient(135deg,#7c3aed,#a78bfa); color:#fff; box-shadow:0 0 10px rgba(139,92,246,.45);}
-  .farm-mode button[data-mode="villa"].active{background:linear-gradient(135deg,#fde68a,#f59e0b); color:#3a2400; box-shadow:0 0 12px rgba(250,204,21,.45);}
+  .farm-mode button[data-mode="villa"].active{background:linear-gradient(135deg,#5eead4,#0d9488); color:#042f2e; box-shadow:0 0 12px rgba(45,212,191,.45);}
   #farm-screen.mode-villa #farm-btn{
-    background:linear-gradient(160deg,#fde68a,#f59e0b 55%,#b45309); color:#3a2400;
-    border:1px solid #facc15; position:relative; overflow:hidden;
-    box-shadow:0 10px 28px rgba(250,204,21,.38), inset 0 1px 0 rgba(255,255,255,.5);
+    background:linear-gradient(160deg,#5eead4,#14b8a6 55%,#0f766e); color:#042f2e;
+    border:1px solid #5eead4; position:relative; overflow:hidden;
+    box-shadow:0 10px 28px rgba(45,212,191,.38), inset 0 1px 0 rgba(255,255,255,.5);
   }
   #farm-screen.mode-villa #farm-btn::after{
     content:""; position:absolute; top:0; left:-60%; width:40%; height:100%;
@@ -355,9 +361,9 @@
     transform:skewX(-20deg); animation:villa-shine 2.8s infinite;
   }
   @keyframes villa-shine{0%{left:-60%;} 60%,100%{left:130%;}}
-  #farm-screen.mode-villa .farm-cost-badge{color:#facc15; border-color:rgba(250,204,21,.5);}
-  #farm-screen.mode-villa .farm-stage{border-color:rgba(250,204,21,.4); box-shadow:0 0 24px rgba(250,204,21,.12);}
-  .farm-stage .placeholder.villa-ph{font-size:88px; color:rgba(250,204,21,.35);}
+  #farm-screen.mode-villa .farm-cost-badge{color:#5eead4; border-color:rgba(45,212,191,.5);}
+  #farm-screen.mode-villa .farm-stage{border-color:rgba(45,212,191,.4); box-shadow:0 0 24px rgba(45,212,191,.12);}
+  .farm-stage .placeholder.villa-ph{font-size:88px; color:rgba(45,212,191,.35);}
   #farm-btn{
     border:1px solid rgba(139,92,246,.5);
     padding:18px 56px;
@@ -440,6 +446,36 @@
   #fbr-grid .rarity-tag{display:none;}
   #fbr-grid .drop-number{font-size:8px; padding:1px 3px;}
   #farm-hint{margin-top:14px; font-size:12px; color:#666; min-height:16px;}
+
+
+  /* ---------- Villa shine: holographic sweep over every villa picture, tinted by rank ---------- */
+  .villa-shine{position:relative; overflow:hidden; isolation:isolate;} /* isolate: the shine layers can never paint above the bottom nav / overlays */
+  /* villa tiers: gold = RARE (blue), platinum = EPIC (green), diamond = LEGEND (red) */
+  .villa-shine[data-vr="gold"]{--vs:rgba(96,165,250,.8); --vg:rgba(59,130,246,.22);}
+  .villa-shine[data-vr="platinum"]{--vs:rgba(74,222,128,.8); --vg:rgba(34,197,94,.22);}
+  .villa-shine[data-vr="diamond"]{--vs:rgba(248,113,113,.85); --vg:rgba(239,68,68,.24);}
+  .vb-rare{border-color:#3b82f6 !important;}
+  .vb-epic{border-color:#22c55e !important;}
+  .vb-legend{border-color:#ef4444 !important;}
+  /* white neon pulse on every villa, same as obsidian (border keeps the tier colour) */
+  .vb-rare, .vb-epic, .vb-legend{animation:obsidian-pulse 2.2s ease-in-out infinite !important;}
+  .history-row.vb-rare, .history-row.vb-epic, .history-row.vb-legend{animation:none !important; box-shadow:0 0 10px rgba(255,255,255,.55) !important;}
+  .villa-shine::before{
+    content:""; position:absolute; inset:0; z-index:3; pointer-events:none; border-radius:inherit;
+    background:radial-gradient(circle at 25% 18%, var(--vg), transparent 60%);
+    animation:villaGlow 2.8s ease-in-out infinite alternate; animation-delay:var(--d,0s);
+  }
+  .villa-shine::after{
+    content:""; position:absolute; top:-10%; bottom:-10%; left:0; width:55%; z-index:3; pointer-events:none;
+    background:linear-gradient(90deg, transparent 0%, var(--vs) 45%, rgba(255,255,255,.85) 50%, var(--vs) 55%, transparent 100%);
+    mix-blend-mode:screen; opacity:.8;
+    transform:translateX(-130%) skewX(-20deg);
+    animation:villaSweep 3.4s ease-in-out infinite; animation-delay:var(--d,0s);
+  }
+  @keyframes villaSweep{0%{transform:translateX(-130%) skewX(-20deg);} 55%,100%{transform:translateX(280%) skewX(-20deg);}}
+  @keyframes villaGlow{from{opacity:.35;} to{opacity:1;}}
+  .villa-wrap{display:block; position:relative; width:56px; height:56px; border-radius:12px; flex-shrink:0;}
+  .villa-wrap img{width:100%; height:100%; display:block;}
 
   /* ---------- Profile ---------- */
   .profile-card{
@@ -555,6 +591,14 @@
   .rank-info-row .rarity-tag{position:static; font-size:11px; padding:4px 9px;}
   .rank-info-row .m{font-size:12.5px; font-weight:700; color:#ccc;}
   .rank-info-row .current-tag{font-size:10px; font-weight:800; color:var(--accent2); text-transform:uppercase; letter-spacing:.3px;}
+  /* 9 ranks now -- keep the whole list on screen without hunting for a scroll */
+  #rank-info-overlay{padding:10px;}
+  #rank-info-card{max-height:96vh; padding:16px 14px 12px;}
+  #rank-info-title{margin-bottom:6px;}
+  #rank-info-text{font-size:12px; line-height:1.35; margin-bottom:8px;}
+  #rank-info-rows{gap:4px; margin-bottom:8px;}
+  .rank-info-row{padding:4px 8px;}
+  .rank-info-row .rank-buy-btn{padding:5px 10px;}
   #rank-info-footnote{font-size:11.5px; color:#888; line-height:1.5;}
   .rank-buy-btn{background:#22c55e; color:#fff; border:none; border-radius:999px; padding:6px 12px; font-size:11px; font-weight:800; cursor:pointer; white-space:nowrap;}
   .rank-buy-btn:active{transform:scale(.93);}
@@ -707,6 +751,14 @@
   }
   .collection-row .bar-fill{height:100%; background:linear-gradient(90deg,#facc15,#fb923c);}
   .collection-row.completed{border-color:#facc15; box-shadow:0 0 0 1px rgba(250,204,21,.4);}
+  /* completed-collection frame by difficulty, in the card rank colours: villas turquoise, hard diamond, medium platinum, easy gold */
+  .collection-row.completed.diff-easy{border-color:#facc15; box-shadow:0 0 0 1px rgba(250,204,21,.4);}
+  .collection-row.completed.diff-mid{border-color:#a78bfa; box-shadow:0 0 0 1px rgba(167,139,250,.5);}
+  .collection-row.completed.diff-mid .badge{background:#a78bfa; color:#fff;}
+  .collection-row.completed.diff-hard{border-color:#ff2fb0; box-shadow:0 0 0 1px rgba(255,47,176,.5);}
+  .collection-row.completed.diff-hard .badge{background:#ff2fb0; color:#fff;}
+  .collection-row.completed.diff-villa{border-color:#2dd4bf; box-shadow:0 0 0 1px rgba(45,212,191,.5);}
+  .collection-row.completed.diff-villa .badge{background:#2dd4bf; color:#032b27;}
   .collection-row .badge{font-size:9.5px; color:#1a1400; background:#facc15; padding:2px 7px; border-radius:999px; font-weight:800; flex-shrink:0;}
   .collection-row .who-btn{
     flex-shrink:0; min-width:26px; height:26px; border-radius:999px;
@@ -739,6 +791,7 @@
   #collection-detail-progress{font-size:11.5px; color:#888; margin-bottom:12px;}
   .collection-slot img{transition:filter .25s ease;}
   .collection-slot.not-owned{cursor:zoom-in;}
+  .collection-slot.empty{background:rgba(255,255,255,.04); border:2px dashed rgba(255,255,255,.22) !important; box-shadow:none !important;}
   .collection-slot.not-owned img{filter:grayscale(.35) brightness(.5);}
   .collection-slot.owned:not(.placed) img{filter:grayscale(.85) brightness(.55);}
   .collection-slot-plus{
@@ -933,6 +986,7 @@
   }
   .market-filter-btn:active{transform:scale(.95);}
   .market-filter-btn.active{background:rgba(255,45,149,.18); color:#ff2d95; border-color:#ff2d95;}
+  #market-filter-row .market-filter-btn.active{background:#fff; color:#000; border-color:#fff;}
   .mode-switch{
     flex:1 1 auto;
     min-width:0;
@@ -957,8 +1011,9 @@
   }
   .mode-switch-btn[data-mode="trade"].active{background:rgba(34,197,94,.18); color:#22c55e;}
   .mode-switch-btn[data-mode="swap"].active{background:rgba(250,204,21,.18); color:#facc15;}
+  #market-mode-switch .mode-switch-btn[data-mode="trade"].active{background:rgba(250,204,21,.18); color:#facc15;}
   #market-mode-switch .mode-switch-btn[data-mode="swap"].active{background:rgba(59,130,246,.18); color:#3b82f6;}
-  #market-mode-switch .mode-switch-btn[data-mode="villa"].active{background:linear-gradient(135deg,#fde68a,#f59e0b); color:#3a2400;}
+  #market-mode-switch .mode-switch-btn[data-mode="villa"].active{background:linear-gradient(135deg,#5eead4,#0d9488); color:#042f2e;}
   .mode-switch-btn:active{transform:scale(.95);}
   #pvp-mode-switch{display:grid; grid-template-columns:repeat(3,1fr); gap:2px;}
 
@@ -1063,6 +1118,10 @@
   #market-item-price-row img{width:16px; height:16px; border-radius:0;}
   #market-item-actions{display:flex; flex-direction:column; gap:10px;}
   #market-item-actions button{padding:12px; border-radius:12px; border:none; font-weight:700; font-size:13px; cursor:pointer; width:100%;}
+  #market-item-actions .btn-buy{background:#fff; color:#000;}
+  #market-item-actions #mi-unlist{background:#fff; color:#000; border:none !important;}
+  #market-item-actions #mi-unlist-swap{background:#fff; color:#000; border:none !important;}
+  #market-item-actions .btn-close-bottom{background:#000; color:#fff; border:1px solid rgba(255,255,255,.25) !important;}
 
   /* ---------- Swap / burn / GRAM picker overlays (share the same look) ---------- */
   #swap-picker-overlay, #burn-picker-overlay, #gram-picker-overlay, #blind-swap-overlay{
@@ -1617,13 +1676,19 @@
   #pvp-picker-rarity-filters{
     display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap;
   }
-  #profile-rarity-filters{
+  #pvp-picker-rarity-filters .pvp-picker-rarity-btn{opacity:.5; transition:opacity .15s;}
+  #pvp-picker-rarity-filters .pvp-picker-rarity-btn.active{opacity:1; box-shadow:0 0 0 2px rgba(255,255,255,.5);}
+  #profile-rarity-filters, #wall-filters{
     display:flex; gap:6px; margin:0 0 10px; flex-wrap:wrap;
   }
-  #profile-rarity-filters .pvp-picker-rarity-btn{
+  /* Rank rows everywhere: line 1 = OBSIDIAN DIAMOND PLATINUM GOLD, line 2 = LEGEND EPIC RARE (villas) */
+  #pvp-picker-rarity-filters, #profile-rarity-filters, #wall-filters{display:grid; grid-template-columns:repeat(12,1fr);}
+  #pvp-picker-rarity-filters .pvp-picker-rarity-btn, #profile-rarity-filters .pvp-picker-rarity-btn, #wall-filters .pvp-picker-rarity-btn{grid-column:span 3; font-size:10px; padding:8px 2px;}
+  #pvp-picker-rarity-filters .pvp-picker-rarity-btn.vt-btn, #profile-rarity-filters .pvp-picker-rarity-btn.vt-btn, #wall-filters .pvp-picker-rarity-btn.vt-btn{grid-column:span 4;}
+  #profile-rarity-filters .pvp-picker-rarity-btn, #wall-filters .pvp-picker-rarity-btn{
     opacity:.45; transition:opacity .15s, transform .15s;
   }
-  #profile-rarity-filters .pvp-picker-rarity-btn.active{
+  #profile-rarity-filters .pvp-picker-rarity-btn.active, #wall-filters .pvp-picker-rarity-btn.active{
     opacity:1; box-shadow:0 0 0 2px rgba(255,255,255,.5);
   }
   .pvp-picker-rarity-btn{
@@ -1641,6 +1706,7 @@
   .pvp-picker-rarity-btn.gold{background:linear-gradient(135deg,#d4a017,#fde68a); color:#4a3500;}
   .pvp-picker-rarity-btn.platinum{background:linear-gradient(135deg,#7c3aed,#c4b5fd); color:#fff;}
   .pvp-picker-rarity-btn.diamond{background:linear-gradient(135deg,#ff2fb0,#ffb3ec); color:#3a0022;}
+  .pvp-picker-rarity-btn.villa{background:linear-gradient(135deg,#5eead4,#0d9488); color:#042f2e;}
   .pvp-picker-rarity-btn:active{transform:scale(.95);}
   #pvp-picker-select-all, #burn-picker-select-all{
     width:100%;
@@ -1969,8 +2035,8 @@
   }
   .number-row .act.bid{background:linear-gradient(135deg,#3b82f6,#1d4ed8);}
   .number-row .act.buy{background:linear-gradient(135deg,#facc15,#f59e0b); color:#111;}
-  .number-row .act.attach{background:#3b82f6;}
-  .number-row .act.sell{background:#22c55e;}
+  .number-row .act.attach{background:#000; color:#fff; box-shadow:inset 0 0 0 1px rgba(255,255,255,.28);}
+  .number-row .act.sell{background:#fff; color:#000;}
   .number-row .act.cancel{background:#ef4444;}
   .number-row .act.used{background:#2a2a2a; color:#777; cursor:not-allowed;}
   .number-row .act:active{transform:scale(.95);}
@@ -2095,7 +2161,7 @@
   .case-info-btn{
     position:absolute; top:8px; right:8px; z-index:2;
     width:22px; height:22px; border-radius:50%;
-    background:#3b82f6; border:1px solid #3b82f6;
+    background:#000; border:1px solid #444;
     color:#fff; font-size:12px; font-weight:800; line-height:1;
     display:flex; align-items:center; justify-content:center;
     cursor:pointer; padding:0;
@@ -2113,7 +2179,7 @@
   .case-open-btn{
     width:100%; padding:10px; border:none; border-radius:12px;
     font-weight:800; font-size:13px; cursor:pointer;
-    background:#22c55e; color:#0a2e17;
+    background:#fff; color:#000;
   }
   .case-open-btn:disabled{background:#3a3a3a; color:#888; cursor:not-allowed;}
   #models-overlay{
@@ -2150,18 +2216,29 @@
   #models-sort:active{transform:scale(.95);}
   #models-rarity-summary, #blind-swap-status-row{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin:0 0 10px; font-size:10px; font-weight:800; letter-spacing:.2px; white-space:nowrap;}
   #blind-swap-status-row.hidden{display:none;}
-  #models-rarity-summary span{cursor:pointer; padding:9px 2px; border-radius:10px; border:none; text-align:center; box-sizing:border-box; opacity:.55; transition:opacity .15s, box-shadow .15s;}
+  #blind-swap-status-row{grid-template-columns:repeat(3,1fr);}
+
+  #models-rarity-summary{grid-template-columns:repeat(12,1fr) !important;}
+  #models-rarity-summary span.r1{grid-column:span 3;}
+  #models-rarity-summary span.r2{grid-column:span 4;}
+  #models-rarity-summary span{font-size:9px; cursor:pointer; padding:9px 1px; border-radius:10px; border:none; text-align:center; box-sizing:border-box; opacity:.55; transition:opacity .15s, box-shadow .15s;}
   #models-rarity-summary span:active{transform:scale(.96);}
   #models-rarity-summary span.active{opacity:1; box-shadow:0 0 0 2px rgba(255,255,255,.55);}
-  #models-rarity-summary .villa{grid-column:1 / -1; font-size:12px; letter-spacing:.6px; background:linear-gradient(135deg,#fde68a,#f59e0b); color:#3a2400;}
+  #models-rarity-summary .villa{grid-column:1 / -1; font-size:12px; letter-spacing:.6px; background:linear-gradient(135deg,#5eead4,#0d9488); color:#042f2e;}
   #models-rarity-summary .obsidian{background:linear-gradient(135deg,#0a0a0a,#3a3a3a); color:#fff;}
   #models-rarity-summary .diamond{background:linear-gradient(135deg,#ff2fb0,#ffb3ec); color:#3a0022;}
   #models-rarity-summary .platinum{background:linear-gradient(135deg,#7c3aed,#c4b5fd); color:#fff;}
   #models-rarity-summary .gold{background:linear-gradient(135deg,#d4a017,#fde68a); color:#4a3500;}
+  .vt-legend{background:linear-gradient(135deg,#991b1b,#ef4444) !important; color:#fff !important; box-shadow:0 0 8px rgba(239,68,68,.55) !important;}
+  .vt-epic{background:linear-gradient(135deg,#15803d,#86efac) !important; color:#052e16 !important; box-shadow:0 0 8px rgba(34,197,94,.5) !important;}
+  .vt-rare{background:linear-gradient(135deg,#1d4ed8,#93c5fd) !important; color:#fff !important; box-shadow:0 0 8px rgba(59,130,246,.55) !important;}
   #models-rarity-summary .silver{background:linear-gradient(135deg,#8e97a3,#e5e7eb); color:#1f2530;}
   #models-rarity-summary .bronze{background:linear-gradient(135deg,#8c5a2b,#cd7f32); color:#fff8ee;}
   #blind-swap-status-row span{cursor:pointer; padding:9px 2px; border-radius:10px; border:none; text-align:center; box-sizing:border-box; background:rgba(255,255,255,.06); color:#999; transition:background .15s, color .15s;}
   #blind-swap-status-row span:active{transform:scale(.96);}
+  #blind-swap-status-row span.active.villa_diamond{background:linear-gradient(135deg,#991b1b,#ef4444); color:#fff;}
+  #blind-swap-status-row span.active.villa_platinum{background:linear-gradient(135deg,#15803d,#86efac); color:#052e16;}
+  #blind-swap-status-row span.active.villa_gold{background:linear-gradient(135deg,#1d4ed8,#93c5fd); color:#fff;}
   #blind-swap-status-row span.active.obsidian{background:linear-gradient(135deg,#0a0a0a,#3a3a3a); color:#fff;}
   #blind-swap-status-row span.active.diamond{background:linear-gradient(135deg,#ff2fb0,#ffb3ec); color:#3a0022;}
   #blind-swap-status-row span.active.platinum{background:linear-gradient(135deg,#7c3aed,#c4b5fd); color:#fff;}
@@ -2241,6 +2318,12 @@
     background:rgba(0,0,0,.75); color:var(--accent2);
     font-size:12px; font-weight:700;
     padding:4px 9px; border-radius:8px;
+  }
+  .grid-item.villa-sold img{filter:grayscale(.9) brightness(.5);}
+  .villa-sold-badge{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%) rotate(-12deg);
+    padding:3px 7px; border:2px solid #ef4444; border-radius:6px; color:#ef4444;
+    background:rgba(0,0,0,.55); font-size:10px; font-weight:900; letter-spacing:.8px; pointer-events:none; z-index:3;
   }
   .model-name-tag{
     position:absolute; bottom:0; left:0; right:0;
@@ -2389,7 +2472,7 @@
 
   /* ---------- Bottom nav ---------- */
   nav{
-    position:absolute; left:0; right:0; bottom:0;
+    position:absolute; left:0; right:0; bottom:0; z-index:10; /* always above page content (shine, tags...) but below every overlay (50+) */
     display:flex;
     background:#0a0a0a;
     border-top:1px solid #1f1f1f;
@@ -2495,8 +2578,6 @@
   #modal-card .btn-stake .stake-bonus img{width:12px; height:12px; aspect-ratio:auto; object-fit:contain; margin-bottom:0; flex-shrink:0; display:block;}
   .btn-stake.active{background:#ec4899; color:#fff; cursor:pointer;}
   .btn-stake.staked{background:rgba(239,68,68,.15); color:var(--danger); cursor:pointer;}
-  .btn-craft{background:#8c5a2b; color:#fff8ee; cursor:pointer;}
-  .btn-craft.disabled{background:#3a3a3a; color:#888; cursor:not-allowed;}
   .nav-pulse-dot{
     position:absolute; top:2px; right:calc(50% - 22px);
     width:10px; height:10px; border-radius:50%;
@@ -2510,9 +2591,8 @@
     70%{box-shadow:0 0 0 8px rgba(74,222,128,0);}
     100%{box-shadow:0 0 0 0 rgba(74,222,128,0);}
   }
-  .btn-craft:active{transform:scale(.97);}
   .btn-back{background:#000; color:#fff; width:100%; border:1px solid #000;}
-  .btn-custom{background:#fff; color:#000; border:1px solid #fff;}
+  .btn-custom{background:#fff; color:#000; border:1px solid #fff; width:100%;}
   .btn-custom.disabled{background:#2a2a2a; color:#777; cursor:not-allowed; border-color:#2a2a2a;}
   .btn-number{background:#ec1fb8; color:#fff;}
   .btn-transfer{background:#3b82f6; color:#fff;}
@@ -2776,6 +2856,7 @@
   .chance-row{display:flex; align-items:center; justify-content:space-between; padding:10px 4px; border-bottom:1px solid var(--card-border);}
   .chance-row:last-child{border-bottom:none;}
   .chance-row .rarity-tag{position:static; font-size:10px; padding:4px 8px;}
+  .rarity-tag.villa-tag{background:linear-gradient(135deg,#5eead4,#0d9488); color:#042f2e; box-shadow:0 0 8px rgba(45,212,191,.5);}
   .chance-pct{font-weight:800; font-size:14px; color:#fff;}
 
   #toast{
@@ -2819,7 +2900,7 @@
         <div class="farm-btn-wrap">
           <div class="farm-mode" id="farm-mode">
             <button type="button" data-mode="farm" class="active">ФАРМ <img src="/static/icons/diamond.png" alt=""></button>
-            <button type="button" data-mode="villa">ВИЛЛА ⭐</button>
+            <button type="button" data-mode="villa">ВИЛЛЫ ⭐</button>
           </div>
           <button id="farm-btn">ФАРМ</button>
           <div class="farm-cost-badge" id="farm-cost-badge"><span id="farm-cost-num">25</span><img src="/static/icons/diamond.png" alt=""></div>
@@ -2832,7 +2913,7 @@
       <div id="farm-result-number"></div>
       <div id="farm-hint"></div>
       <div class="farm-toolbar farm-toolbar-bottom" id="farm-toolbar-bottom">
-        <button class="farm-toolbar-item tb-mining" id="mining-open-btn">⛏️ Гемить</button>
+        <button class="farm-toolbar-item tb-mining" id="mining-open-btn">⛏️</button>
         <div class="farm-toolbar-sep"></div>
         <button class="farm-toolbar-item tb-cases" id="cases-btn"><img class="tb-cases-icon" src="/static/icons/chest.png" alt="Кейсы"></button>
         <div class="farm-toolbar-sep"></div>
@@ -3070,11 +3151,10 @@
         <button type="button" id="market-history-btn" class="history-btn">История</button>
       </div>
       <div class="market-subrow" id="market-filter-row">
-        <button type="button" class="market-filter-btn active" data-sort="price_asc">Цена ↑</button>
-        <button type="button" class="market-filter-btn" data-sort="price_desc">Цена ↓</button>
-        <button type="button" class="market-filter-btn" data-sort="number">#</button>
-        <button type="button" class="market-filter-btn" data-sort="rarity_bronze">Gold</button>
-        <button type="button" class="market-filter-btn" data-sort="rarity_diamond">Diamond</button>
+        <button type="button" class="market-filter-btn active" data-sort="price">Цена ↑</button>
+        <button type="button" class="market-filter-btn" data-sort="number"># ↑</button>
+        <button type="button" class="market-filter-btn" data-sort="legend">Legend</button>
+        <button type="button" class="market-filter-btn" data-sort="diamond">Diamond</button>
       </div>
       <div id="blind-swap-status-row" class="hidden"></div>
       <div id="market-list"></div>
@@ -3127,9 +3207,12 @@
       </div>
       <div id="profile-rarity-filters">
         <button class="pvp-picker-rarity-btn obsidian" data-rarity="obsidian">OBSIDIAN</button>
-        <button class="pvp-picker-rarity-btn diamond" data-rarity="diamond">DIAMND</button>
-        <button class="pvp-picker-rarity-btn platinum" data-rarity="platinum">PLATNM</button>
-        <button class="pvp-picker-rarity-btn gold" data-rarity="gold">Gold</button>
+        <button class="pvp-picker-rarity-btn diamond" data-rarity="diamond">DIAMOND</button>
+        <button class="pvp-picker-rarity-btn platinum" data-rarity="platinum">PLATINUM</button>
+        <button class="pvp-picker-rarity-btn gold" data-rarity="gold">GOLD</button>
+        <button class="pvp-picker-rarity-btn vt-legend vt-btn" data-rarity="v-diamond">LEGEND</button>
+        <button class="pvp-picker-rarity-btn vt-epic vt-btn" data-rarity="v-platinum">EPIC</button>
+        <button class="pvp-picker-rarity-btn vt-rare vt-btn" data-rarity="v-gold">RARE</button>
       </div>
       <div class="grid" id="profile-grid"></div>
     </section>
@@ -3211,17 +3294,10 @@
           </div>
         </div>
         <div class="info-feature-row">
-          <div class="info-feature-icon" style="background:rgba(167,139,250,.18); color:#a78bfa;">⚒️</div>
-          <div class="info-feature-body">
-            <div class="info-feature-title" style="color:#a78bfa;">Крафт</div>
-            <div class="info-feature-desc">Трать гемы + карту, чтобы получить взамен случайную — шанс на более редкую</div>
-          </div>
-        </div>
-        <div class="info-feature-row">
           <div class="info-feature-icon" style="background:rgba(236,72,153,.18); color:#ec4899;">🧬</div>
           <div class="info-feature-body">
             <div class="info-feature-title" style="color:#ec4899;">Эволюция</div>
-            <div class="info-feature-desc">Собери несколько карт одной редкости и эволюционируй их в карту рангом выше — бесплатно</div>
+            <div class="info-feature-desc">Собери несколько карт одной редкости и эволюционируй их в карту рангом выше — бесплатно, но с 10% риском потерять карты</div>
           </div>
         </div>
         <div class="info-feature-row">
@@ -3241,8 +3317,8 @@
         <div class="info-feature-row">
           <div class="info-feature-icon" style="background:rgba(244,114,182,.18); color:#f472b6;">⛏️</div>
           <div class="info-feature-body">
-            <div class="info-feature-title" style="color:#f472b6;">Гемить</div>
-            <div class="info-feature-desc">Жми кнопку «Гемить» на вкладке Фарм — раз в час бесплатно получай 50 <img src="/static/icons/diamond.png" alt=""></div>
+            <div class="info-feature-title" style="color:#f472b6;">Добыча гемов</div>
+            <div class="info-feature-desc">Жми кнопку ⛏️ на вкладке Фарм — раз в час бесплатно получай 50 <img src="/static/icons/diamond.png" alt=""></div>
           </div>
         </div>
         <div class="info-feature-row">
@@ -3311,6 +3387,10 @@
         <div class="rank-info-row" data-rank="gold"><div class="rank-info-left"><span class="rarity-tag gold">gold</span><span class="m">3-й месяц</span></div><button class="rank-buy-btn" data-rank="gold" data-price="300">Купить • 300⭐</button></div>
         <div class="rank-info-row" data-rank="platinum"><div class="rank-info-left"><span class="rarity-tag platinum">platinum</span><span class="m">4-й месяц</span></div><button class="rank-buy-btn" data-rank="platinum" data-price="400">Купить • 400⭐</button></div>
         <div class="rank-info-row" data-rank="diamond"><div class="rank-info-left"><span class="rarity-tag diamond">diamond</span><span class="m">5+ месяцев</span></div><button class="rank-buy-btn" data-rank="diamond" data-price="500">Купить • 500⭐</button></div>
+        <div class="rank-info-row" data-rank="obsidian"><div class="rank-info-left"><span class="rarity-tag obsidian">obsidian</span><span class="m">только за ⭐</span></div><button class="rank-buy-btn" data-rank="obsidian" data-price="1000">Купить • 1000⭐</button></div>
+        <div class="rank-info-row" data-rank="rare"><div class="rank-info-left"><span class="rarity-tag rare">rare</span><span class="m">только за ⭐</span></div><button class="rank-buy-btn" data-rank="rare" data-price="2000">Купить • 2000⭐</button></div>
+        <div class="rank-info-row" data-rank="epic"><div class="rank-info-left"><span class="rarity-tag epic">epic</span><span class="m">только за ⭐</span></div><button class="rank-buy-btn" data-rank="epic" data-price="3000">Купить • 3000⭐</button></div>
+        <div class="rank-info-row" data-rank="legend"><div class="rank-info-left"><span class="rarity-tag legend">legend</span><span class="m">только за ⭐</span></div><button class="rank-buy-btn" data-rank="legend" data-price="5000">Купить • 5000⭐</button></div>
       </div>
       <div id="rank-info-footnote">Ранг не влияет на игру — это просто отметка о том, как долго ты с нами. Твой текущий ранг подсвечен.</div>
     </div>
@@ -3445,6 +3525,7 @@
       <div id="chance-title">Твоя коллекция</div>
       <div id="chance-sub">Разбивка по редкости — только твои карты</div>
       <div id="chance-total"></div>
+      <div class="chance-row"><span class="rarity-tag villa-tag">виллы</span><span class="chance-pct" id="farmed-villa">0</span></div>
       <div class="chance-row"><span class="rarity-tag obsidian">obsidian</span><span class="chance-pct" id="farmed-obsidian">0</span></div>
       <div class="chance-row"><span class="rarity-tag diamond">diamond</span><span class="chance-pct" id="farmed-diamond">0</span></div>
       <div class="chance-row"><span class="rarity-tag platinum">platinum</span><span class="chance-pct" id="farmed-platinum">0</span></div>
@@ -3527,14 +3608,11 @@
       <div class="modal-actions">
         <div class="modal-actions-row">
           <button class="btn-transfer" id="modal-transfer">Передать</button>
-          <button class="btn-custom" id="modal-custom">Кастом</button>
+          <button class="btn-number" id="modal-number">Номер</button>
         </div>
         <button class="btn-sell" id="modal-sell">Продать</button>
         <button class="btn-swap" id="modal-swap">Обмен</button>
-        <div class="modal-actions-row" id="modal-number-craft-row">
-          <button class="btn-number" id="modal-number">Номер</button>
-          <button class="btn-craft" id="modal-craft">Крафт</button>
-        </div>
+        <button class="btn-custom" id="modal-custom">Кастом</button>
         <div style="display:none">
           <button class="btn-stake" id="modal-stake">Застейкать</button>
         </div>
@@ -3622,11 +3700,15 @@
 
   <div id="pvp-picker-overlay">
     <div id="pvp-picker-card">
-      <div id="pvp-picker-title">Выбери карты для PvP — заберут навсегда, если проиграешь</div>
+      <div id="pvp-picker-title">Выбери карты для PvP</div>
       <div id="pvp-picker-rarity-filters">
-        <button class="pvp-picker-rarity-btn gold" data-rarity="gold">Gold</button>
-        <button class="pvp-picker-rarity-btn platinum" data-rarity="platinum">PLATNM</button>
-        <button class="pvp-picker-rarity-btn diamond" data-rarity="diamond">DIAMND</button>
+        <button class="pvp-picker-rarity-btn obsidian" data-rarity="obsidian">OBSIDIAN</button>
+        <button class="pvp-picker-rarity-btn diamond" data-rarity="diamond">DIAMOND</button>
+        <button class="pvp-picker-rarity-btn platinum" data-rarity="platinum">PLATINUM</button>
+        <button class="pvp-picker-rarity-btn gold" data-rarity="gold">GOLD</button>
+        <button class="pvp-picker-rarity-btn vt-legend vt-btn" data-rarity="v-diamond">LEGEND</button>
+        <button class="pvp-picker-rarity-btn vt-epic vt-btn" data-rarity="v-platinum">EPIC</button>
+        <button class="pvp-picker-rarity-btn vt-rare vt-btn" data-rarity="v-gold">RARE</button>
       </div>
       <button id="pvp-picker-select-all">Выбрать все</button>
       <div class="grid" id="pvp-picker-grid"></div>
@@ -3716,6 +3798,15 @@
       <button class="btn-close-inline" id="wall-close">✕</button>
       <div id="wall-title">Стена</div>
       <div id="wall-sub"></div>
+      <div id="wall-filters">
+        <button class="pvp-picker-rarity-btn obsidian" data-rarity="obsidian">OBSIDIAN</button>
+        <button class="pvp-picker-rarity-btn diamond" data-rarity="diamond">DIAMOND</button>
+        <button class="pvp-picker-rarity-btn platinum" data-rarity="platinum">PLATINUM</button>
+        <button class="pvp-picker-rarity-btn gold" data-rarity="gold">GOLD</button>
+        <button class="pvp-picker-rarity-btn vt-legend vt-btn" data-rarity="v-diamond">LEGEND</button>
+        <button class="pvp-picker-rarity-btn vt-epic vt-btn" data-rarity="v-platinum">EPIC</button>
+        <button class="pvp-picker-rarity-btn vt-rare vt-btn" data-rarity="v-gold">RARE</button>
+      </div>
       <div class="grid" id="wall-grid"></div>
       <button id="wall-close-bottom">Закрыть</button>
     </div>
@@ -3789,6 +3880,9 @@
         <div class="pvp-rules-row"><span class="rarity-tag gold">gold</span><span class="w">8</span></div>
         <div class="pvp-rules-row"><span class="rarity-tag platinum">platinum</span><span class="w">20</span></div>
         <div class="pvp-rules-row"><span class="rarity-tag diamond">diamond</span><span class="w">50</span></div>
+        <div class="pvp-rules-row"><span class="rarity-tag vt-rare">rare</span><span class="w">32</span></div>
+        <div class="pvp-rules-row"><span class="rarity-tag vt-epic">epic</span><span class="w">80</span></div>
+        <div class="pvp-rules-row"><span class="rarity-tag vt-legend">legend</span><span class="w">200</span></div>
       </div>
       <div id="pvp-rules-footnote">Например, одна Diamond-карта по шансам равна примерно 6 Gold-картам. Твой шанс на победу = твой вес ÷ суммарный вес всех карт в банке.</div>
     </div>
@@ -3810,7 +3904,7 @@
       <button class="btn-close-inline" id="rb-rules-close">✕</button>
       <div id="rb-rules-title">Правила Red&amp;Black</div>
       <div id="rb-rules-text">
-        Ставишь гемы и выбираешь цвет — красное или чёрное. Честная монетка 50/50: угадал — забираешь x2 (ставка + столько же сверху), не угадал — ставка сгорает полностью. Третьего варианта нет.
+        Ставишь гемы и выбираешь цвет — красное или чёрное. Угадал — забираешь x2 (ставка + столько же сверху), не угадал — ставка сгорает полностью. Красное и чёрное выпадают по 49%, а в 2% случаев выпадает зелёное — тогда проигрывают все ставки. Возврат игрокам 98%.
       </div>
     </div>
   </div>
@@ -3937,7 +4031,7 @@
           <div id="burn-title">Эволюция карт</div>
           <button class="panel-close" id="burn-close">✕</button>
         </div>
-        <div id="burn-sub">Эволюционируешь N карт одной редкости — гарантированно получаешь взамен 1 карту ступенью выше, без риска.</div>
+        <div id="burn-sub">Эволюционируешь N карт одной редкости — получаешь взамен 1 карту ступенью выше. Шанс успеха 90% — при неудаче (10%) карты сгорают. Карты «Виллы» в эволюции не участвуют.</div>
         <div id="burn-grid"></div>
       </div>
     </div>
@@ -4005,18 +4099,30 @@ const API_BASE = "/api";
 // query string, which is enough to bust the cache without renaming any files.
 const CARD_IMG_VERSION = 4;
 const FARM_COST_GEMS = 25;
-// Stars series ("Виллы"): their own numbering is sent as 1_000_000 + n and shown as "V<n>";
-// their tag reads STARS (the glow colour is still the tier's: gold / platinum / diamond).
+// Stars series ("Виллы"): their own numbering is sent as 1_000_000 + n and shown as "#<n>";
+// their tag shows the rank (gold / platinum / diamond) like any other card.
 const VILLA_NUM_BASE = 1000000;
 function isVillaNum(n){ return typeof n === "number" && n >= VILLA_NUM_BASE; }
-function fmtNum(n){ return isVillaNum(n) ? `V${n - VILLA_NUM_BASE}` : `#${n}`; }
-function rarityTagText(r, n){ return isVillaNum(n) ? "STARS" : r; }
+// Rank filter keys used by the rank rows: "obsidian", "diamond" / "platinum" / "gold" (regular cards) and
+// "v-diamond" / "v-platinum" / "v-gold" (villas: LEGEND / EPIC / RARE).
+function matchRankFilter(c, f){
+  if(!f) return true;
+  const villa = isVillaNum(c.drop_number);
+  if(f === "obsidian") return !!c.custom_name && !villa;
+  if(f.startsWith("v-")) return villa && c.rarity === f.slice(2);
+  return c.rarity === f && !c.custom_name && !villa;
+}
+function fmtNum(n){ return isVillaNum(n) ? `#${n - VILLA_NUM_BASE}` : `#${n}`; }
+// Villas use their own tier names: diamond -> LEGEND (red), platinum -> EPIC (green), gold -> RARE (blue).
+const VILLA_TIER = { diamond: "legend", platinum: "epic", gold: "rare" };
+function villaTier(r){ return VILLA_TIER[r] || r; }
+function rarityTagText(r, n){ return isVillaNum(n) ? villaTier(r) : r; }
 let farmMode = "farm"; // "farm" | "villa" -- the big button's two modes
 // Mirrors database.py's MIN_LISTING_PRICE_BY_RARITY — client-side copy for the price
 // prompt + pre-check (server still enforces it for real via ListingPriceTooLow).
 const MIN_LISTING_PRICE_BY_RARITY = { bronze: 25, silver: 50, gold: 50, platinum: 500, diamond: 1000 };
 function minListingPrice(rarity, num){
-  if(isVillaNum(num)) return 1; // villas: no floor
+  if(isVillaNum(num)) return 1000; // villas: 1000 gem floor (listings and offers)
   return MIN_LISTING_PRICE_BY_RARITY[rarity] ?? MIN_LISTING_PRICE_BY_RARITY.bronze;
 }
 let initData = tg?.initData || "";
@@ -4201,7 +4307,7 @@ function switchScreen(screenId){
   if(screenId !== "pvp-screen") stopPvpPolling();
   if(screenId === "farm-screen") loadStats(); // re-sync "Всего" — it drifts stale otherwise, since it only updates from THIS player's own farm/craft/case/burn actions
   if(screenId === "profile-screen") loadProfile();
-  if(screenId === "market-screen") refreshMarketScreen();
+  if(screenId === "market-screen"){ resetMarketSort(); refreshMarketScreen(); }
   if(screenId === "pvp-screen"){ pvpTabJustOpened = true; loadPvpState(); setPvpPulse(false); }
 }
 
@@ -4332,6 +4438,7 @@ function showCardsBreakdown(){
   document.getElementById("chance-title").textContent = "Твоя коллекция";
   document.getElementById("chance-sub").textContent = "Разбивка по редкости — только твои карты";
   document.getElementById("chance-total").textContent = `Всего: ${inventory.length}`;
+  document.getElementById("farmed-villa").textContent = inventory.filter(c=>isVillaNum(c.drop_number)).length;
   document.getElementById("farmed-obsidian").textContent = inventory.filter(c=>!!c.custom_name).length;
   document.getElementById("farmed-diamond").textContent = inventory.filter(c=>c.rarity==="diamond" && !c.custom_name && !isVillaNum(c.drop_number)).length;
   document.getElementById("farmed-platinum").textContent = inventory.filter(c=>c.rarity==="platinum" && !c.custom_name && !isVillaNum(c.drop_number)).length;
@@ -4344,6 +4451,7 @@ async function showGlobalCardsBreakdown(){
   try{
     const res = await fetch(API_BASE + "/stats/breakdown");
     const data = await res.json();
+    document.getElementById("farmed-villa").textContent = `${data.villa_sold ?? 0}/${data.villa_total ?? 200}`;
     document.getElementById("farmed-obsidian").textContent = data.obsidian ?? 0;
     document.getElementById("farmed-diamond").textContent = data.diamond ?? 0;
     document.getElementById("farmed-platinum").textContent = data.platinum ?? 0;
@@ -4539,23 +4647,51 @@ async function loadMarket(){
   }
 }
 
-let marketSortMode = "price_asc"; // "price_asc" | "price_desc" | "number" | "rarity_bronze" | "rarity_diamond"
+// Sorting: each button flips between two directions when pressed again.
+//   Цена:    cheap first (↑)  <->  expensive first (↓)
+//   #:       low number first (↑) <-> high number first (↓)
+//   Legend:  villas LEGEND -> RARE on top  <->  RARE -> LEGEND on top
+//   Diamond: DIAMOND on top -> GOLD at the bottom  <->  GOLD on top -> DIAMOND at the bottom
+// Opening the market tab always resets to "Цена ↑" (cheapest first).
+let marketSortKey = "price";
+let marketSortDesc = false;
+const MARKET_SORT_LABELS = {
+  price:   ["Цена ↑", "Цена ↓"],
+  number:  ["# ↑", "# ↓"],
+  legend:  ["Legend", "Rare"],     // the label shows which end is on top
+  diamond: ["Diamond", "Gold"],
+};
+function updateMarketSortButtons(){
+  document.querySelectorAll("#market-filter-row .market-filter-btn").forEach(b=>{
+    const k = b.dataset.sort;
+    b.classList.toggle("active", k === marketSortKey);
+    b.textContent = MARKET_SORT_LABELS[k][(k === marketSortKey && marketSortDesc) ? 1 : 0];
+  });
+}
+function resetMarketSort(){
+  marketSortKey = "price"; marketSortDesc = false;
+  updateMarketSortButtons();
+}
 document.querySelectorAll("#market-filter-row .market-filter-btn").forEach(btn=>{
   btn.addEventListener("click", ()=>{
-    marketSortMode = btn.dataset.sort;
-    document.querySelectorAll("#market-filter-row .market-filter-btn").forEach(b=>{
-      b.classList.toggle("active", b === btn);
-    });
+    const k = btn.dataset.sort;
+    if(k === marketSortKey) marketSortDesc = !marketSortDesc;
+    else { marketSortKey = k; marketSortDesc = false; }
+    updateMarketSortButtons();
     renderMarket();
   });
 });
 
 function renderMarket(){
   const list = document.getElementById("market-list");
-  // Villas (Stars series) are traded ONLY in the "Виллы" segment (same market, same filters, villas only);
-  // the regular "Торговля" grid never shows them.
+  // "Торговля" shows every listing, villas included; the "Виллы" segment shows villas only.
   const villaOnly = marketMode === "villa";
-  const regularListings = marketListings.filter(l => isVillaNum(l.drop_number) === villaOnly);
+  let regularListings = villaOnly ? marketListings.filter(l => isVillaNum(l.drop_number)) : marketListings;
+  // In "Торговля" the Legend / Diamond buttons also filter:
+  //   Legend  -> only Obsidian + villas (LEGEND / EPIC / RARE)
+  //   Diamond -> only Obsidian + regular cards (DIAMOND / PLATINUM / GOLD)
+  if(!villaOnly && marketSortKey === "legend") regularListings = regularListings.filter(l => l.custom_name || isVillaNum(l.drop_number));
+  if(!villaOnly && marketSortKey === "diamond") regularListings = regularListings.filter(l => l.custom_name || !isVillaNum(l.drop_number));
   if(regularListings.length === 0){
     list.className = "";
     list.innerHTML = villaOnly
@@ -4564,15 +4700,33 @@ function renderMarket(){
     return;
   }
 
-  const sortMode = marketSortMode;
+  const dir = marketSortDesc ? -1 : 1;
+  const tierRank = r => RARITY_ORDER[r] ?? 4; // diamond 0 ... gold 2
   const sorted = [...regularListings].sort((a, b) => {
-    switch(sortMode){
-      case "price_desc": return b.listed_price - a.listed_price;
-      case "number": return a.drop_number - b.drop_number;
-      case "rarity_bronze": return (RARITY_ORDER[b.rarity] ?? 4) - (RARITY_ORDER[a.rarity] ?? 4);
-      case "rarity_diamond": return (RARITY_ORDER[a.rarity] ?? 4) - (RARITY_ORDER[b.rarity] ?? 4);
-      case "price_asc":
-      default: return a.listed_price - b.listed_price;
+    const byPrice = a.listed_price - b.listed_price;
+    // With the Legend / Diamond sort on, Obsidian cards always stay on top (cheapest first among them).
+    if(marketSortKey === "legend" || marketSortKey === "diamond"){
+      const oa = a.custom_name ? 0 : 1, ob = b.custom_name ? 0 : 1;
+      if(oa !== ob) return oa - ob;
+      if(oa === 0) return byPrice;
+    }
+    switch(marketSortKey){
+      case "number": return dir * (a.drop_number - b.drop_number) || byPrice;
+      case "legend": {
+        // villas first, ordered by tier (LEGEND -> RARE, or the reverse); regular cards after them
+        const va = isVillaNum(a.drop_number) ? 0 : 1, vb = isVillaNum(b.drop_number) ? 0 : 1;
+        if(va !== vb) return va - vb;
+        if(va === 0) return dir * (tierRank(a.rarity) - tierRank(b.rarity)) || byPrice;
+        return byPrice;
+      }
+      case "diamond": {
+        // regular cards first, ordered by rarity (DIAMOND -> GOLD, or the reverse); villas after them
+        const va = isVillaNum(a.drop_number) ? 1 : 0, vb = isVillaNum(b.drop_number) ? 1 : 0;
+        if(va !== vb) return va - vb;
+        return dir * (tierRank(a.rarity) - tierRank(b.rarity)) || byPrice;
+      }
+      case "price":
+      default: return dir * byPrice;
     }
   });
 
@@ -4790,7 +4944,7 @@ function renderPvpHistory(rounds){
     return `
     <div class="history-row pvp-history-row${underdog}">
       <div class="info">
-        <div class="line1">${r.winner_name} забрал ${pluralCards(r.total_cards)} с ${r.winner_win_pct != null ? r.winner_win_pct : "?"}%</div>
+        <div class="line1">${r.loser_name && r.loser_win_pct != null ? `${r.winner_name} с ${r.winner_win_pct}% забрал у ${r.loser_name} с ${r.loser_win_pct}% ${pluralCards(r.total_cards)}` : `${r.winner_name} забрал ${pluralCards(r.total_cards)} с ${r.winner_win_pct != null ? r.winner_win_pct : "?"}%`}</div>
         <div class="line2">Игроки: ${r.total_players} | ${fmtHistoryTime(r.resolved_at)}</div>
       </div>
     </div>
@@ -4820,7 +4974,7 @@ function renderRedBlackHistoryList(rounds){
   }
   list.innerHTML = rounds.map(r => {
     const name = r.username ? maskedName(r.username) : (r.first_name || "Игрок");
-    const colorEmoji = r.result === "red" ? "🔴" : "⚫";
+    const colorEmoji = r.result === "red" ? "🔴" : r.result === "green" ? "🟢" : "⚫";
     const sign = r.won ? `+${r.payout - r.bet}` : `-${r.bet}`;
     return `
       <div class="history-row pvp-history-row">
@@ -5080,6 +5234,9 @@ function renderSwapListings(){
     return;
   }
   list.className = "grid";
+  // Villas first, then Obsidian, then the rest (stable, so newest-first is kept inside each group).
+  const swapGrp = l => isVillaNum(l.drop_number) ? 0 : (l.custom_name ? 1 : 2);
+  swapListings = [...swapListings].sort((a, b) => swapGrp(a) - swapGrp(b));
   list.innerHTML = swapListings.map(l => `
       <div class="grid-item rarity-border-${l.rarity}${l.custom_name ? " obsidian-border" : ""}" data-uc="${l.user_card_id}">
         <img src="/static/cards/${l.filename}?v=${CARD_IMG_VERSION}" alt="${l.name||''}">
@@ -5100,10 +5257,10 @@ function renderSwapListings(){
 // Обмен tab: a highlighted rarity means YOU already have a pending listing
 // there (tap it to cancel); a dim one is free (tap it to open the picker). ----------
 const BLIND_SWAP_RARITIES = [
-  {key: "obsidian", label: "OBSIDIAN"}, {key: "diamond", label: "DIAMOND"}, {key: "platinum", label: "PLATINUM"},
-  {key: "gold", label: "GOLD"},
+  {key: "diamond", label: "DIAMOND"}, {key: "platinum", label: "PLATINUM"}, {key: "gold", label: "GOLD"},
+  {key: "villa_diamond", label: "LEGEND"}, {key: "villa_platinum", label: "EPIC"}, {key: "villa_gold", label: "RARE"},
 ];
-const BLIND_SWAP_TITLE = {obsidian: "Obsidian", diamond: "Diamond", platinum: "Platinum", gold: "Gold", silver: "Silver", bronze: "Bronze"};
+const BLIND_SWAP_TITLE = {villa_diamond: "LEGEND", villa_platinum: "EPIC", villa_gold: "RARE", obsidian: "Obsidian", diamond: "Diamond", platinum: "Platinum", gold: "Gold", silver: "Silver", bronze: "Bronze"};
 let blindSwapSelectedId = null;
 let blindSwapTargetRarity = null;
 
@@ -5155,7 +5312,7 @@ async function renderBlindSwapGrid(){
     inventory = data.inventory;
   }catch(e){ /* fall back to whatever inventory already holds */ }
 
-  const bucketOf = c => c.custom_name ? "obsidian" : c.rarity;
+  const bucketOf = c => isVillaNum(c.drop_number) ? ("villa_" + c.rarity) : (c.custom_name ? "obsidian" : c.rarity);
   const available = inventory.filter(c =>
     !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.in_giveaway && !c.pinned_at
     && bucketOf(c) === blindSwapTargetRarity
@@ -5232,7 +5389,7 @@ function openMarketItem(ucId, mode){
     priceRow.style.display = "flex";
     priceRow.innerHTML = `<img src="/static/icons/diamond.png" alt="">${item.listed_price}`;
     if(item.is_mine){
-      actions.innerHTML = `<button class="btn-unlist" id="mi-unlist">Снять с продажи</button>`;
+      actions.innerHTML = `<button class="btn-unlist" id="mi-unlist">Отмена</button>`;
       document.getElementById("mi-unlist").addEventListener("click", async ()=>{
         try{
           await api("/market/unlist", { user_card_id: ucId });
@@ -5277,7 +5434,7 @@ function openMarketItem(ucId, mode){
     priceRow.style.display = "none";
     priceRow.innerHTML = "";
     if(item.is_mine){
-      actions.innerHTML = `<button class="btn-unlist" id="mi-unlist-swap">Снять с обмена</button>`;
+      actions.innerHTML = `<button class="btn-unlist" id="mi-unlist-swap">Отмена</button>`;
       document.getElementById("mi-unlist-swap").addEventListener("click", async ()=>{
         try{
           await api("/swap/unlist", { user_card_id: ucId });
@@ -5294,6 +5451,13 @@ function openMarketItem(ucId, mode){
       });
     }
   }
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "btn-close-bottom";
+  closeBtn.textContent = "Закрыть";
+  closeBtn.addEventListener("click", closeMarketItem);
+  actions.appendChild(closeBtn);
 
   document.getElementById("market-item-overlay").classList.add("active");
 }
@@ -5341,9 +5505,12 @@ function renderSwapPickerGrid(){
     grid.innerHTML = `<div class="empty-state">Нечего предложить — иди фармить 🌱</div>`;
     return;
   }
-  const swapAvailable = inventory.filter(c => !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.in_giveaway && !c.pinned_at);
+  // A villa can only be bought with Diamond cards.
+  const targetListing = swapListings.find(l => l.user_card_id === swapPickerTargetId);
+  const villaTarget = !!targetListing && isVillaNum(targetListing.drop_number);
+  const swapAvailable = inventory.filter(c => !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.in_giveaway && !c.pinned_at && (!villaTarget || c.rarity === "diamond"));
   if(swapAvailable.length === 0){
-    grid.innerHTML = `<div class="empty-state">Нет свободных карт — сними с продажи/обмена/PvP-банка или иди фармить 🌱</div>`;
+    grid.innerHTML = `<div class="empty-state">${villaTarget ? "За виллу можно предложить только DIAMOND карты, а свободных у тебя нет" : "Нет свободных карт — сними с продажи/обмена/PvP-банка или иди фармить 🌱"}</div>`;
     return;
   }
   grid.innerHTML = swapAvailable.map(c => `
@@ -5652,7 +5819,7 @@ function prependRbHistory(res){
   rbHistoryLog.unshift(res);
   rbHistoryLog = rbHistoryLog.slice(0, 12);
   document.getElementById("rb-history").innerHTML = rbHistoryLog.map(r=>{
-    const emoji = r.result === "red" ? "🔴" : "⚫";
+    const emoji = r.result === "red" ? "🔴" : r.result === "green" ? "🟢" : "⚫";
     const sign = r.won ? ("+" + (r.payout - r.bet)) : ("-" + r.bet);
     return `<div class="rb-history-row ${r.won ? "win" : "lose"}">${emoji} ${sign}</div>`;
   }).join("");
@@ -5671,8 +5838,8 @@ async function playRedBlack(choice){
     const res = await api("/redblack/play", { bet: rbBet, choice });
     setGemsDisplay(res.gems);
     const resultEl = document.getElementById("rb-result");
-    const colorName = res.result === "red" ? "красное" : "чёрное";
-    const colorEmoji = res.result === "red" ? "🔴" : "⚫";
+    const colorName = res.result === "red" ? "красное" : res.result === "green" ? "зелёное" : "чёрное";
+    const colorEmoji = res.result === "red" ? "🔴" : res.result === "green" ? "🟢" : "⚫";
     if(res.won){
       resultEl.innerHTML = `<span class="rb-win">${colorEmoji} Выпало ${colorName} — выигрыш +${res.payout - res.bet} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></span>`;
       tg?.HapticFeedback?.notificationOccurred("success");
@@ -6942,7 +7109,7 @@ function renderMining(status){
   openBtn.classList.add("mining");
   // While a cycle is running, the button itself becomes the "in progress" indicator —
   // a spinning pickaxe (CSS animation on .mining-pick) plus the live countdown next to
-  // it, instead of just sitting there looking idle with the word "Гемить" on it.
+  // it, instead of just sitting there looking idle with a static label on it.
   let secondsLeft = status.seconds_left;
   const tick = ()=>{
     const pct = Math.max(0, Math.min(100, ((DURATION - secondsLeft) / DURATION) * 100));
@@ -7016,9 +7183,11 @@ document.getElementById("mining-action-btn").addEventListener("click", async ()=
 
 // ---------- PvP picker (choose which of your own cards to stake — no taking them back) ----------
 let pvpPickerSelected = new Set();
+let pvpPickerFilter = null; // null = all cards; otherwise a rank filter key (see matchRankFilter)
 
 function openPvpPicker(){
   pvpPickerSelected = new Set();
+  pvpPickerFilter = null;
   renderPvpPickerGrid();
   document.getElementById("pvp-picker-overlay").classList.add("active");
 }
@@ -7028,12 +7197,26 @@ function getPvpPickerAvailableCards(){
     .filter(c => !c.listed_price && !c.swap_listed && !c.staked_at && !c.pvp_round_id && !c.pinned_at && !c.in_giveaway)
     // Bronze always first (same "worst first" ordering as the market's Bronze filter) —
     // makes it easy to stake your least valuable cards without hunting for them.
-    .sort((a, b) => (RARITY_ORDER[b.rarity] ?? 4) - (RARITY_ORDER[a.rarity] ?? 4));
+    // Order: regular gold, platinum, diamond -- then villas: rare, epic, legend.
+    .sort((a, b) => {
+      const va = isVillaNum(a.drop_number) ? 1 : 0, vb = isVillaNum(b.drop_number) ? 1 : 0;
+      if(va !== vb) return va - vb;
+      return (RARITY_ORDER[b.rarity] ?? 4) - (RARITY_ORDER[a.rarity] ?? 4);
+    });
+}
+
+// What the grid shows: everything, or only the cards of the rarity picked with the buttons above.
+function getPvpPickerShownCards(){
+  const all = getPvpPickerAvailableCards();
+  return pvpPickerFilter ? all.filter(c => matchRankFilter(c, pvpPickerFilter)) : all;
 }
 
 function renderPvpPickerGrid(){
   const grid = document.getElementById("pvp-picker-grid");
-  const available = getPvpPickerAvailableCards();
+  document.querySelectorAll("#pvp-picker-rarity-filters .pvp-picker-rarity-btn").forEach(b=>{
+    b.classList.toggle("active", b.dataset.rarity === pvpPickerFilter);
+  });
+  const available = getPvpPickerShownCards();
   if(available.length === 0){
     grid.innerHTML = `<div class="empty-state">Нет свободных карт — сними с продажи/обмена/стейкинга или иди фармить 🌱</div>`;
     return;
@@ -7067,14 +7250,16 @@ function pvpPickerToggleSelection(cards){
   }
 }
 document.getElementById("pvp-picker-select-all").addEventListener("click", ()=>{
-  pvpPickerToggleSelection(getPvpPickerAvailableCards());
+  // With no filter, "Выбрать все" never grabs villas by accident -- open the ВИЛЛЫ filter to select those.
+  const shown = getPvpPickerShownCards();
+  pvpPickerToggleSelection(pvpPickerFilter ? shown : shown.filter(c => !isVillaNum(c.drop_number)));
   renderPvpPickerGrid();
 });
 document.getElementById("pvp-picker-rarity-filters").addEventListener("click", (e)=>{
   const btn = e.target.closest(".pvp-picker-rarity-btn");
   if(!btn) return;
-  const rarity = btn.dataset.rarity;
-  pvpPickerToggleSelection(getPvpPickerAvailableCards().filter(c => c.rarity === rarity));
+  const key = btn.dataset.rarity;
+  pvpPickerFilter = pvpPickerFilter === key ? null : key; // tap again to show everything
   renderPvpPickerGrid();
 });
 document.getElementById("pvp-picker-cancel").addEventListener("click", ()=>{
@@ -7084,7 +7269,7 @@ document.getElementById("pvp-picker-cancel").addEventListener("click", ()=>{
 document.getElementById("pvp-picker-confirm").addEventListener("click", async ()=>{
   if(pvpPickerSelected.size === 0){ toast("Выбери хотя бы одну карту"); return; }
   try{
-    pvpState = await api("/pvp/join", { user_card_ids: [...pvpPickerSelected] });
+    pvpState = await api("/pvp/join", { user_card_ids: [...pvpPickerSelected], round_id: pvpState ? pvpState.round_id : null });
     // Refresh the inventory so the cards just staked disappear from every picker
     // (pvp_round_id is now set on them) instead of still showing as available.
     try{
@@ -7095,6 +7280,9 @@ document.getElementById("pvp-picker-confirm").addEventListener("click", async ()
     document.getElementById("pvp-picker-overlay").classList.remove("active");
   }catch(e){
     toast("Не получилось: " + e.message);
+    // Round probably ended -- refresh so the player sees the new round and his cards stay untouched.
+    try{ pvpState = await api("/pvp/state"); renderPvp(); }catch(_){}
+    document.getElementById("pvp-picker-overlay").classList.remove("active");
   }
 });
 
@@ -7126,7 +7314,7 @@ function renderZoom(){
   zoomImgEl.classList.toggle("obsidian-border", isObsidian);
   document.getElementById("zoom-img-wrap").classList.toggle("obsidian", isObsidian);
   const zoomRarityBadge = document.getElementById("zoom-rarity-tag");
-  zoomRarityBadge.textContent = isObsidian ? "OBSIDIAN" : (c.show_rarity ? (c.rarity || "") : rarityTagText(c.rarity || "", c.drop_number));
+  zoomRarityBadge.textContent = isObsidian ? "OBSIDIAN" : (c.villa ? villaTier(c.rarity || "") : (c.show_rarity ? (c.rarity || "") : rarityTagText(c.rarity || "", c.drop_number)));
   zoomRarityBadge.className = `zoom-rarity-tag ${isObsidian ? "obsidian" : (c.rarity || "")}`;
   const zoomNumEl = document.getElementById("zoom-drop-number");
   if(c.drop_number){
@@ -7187,7 +7375,7 @@ async function ensureVillaModels(){
     villaModelsCache = (res.cards || []).map(v => ({
       filename: v.filename, name: v.name, rarity: v.rarity,
       drop_number: v.villa_number ? VILLA_NUM_BASE + v.villa_number : null,
-      status: v.status, owner_name: v.owner_name, show_rarity: true,
+      status: v.status, owner_name: v.owner_name, show_rarity: true, villa: true,
     }));
   }catch(e){ villaModelsCache = []; }
   return villaModelsCache;
@@ -7201,14 +7389,19 @@ function renderModelsGrid(){
   const sorted = [...cards].sort((a, b) => {
     const ra = RARITY_ORDER[a.rarity] ?? 4, rb = RARITY_ORDER[b.rarity] ?? 4;
     if(ra !== rb) return sortMode === "worst_first" ? rb - ra : ra - rb;
+    if(modelsVillaView){
+      const sa = a.status && a.status !== "free" ? 1 : 0, sb = b.status && b.status !== "free" ? 1 : 0;
+      if(sa !== sb) return sa - sb; // still-free villas first, already-sold ones after
+    }
     return (a.name || "").localeCompare(b.name || "", "ru");
   });
   const grid = document.getElementById("models-grid");
   grid.innerHTML = sorted.map(c => `
-    <div class="grid-item rarity-border-${c.rarity}" data-src="/static/cards/${c.filename}?v=${CARD_IMG_VERSION}">
+    <div class="grid-item rarity-border-${c.rarity}${modelsVillaView && c.status && c.status !== "free" ? " villa-sold" : ""}" data-src="/static/cards/${c.filename}?v=${CARD_IMG_VERSION}">
       <img src="/static/cards/${c.filename}?v=${CARD_IMG_VERSION}" alt="${c.name||''}">
-      <div class="rarity-tag ${c.rarity}">${c.rarity}</div>
+      <div class="rarity-tag ${c.rarity}">${modelsVillaView ? villaTier(c.rarity) : c.rarity}</div>
       ${modelsVillaView && c.drop_number ? `<div class="drop-number">${fmtNum(c.drop_number)}</div>` : ""}
+      ${modelsVillaView && c.status && c.status !== "free" ? `<div class="villa-sold-badge">ВЫБИТА</div>` : ""}
       <div class="model-name-tag">${c.name || ""}</div>
     </div>
   `).join("");
@@ -7229,30 +7422,44 @@ function updateModelsCount(){
 }
 let modelsObsidianCount = 0;
 function updateModelsRaritySummary(){
-  const base = modelsVillaView ? (villaModelsCache || []) : (allCardsCache || []);
-  const counts = {diamond:0, platinum:0, gold:0, silver:0, bronze:0};
-  base.forEach(c=>{ if(counts[c.rarity]!==undefined) counts[c.rarity]++; });
-  const summary = document.getElementById("models-rarity-summary");
-  // Row of 4: Obsidian (opens its catalog), Diamond, Platinum, Gold; then one long
-  // ВИЛЛЫ button underneath that switches the grid to the Stars villas.
-  summary.innerHTML =
-    `<span class="obsidian" id="models-obsidian-tab">OBSIDN ${modelsObsidianCount}</span><span class="diamond" data-rarity="diamond">DIAMND ${counts.diamond}</span><span class="platinum" data-rarity="platinum">PLATNM ${counts.platinum}</span><span class="gold" data-rarity="gold">GOLD ${counts.gold}</span><span class="villa${modelsVillaView ? " active" : ""}" id="models-villa-tab">ВИЛЛЫ · ${(villaModelsCache || []).filter(v => v.status === "free").length}/${(villaModelsCache || []).length}</span>`;
-  document.getElementById("models-obsidian-tab").addEventListener("click", openObsidianCatalog);
-  document.getElementById("models-villa-tab").addEventListener("click", ()=>{
-    // Switch the grid between regular models and the Stars villas; rarity filter resets.
-    modelsVillaView = !modelsVillaView;
-    modelsFilterRarity = null;
-    updateModelsCount();
-    updateModelsRaritySummary();
-    renderModelsGrid();
+  const counts = {diamond:0, platinum:0, gold:0};
+  (allCardsCache || []).forEach(c=>{ if(counts[c.rarity]!==undefined) counts[c.rarity]++; });
+  const vTotal = {diamond:0, platinum:0, gold:0}, vFree = {diamond:0, platinum:0, gold:0};
+  (villaModelsCache || []).forEach(v=>{
+    if(vTotal[v.rarity] === undefined) return;
+    vTotal[v.rarity]++;
+    if(v.status === "free") vFree[v.rarity]++;
   });
+  const summary = document.getElementById("models-rarity-summary");
+  // Line 1: OBSIDIAN (opens its catalog) DIAMOND PLATINUM GOLD -- regular models.
+  // Line 2: LEGEND EPIC RARE -- the Stars villas of that tier (free/total).
+  const reg = (key, cls, label, n) =>
+    `<span class="r1 ${cls}${!modelsVillaView && modelsFilterRarity === key ? " active" : ""}" data-rarity="${key}">${label} ${n}</span>`;
+  const vil = (key, cls, label) =>
+    `<span class="r2 ${cls}${modelsVillaView && modelsFilterRarity === key ? " active" : ""}" data-vrarity="${key}">${label} ${vFree[key]}/${vTotal[key]}</span>`;
+  summary.innerHTML =
+    `<span class="r1 obsidian" id="models-obsidian-tab">OBSIDIAN ${modelsObsidianCount}</span>` +
+    reg("diamond", "diamond", "DIAMOND", counts.diamond) + reg("platinum", "platinum", "PLATINUM", counts.platinum) + reg("gold", "gold", "GOLD", counts.gold) +
+    vil("diamond", "vt-legend", "LEGEND") + vil("platinum", "vt-epic", "EPIC") + vil("gold", "vt-rare", "RARE");
+  document.getElementById("models-obsidian-tab").addEventListener("click", openObsidianCatalog);
   summary.querySelectorAll("span[data-rarity]").forEach(el=>{
-    el.classList.toggle("active", el.dataset.rarity === modelsFilterRarity);
     el.addEventListener("click", ()=>{
-      // Clicking the already-active rarity turns the filter back off.
-      modelsFilterRarity = modelsFilterRarity === el.dataset.rarity ? null : el.dataset.rarity;
-      summary.querySelectorAll("span[data-rarity]").forEach(s=>s.classList.toggle("active", s.dataset.rarity === modelsFilterRarity));
-      renderModelsGrid();
+      const k = el.dataset.rarity;
+      // Back to regular models; clicking the already-active rarity turns the filter off.
+      modelsFilterRarity = (!modelsVillaView && modelsFilterRarity === k) ? null : k;
+      modelsVillaView = false;
+      updateModelsCount(); updateModelsRaritySummary(); renderModelsGrid();
+    });
+  });
+  summary.querySelectorAll("span[data-vrarity]").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      const k = el.dataset.vrarity;
+      if(modelsVillaView && modelsFilterRarity === k){
+        modelsVillaView = false; modelsFilterRarity = null; // tap the active tier again -> back to regular models
+      }else{
+        modelsVillaView = true; modelsFilterRarity = k;
+      }
+      updateModelsCount(); updateModelsRaritySummary(); renderModelsGrid();
     });
   });
 }
@@ -7605,8 +7812,9 @@ function farmCostLabel(n){ return n * FARM_COST_GEMS; }
 function updateFarmBatchUI(){
   const badge = document.getElementById("farm-cost-badge");
   if(farmMode === "villa"){
-    document.getElementById("farm-btn").textContent = villaBatchCount > 1 ? `ВИЛЛА ×${villaBatchCount}` : "ВИЛЛА";
-    badge.innerHTML = `${VILLA_PRICE * villaBatchCount} ⭐`;
+    document.getElementById("farm-btn").textContent = villaBatchCount > 1 ? `ФАРМ ×${villaBatchCount}` : "ФАРМ";
+    const fc = villaInfo?.free_credits || 0;
+    badge.innerHTML = fc > 0 ? `БЕСПЛАТНО${fc > 1 ? " ×" + fc : ""}` : `${VILLA_PRICE * villaBatchCount} ⭐`;
     document.getElementById("farm-x10-btn").classList.toggle("armed", villaBatchCount > 1);
     return;
   }
@@ -7650,7 +7858,7 @@ function openFarmBatchModal(){
   const input = document.getElementById("fb-input");
   if(farmMode === "villa"){
     document.getElementById("fb-title").textContent = "Сколько вилл?";
-    document.getElementById("fb-sub").textContent = "Введи число, нажми ОК, потом ВИЛЛА — оплата одним платежом, виллы выпадут сразу";
+    document.getElementById("fb-sub").textContent = "Введи число, нажми ОК, потом ФАРМ — оплата одним платежом, виллы выпадут сразу";
     input.max = villaBatchMax();
     setFbChips(["5", "10", "25", "max"]);
     input.value = Math.min(villaBatchCount > 1 ? villaBatchCount : 5, villaBatchMax());
@@ -7684,7 +7892,7 @@ document.getElementById("fb-ok").addEventListener("click", ()=>{
     villaBatchCount = parseInt(document.getElementById("fb-input").value, 10);
     updateFarmBatchUI();
     document.getElementById("fb-overlay").classList.remove("active");
-    toast(villaBatchCount > 1 ? `Готово: нажми ВИЛЛА — ${villaBatchCount} шт. за ${villaBatchCount * VILLA_PRICE} ⭐` : "Одна вилла");
+    toast(villaBatchCount > 1 ? `Готово: нажми ФАРМ — ${villaBatchCount} шт. за ${villaBatchCount * VILLA_PRICE} ⭐` : "Одна вилла");
     return;
   }
   farmBatchCount = parseInt(document.getElementById("fb-input").value, 10);
@@ -7760,12 +7968,33 @@ let villaBuying = false;
 function villaCounterHTML(){
   if(!villaInfo) return "Загрузка…";
   const f = k => villaInfo.tiers?.[k]?.free ?? 0;
-  return `Свободно · <span class="diamond">DIAMOND ${f("diamond")}</span> · <span class="platinum">PLATINUM ${f("platinum")}</span> · <span class="gold">GOLD ${f("gold")}</span>`;
+  return `Осталось: <span style="color:#ff2d2d !important;">LEGEND ${f("diamond")}</span> · <span style="color:#4ade80;">EPIC ${f("platinum")}</span> · <span style="color:#60a5fa;">RARE ${f("gold")}</span>`;
 }
 async function refreshVillaInfo(){
   try{ villaInfo = await api("/villa/status"); }catch(e){ /* non-critical */ }
-  if(farmMode === "villa") document.getElementById("farm-result-name").innerHTML = villaCounterHTML();
+  if(farmMode === "villa"){ document.getElementById("farm-result-name").innerHTML = villaCounterHTML(); updateFarmBatchUI(); }
 }
+// Countdown until villa sales end: 31 Oct 2026, 23:59:59 Tallinn time (display only for now).
+const VILLA_SALE_END = Date.parse("2026-10-31T23:59:59+02:00");
+function updateVillaTimer(){
+  const el = document.getElementById("farm-villa-timer");
+  if(!el) return;
+  const daysEl = document.getElementById("farm-villa-days");
+  let left = Math.floor((VILLA_SALE_END - Date.now()) / 1000);
+  if(left <= 0){ if(daysEl) daysEl.textContent = ""; el.textContent = "Продажа завершена"; return; }
+  // Days line stays ("23 дня"); the timer below counts ALL the remaining time in hours, e.g. 565:12:03.
+  const d = Math.floor(left / 86400);
+  const h = Math.floor(left / 3600); left -= h * 3600;
+  const m = Math.floor(left / 60), sec = left - m * 60;
+  const pad = n => String(n).padStart(2, "0");
+  const dayWord = (d % 10 === 1 && d % 100 !== 11) ? "день"
+    : ([2, 3, 4].includes(d % 10) && ![12, 13, 14].includes(d % 100)) ? "дня" : "дней";
+  if(daysEl) daysEl.textContent = d > 0 ? `${d} ${dayWord}` : "";
+  el.textContent = `${h}:${pad(m)}:${pad(sec)}`;
+}
+updateVillaTimer();
+setInterval(()=>{ if(farmMode === "villa") updateVillaTimer(); }, 1000);
+
 function setFarmMode(mode){
   farmMode = mode;
   document.getElementById("farm-screen").classList.toggle("mode-villa", mode === "villa");
@@ -7775,7 +8004,8 @@ function setFarmMode(mode){
   document.getElementById("farm-result-rarity").textContent = "";
   document.getElementById("farm-result-number").textContent = "";
   if(mode === "villa"){
-    stage.innerHTML = `<div class="placeholder villa-ph">?</div>`;
+    stage.innerHTML = `<div class="placeholder villa-ph villa-timer-ph"><div class="vt-cap">До конца продаж</div><div class="vt-days" id="farm-villa-days"></div><div class="vt-big" id="farm-villa-timer"></div></div>`;
+    updateVillaTimer();
     nameEl.innerHTML = villaCounterHTML();
     refreshVillaInfo();
   }else{
@@ -7819,14 +8049,31 @@ function showVillaBatchResult(cards){
 }
 function showVillaReveal(card){
   const stage = document.getElementById("farm-stage");
-  stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}?v=${CARD_IMG_VERSION}" alt="${card.name||''}"><div class="rarity-tag ${card.rarity}">STARS</div><div class="drop-number">V${card.villa_number}</div><div class="drop-name">${card.name || ""}</div>`;
-  document.getElementById("farm-result-name").innerHTML = `Тебе выпала вилла <b>V${card.villa_number}</b> — <span class="${card.rarity}">${String(card.rarity).toUpperCase()}</span>!`;
+  stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}?v=${CARD_IMG_VERSION}" alt="${card.name||''}"><div class="rarity-tag ${card.rarity}">${villaTier(card.rarity)}</div><div class="drop-number">#${card.villa_number}</div><div class="drop-name">${card.name || ""}</div>`;
+  document.getElementById("farm-result-name").innerHTML = `Тебе выпала вилла <b>#${card.villa_number}</b> — <span style="color:${({diamond:"#ef4444",platinum:"#4ade80",gold:"#60a5fa"})[card.rarity] || "inherit"};">${String(villaTier(card.rarity)).toUpperCase()}</span>!`;
   tg?.HapticFeedback?.notificationOccurred("success");
+}
+// Free attempt won in the chat giveaway: one tap draws a random villa without paying Stars.
+async function claimFreeVilla(){
+  const btn = document.getElementById("farm-btn");
+  villaBuying = true; btn.disabled = true;
+  try{
+    const r = await api("/villa/claim_free", {});
+    showVillaReveal(r.card);
+    refreshVillaInfo();
+    api("/profile").then(d => { inventory = d.inventory; sortInventoryAndRender(); }).catch(()=>{});
+  }catch(e){
+    toast("Не получилось: " + e.message);
+    refreshVillaInfo();
+  }finally{
+    villaBuying = false; btn.disabled = false;
+  }
 }
 async function buyVilla(){
   if(villaBuying) return;
   const btn = document.getElementById("farm-btn");
   if(!villaInfo) await refreshVillaInfo();
+  if(villaInfo && villaInfo.free_credits > 0){ await claimFreeVilla(); return; }
   if(villaInfo && villaInfo.free <= 0){
     toast("Все виллы разобраны — загляни в Рынок → Виллы");
     setMarketMode("villa"); switchScreen("market-screen"); refreshMarketScreen();
@@ -7836,6 +8083,17 @@ async function buyVilla(){
   villaBuying = true; btn.disabled = true;
   const release = ()=>{ villaBuying = false; btn.disabled = false; };
   try{
+    if(false){
+      // (disabled) owner account used to get villas for free -- now pays 25 ⭐ like everyone
+      const g = await api("/villa/free", { count: want });
+      villaBatchCount = 1;
+      updateFarmBatchUI();
+      if(g.cards.length === 1) showVillaReveal(g.cards[0]);
+      else showVillaBatchResult(g.cards);
+      refreshVillaInfo();
+      api("/profile").then(d => { inventory = d.inventory; sortInventoryAndRender(); }).catch(()=>{});
+      release(); return;
+    }
     const st = await api("/villa/status");
     const before = st.my_last_purchase_id ?? 0;
     const res = await api("/villa/invoice", { count: want });
@@ -7871,6 +8129,99 @@ async function buyVilla(){
     }
   }
 }
+
+
+// ---- Villa shine: finds every <img> showing a villa (src contains /villa/) and puts the animated
+// holographic overlay on its container, colored by the card's rank (rarity-border-X class).
+(function(){
+  const SHINE_PARENTS = ".grid-item, .farm-stage, #zoom-img-wrap";
+  function rankOf(img, host){
+    const m = ((img.className || "") + " " + (host.className || "")).match(/rarity-border-(gold|platinum|diamond)/);
+    return m ? m[1] : null;
+  }
+  const TIER_OF = { gold: "rare", platinum: "epic", diamond: "legend" };
+  function paintBorder(el, tier){
+    ["rare","epic","legend"].forEach(t => { if(el.classList.contains("vb-" + t) !== (t === tier)) el.classList.toggle("vb-" + t, t === tier); });
+  }
+  function sync(img){
+    let host = img.parentElement;
+    if(!host) return;
+    const isVilla = (img.getAttribute("src") || "").includes("/villa/");
+    // Villa borders follow the villa tier colours (blue / green / red) instead of gold / platinum / diamond.
+    const bEl = img.closest('[class*="rarity-border-"]');
+    const bm = isVilla && bEl ? bEl.className.match(/rarity-border-(gold|platinum|diamond)/) : null;
+    const tier = bm ? TIER_OF[bm[1]] : null;
+    if(bEl) paintBorder(bEl, tier);
+    if(bEl !== img && img.className && /rarity-border-/.test(img.className)) paintBorder(img, tier);
+    if(isVilla && host.matches(".market-item")){
+      const w = document.createElement("span");
+      w.className = "villa-wrap";
+      host.insertBefore(w, img); w.appendChild(img);
+      host = w;
+    }
+    if(!(host.matches(SHINE_PARENTS) || host.classList.contains("villa-wrap"))) return;
+    const rank = isVilla ? rankOf(img, host) : null;
+    if(rank){
+      if(host.dataset.vr !== rank) host.dataset.vr = rank;
+      if(!host.classList.contains("villa-shine")){
+        host.style.setProperty("--d", `-${(Math.random() * 3).toFixed(2)}s`);
+        host.classList.add("villa-shine");
+      }
+    }else if(host.classList.contains("villa-shine")){
+      host.classList.remove("villa-shine"); delete host.dataset.vr;
+    }
+  }
+  function scan(root){
+    if(root.nodeType !== 1) return;
+    if(root.tagName === "IMG") sync(root);
+    root.querySelectorAll && root.querySelectorAll("img").forEach(sync);
+  }
+  const obs = new MutationObserver(muts => {
+    for(const m of muts){
+      if(m.type === "childList") m.addedNodes.forEach(scan);
+      else if(m.target.tagName === "IMG") sync(m.target);
+    }
+  });
+  obs.observe(document.body, {childList:true, subtree:true, attributes:true, attributeFilter:["src","class"]});
+  scan(document.body);
+})();
+
+// Villa tier tags (LEGEND / EPIC / RARE): whatever tag shows one of these words gets the
+// red / green / blue gradient instead of the gold / platinum / diamond one.
+(function(){
+  const SEL = ".rarity-tag, .modal-rarity-tag, .zoom-rarity-tag";
+  const TIERS = new Set(["legend", "epic", "rare"]);
+  function fix(el){
+    if(!el || el.nodeType !== 1 || !el.matches || !el.matches(SEL)) return;
+    const t = (el.textContent || "").trim().toLowerCase();
+    if(TIERS.has(t)){
+      const want = "vt-" + t;
+      ["gold","platinum","diamond"].forEach(c => { if(el.classList.contains(c)) el.classList.remove(c); });
+      if(!el.classList.contains(want)) el.classList.add(want);
+    }else{
+      ["vt-legend","vt-epic","vt-rare"].forEach(c => { if(el.classList.contains(c)) el.classList.remove(c); });
+    }
+  }
+  function scan(root){
+    if(!root || root.nodeType !== 1) return;
+    fix(root);
+    root.querySelectorAll && root.querySelectorAll(SEL).forEach(fix);
+  }
+  const obs = new MutationObserver(muts => {
+    for(const m of muts){
+      if(m.type === "childList"){
+        fix(m.target.closest ? m.target.closest(SEL) : null);
+        m.addedNodes.forEach(n => n.nodeType === 1 ? scan(n) : fix(n.parentElement));
+      }else if(m.type === "characterData"){
+        fix(m.target.parentElement && m.target.parentElement.closest(SEL));
+      }else{
+        fix(m.target);
+      }
+    }
+  });
+  obs.observe(document.body, {childList:true, subtree:true, characterData:true, attributes:true, attributeFilter:["class"]});
+  scan(document.body);
+})();
 
 // ---------- Profile ----------
 async function loadProfile(){
@@ -7916,7 +8267,16 @@ document.getElementById("profile-rarity-sort-btn").addEventListener("click", ()=
 
 function sortInventoryAndRender(){
   const state = PROFILE_SORT_STATES[profileSortStateIndex];
+  // Villas first, then Obsidian, then everything else (by the chosen sort).
+  const grp = c => isVillaNum(c.drop_number) ? 0 : (c.custom_name ? 1 : 2);
   inventory.sort((a, b) => {
+    const ga = grp(a), gb = grp(b);
+    if(ga !== gb) return ga - gb;
+    if(ga < 2){
+      const rx = RARITY_ORDER[a.rarity] ?? 4, ry = RARITY_ORDER[b.rarity] ?? 4;
+      if(rx !== ry) return rx - ry;
+      return a.drop_number - b.drop_number;
+    }
     if(state === "number_asc") return a.drop_number - b.drop_number;
     if(state === "number_desc") return b.drop_number - a.drop_number;
     const ra = RARITY_ORDER[a.rarity] ?? 4, rb = RARITY_ORDER[b.rarity] ?? 4;
@@ -7946,15 +8306,25 @@ document.getElementById("profile-rarity-filters").addEventListener("click", (e)=
   renderProfileGrid();
 });
 
+function profileVisibleItems(){
+  return !profileRarityFilter ? inventory : inventory.filter(c => matchRankFilter(c, profileRarityFilter));
+}
+
 function renderProfileGrid(){
   const grid = document.getElementById("profile-grid");
-  const items = !profileRarityFilter ? inventory
-    : profileRarityFilter === "obsidian" ? inventory.filter(c => !!c.custom_name)
-    : inventory.filter(c => c.rarity === profileRarityFilter && !c.custom_name);
+  const items = profileVisibleItems();
+  // villa tier buttons show how many of that tier you own
+  [["v-diamond","LEGEND"],["v-platinum","EPIC"],["v-gold","RARE"]].forEach(([k, label])=>{
+    const b = document.querySelector(`#profile-rarity-filters [data-rarity="${k}"]`);
+    if(!b) return;
+    const n = inventory.filter(c => matchRankFilter(c, k)).length;
+    b.textContent = n ? `${label} · ${n}` : label;
+  });
   if(items.length === 0){
     grid.innerHTML = "";
     document.getElementById("empty-hint")?.remove();
-    const emptyText = profileRarityFilter ? "Нет карт такой редкости" : "Пока пусто — иди фармить 🌱";
+    const emptyText = (profileRarityFilter || "").startsWith("v-") ? "У тебя пока нет таких вилл — купить можно во вкладке Фарм"
+      : profileRarityFilter ? "Нет карт такой редкости" : "Пока пусто — иди фармить 🌱";
     grid.insertAdjacentHTML("afterend", `<div class="empty-state" id="empty-hint">${emptyText}</div>`);
     return;
   }
@@ -7986,7 +8356,23 @@ function renderProfileGrid(){
 // sortInventoryAndRender/renderProfileGrid above).
 const WALL_MAX_CARDS = 9;
 
+let wallFilter = null; // null = every card; "obsidian" | "diamond" | "platinum" | "gold" | "v-diamond" | "v-platinum" | "v-gold"
+document.getElementById("wall-filters").addEventListener("click", (e)=>{
+  const btn = e.target.closest(".pvp-picker-rarity-btn");
+  if(!btn) return;
+  wallFilter = wallFilter === btn.dataset.rarity ? null : btn.dataset.rarity; // tap again to clear
+  renderWallModal();
+});
+function wallItems(){
+  const f = wallFilter;
+  const list = !f ? inventory : inventory.filter(c => matchRankFilter(c, f));
+  // Order: pinned cards (in the order they were pinned -- inventory already has them first),
+  // then Obsidian, then DIAMOND -> PLATINUM -> GOLD (stable, so ties keep the inventory order).
+  const tier = c => c.pinned_at ? 0 : c.custom_name ? 1 : 2 + (RARITY_ORDER[c.rarity] ?? 4);
+  return [...list].sort((a, b) => tier(a) - tier(b));
+}
 function renderWallModal(){
+  document.querySelectorAll("#wall-filters .pvp-picker-rarity-btn").forEach(b => b.classList.toggle("active", b.dataset.rarity === wallFilter));
   const pinnedCount = inventory.filter(c => c.pinned_at).length;
   document.getElementById("wall-sub").textContent =
     `Нажми на карту, чтобы закрепить или снять со Стены (${pinnedCount}/${WALL_MAX_CARDS})`;
@@ -7995,10 +8381,15 @@ function renderWallModal(){
     grid.innerHTML = `<div class="empty-state">Пока пусто — иди фармить</div>`;
     return;
   }
-  grid.innerHTML = inventory.map(c => `
-    <div class="grid-item rarity-border-${c.rarity}${c.pinned_at ? " pinned" : ""}" data-uc="${c.user_card_id}">
+  const shown = wallItems();
+  if(!shown.length){
+    grid.innerHTML = `<div class="empty-state">Нет карт такого типа</div>`;
+    return;
+  }
+  grid.innerHTML = shown.map(c => `
+    <div class="grid-item rarity-border-${c.rarity}${c.custom_name ? " obsidian-border" : ""}${c.pinned_at ? " pinned" : ""}" data-uc="${c.user_card_id}">
       <img src="/static/cards/${c.filename}?v=${CARD_IMG_VERSION}" alt="${c.name||''}">
-      <div class="rarity-tag ${c.rarity}">${rarityTagText(c.rarity, c.drop_number)}</div>
+      <div class="rarity-tag ${c.custom_name ? "obsidian" : c.rarity}">${c.custom_name ? "OBSIDIAN" : rarityTagText(c.rarity, c.drop_number)}</div>
       <div class="drop-number">${fmtNum(c.drop_number)}</div>
       ${c.pinned_at ? `<div class="wall-pin-tag"><svg viewBox="0 0 24 24" width="9" height="9"><rect x="7" y="2" width="10" height="2.2" rx="1" fill="#fff"/><rect x="10.5" y="4" width="3" height="12" fill="#fff"/><polygon points="10.5,16 13.5,16 12,21" fill="#fff"/></svg></div>` : ""}
     </div>
@@ -8065,10 +8456,15 @@ async function renderCollectionsList(){
     list.innerHTML = `<div class="empty-state">Пока нет ни одной коллекции</div>`;
     return;
   }
+  // Order: villas first, then hard (diamond), medium (platinum), easy (gold) at the bottom.
+  const collDiff = c => c.key === "villas10" ? "villa" : (c.total >= 10 ? "hard" : (c.total >= 7 ? "mid" : "easy"));
+  const collOrder = { villa: 0, hard: 1, mid: 2, easy: 3 };
+  collections = collections.map((c, i) => [c, i]).sort((a, b) => (collOrder[collDiff(a[0])] - collOrder[collDiff(b[0])]) || (a[1] - b[1])).map(x => x[0]);
+  collectionOrderIds = collections.map(c => c.id);
   list.innerHTML = collections.map(c => {
     const pct = c.total ? Math.round((c.placed / c.total) * 100) : 0;
     return `
-      <div class="collection-row${c.completed ? " completed" : ""}" data-id="${c.id}">
+      <div class="collection-row${c.completed ? " completed" : ""} diff-${collDiff(c)}" data-id="${c.id}">
         <div class="icon">${c.icon_image ? `<img src="/static/cards/${c.icon_image}?v=${CARD_IMG_VERSION}" alt="">` : (c.icon || "📁")}</div>
         <div class="info">
           <div class="name">${c.name}${c.completed ? '<span class="badge">ГОТОВО</span>' : ""}</div>
@@ -8145,8 +8541,13 @@ async function renderCollectionDetail(){
   }
   const placedCount = detail.cards.filter(c => c.placed).length;
   title.innerHTML = `${detail.icon || ""} ${detail.name}${detail.completed ? ' <span class="badge">ГОТОВО</span>' : ""}`;
-  progress.textContent = `${placedCount}/${detail.cards.length} собрано`;
+  progress.textContent = `${placedCount}/${detail.total || detail.cards.length} собрано`;
+  if(detail.just_completed && detail.key === "villas10"){
+    toast("🏆 Коллекция «Виллы» собрана! +100 гемов");
+    refreshGems();
+  }
   grid.innerHTML = detail.cards.map(c => {
+    if(c.empty) return `<div class="grid-item collection-slot empty"></div>`;
     const state = c.placed ? "placed" : (c.owned ? "owned" : "not-owned");
     return `
       <div class="grid-item collection-slot ${state}" data-card-id="${c.card_id}">
@@ -8205,7 +8606,7 @@ async function renderAchievementsList(){
         <div class="achv-iconbox${c.completed ? " unlocked" : ""}">${iconInner}</div>
         <div class="achv-body">
           <div class="achv-name">${c.name}${c.completed ? '<span class="achv-done-badge">ГОТОВО</span>' : ""}</div>
-          <div class="achv-desc">Собери все карты коллекции</div>
+          <div class="achv-desc">${c.desc || "Собери все карты коллекции"}</div>
           <div class="achv-progress-row">
             <div class="achv-bar"><div class="achv-bar-fill" style="width:${pct}%"></div></div>
             <div class="achv-progress-text">${c.placed}/${c.total}</div>
@@ -8308,7 +8709,6 @@ function openModalAt(index){
   updateSellButton(item);
   updateSwapButton(item);
   updateStakeButton(item);
-  updateCraftButton(item);
   updateNumberButton(item);
   updateCustomButton(item);
 }
@@ -8338,7 +8738,7 @@ function updateCustomButton(item){
 // Player rank (time-played tier, NOT card rarity) — colors the avatar ring + profile
 // card border and shows a small badge next to the name. Mirrors database.py's
 // PLAYER_RANK_COLORS.
-const PLAYER_RANK_COLORS = { bronze: "#cd7f32", silver: "#9ca3af", gold: "#facc15", platinum: "#a78bfa", diamond: "#ff2fb0" };
+const PLAYER_RANK_COLORS = { bronze: "#cd7f32", silver: "#9ca3af", gold: "#facc15", platinum: "#a78bfa", diamond: "#ff2fb0", obsidian: "#e5e7eb", rare: "#3b82f6", epic: "#22c55e", legend: "#ef4444" };
 let currentPlayerRank = "bronze";
 function applyPlayerRank(rank){
   currentPlayerRank = rank || "bronze";
@@ -8358,7 +8758,7 @@ function applyPlayerRank(rank){
 
 // Mirrors database.py's RANK_TIERS order — used to compare rows against the
 // player's current rank so a "Купить" button only shows for ranks above it.
-const RANK_TIERS = ["bronze", "silver", "gold", "platinum", "diamond"];
+const RANK_TIERS = ["bronze", "silver", "gold", "platinum", "diamond", "obsidian", "rare", "epic", "legend"];
 function openRankInfo(){
   const currentTierIdx = RANK_TIERS.indexOf(currentPlayerRank);
   document.querySelectorAll("#rank-info-rows .rank-info-row").forEach(row=>{
@@ -8438,29 +8838,7 @@ function updateNumberButton(item){
   const numberMode = RARE_NUMBERS_SET.has(item.drop_number) && !busy;
   btn.style.display = numberMode ? "" : "none";
   btn.textContent = numberMode ? `Номер ${fmtNum(item.drop_number)}` : "";
-  syncNumberCraftRow();
 }
-// The Номер + Крафт row is only shown when at least one of them is visible (no empty gap otherwise).
-function syncNumberCraftRow(){
-  const row = document.getElementById("modal-number-craft-row");
-  const n = document.getElementById("modal-number"), c = document.getElementById("modal-craft");
-  row.style.display = (n.style.display === "none" && c.style.display === "none") ? "none" : "";
-}
-
-function updateCraftButton(item){
-  const btn = document.getElementById("modal-craft");
-  const busy = !!(item.staked_at || item.listed_price || item.swap_listed || item.pvp_round_id || item.pinned_at || item.in_giveaway);
-  btn.style.display = item.custom_name ? "none" : ""; // Obsidian can't be crafted
-  btn.disabled = busy;
-  btn.classList.toggle("disabled", busy);
-  if(busy){
-    btn.textContent = item.in_giveaway ? "Разыгрывается в чате" : "Недоступно";
-  }else{
-    btn.textContent = "Крафт";
-  }
-  syncNumberCraftRow();
-}
-
 function updateSellButton(item){
   const btn = document.getElementById("modal-sell");
   btn.classList.remove("active", "listed");
@@ -8485,8 +8863,12 @@ function updateSellButton(item){
     return;
   }
   if(item.listed_price){
-    btn.textContent = `Убрать с продажи (${item.listed_price})`;
+    btn.textContent = "Отмена";
     btn.classList.add("listed");
+  }else if(item.swap_listed){
+    // already up for swap -- can't also be sold until the swap is cancelled
+    btn.textContent = "Продать";
+    btn.disabled = true;
   }else{
     btn.textContent = "Продать";
     btn.classList.add("active");
@@ -8517,8 +8899,12 @@ function updateSwapButton(item){
     return;
   }
   if(item.swap_listed){
-    btn.textContent = "Снять с обмена";
+    btn.textContent = "Отмена";
     btn.classList.add("listed");
+  }else if(item.listed_price){
+    // already on sale -- can't also be swapped until the listing is cancelled
+    btn.textContent = "Обмен";
+    btn.disabled = true;
   }else{
     btn.textContent = "Обмен";
     btn.classList.add("active");
@@ -8567,12 +8953,17 @@ modalCardEl.addEventListener("touchstart", (e)=>{
   touchStartY = e.touches[0].clientY;
 }, { passive: true });
 modalCardEl.addEventListener("touchend", (e)=>{
-  if(inventory.length <= 1) return;
+  // Swipe only through what the profile grid currently shows (e.g. just the ВИЛЛЫ filter),
+  // not the whole inventory.
+  let list = profileVisibleItems();
+  let pos = list.findIndex(c => c.user_card_id === selectedUserCardId);
+  if(pos === -1){ list = inventory; pos = modalIndex; }
+  if(list.length <= 1) return;
   const dx = e.changedTouches[0].clientX - touchStartX;
   const dy = e.changedTouches[0].clientY - touchStartY;
   if(Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)){
-    if(dx < 0) openModalAt((modalIndex + 1) % inventory.length);
-    else openModalAt((modalIndex - 1 + inventory.length) % inventory.length);
+    const next = dx < 0 ? (pos + 1) % list.length : (pos - 1 + list.length) % list.length;
+    openModal(list[next].user_card_id);
   }
 }, { passive: true });
 
@@ -8839,107 +9230,16 @@ document.getElementById("modal-stake").addEventListener("click", async ()=>{
   }
 });
 
-// Mirrors database.py's CRAFT_COST_GEMS — craft price scales with the rarity being burned.
-const CRAFT_COST_BY_RARITY = { gold: 50, platinum: 300, diamond: 500 };
-// Mirrors database.py's CRAFT_WEIGHTS — client-side copy for the chance-hint display only.
-// Mirrors database.py's CRAFT_WEIGHTS — crafting never produces a tier BELOW the one
-// burned, so each row only lists tiers same-or-higher (burn Gold, only Gold/Platinum/
-// Diamond are possible).
-const CRAFT_CHANCES = {
-  gold:     { gold: 79, platinum: 20, diamond: 1 },
-  platinum: { platinum: 80, diamond: 20 },
-  diamond:  { diamond: 100 },
-};
-function craftHintHTML(rarity){
-  const t = CRAFT_CHANCES[rarity] || CRAFT_CHANCES.gold;
-  const fmt = (v) => (v % 1 === 0 ? v : v.toFixed(1));
-  const parts = ["diamond", "platinum", "gold", "silver", "bronze"]
-    .filter(r => t[r] !== undefined)
-    .map(r => `<span class="${r}">${r.toUpperCase()} ${fmt(t[r])}%</span>`);
-  return parts.length > 3 ? parts.slice(0,3).join(" · ") + "<br>" + parts.slice(3).join(" · ") : parts.join(" · ");
-}
-document.getElementById("modal-craft").addEventListener("click", async ()=>{
-  if(document.getElementById("modal-craft").disabled) return;
-  if(!selectedItem) return;
-  if(selectedItem.in_giveaway){
-    toast("Карта сейчас разыгрывается в чате");
-    return;
-  }
-  if(selectedItem.staked_at || selectedItem.listed_price || selectedItem.swap_listed){
-    toast("Сначала снимите карту с продажи/обмена/стейкинга");
-    return;
-  }
-  const craftCost = CRAFT_COST_BY_RARITY[selectedItem.rarity] || CRAFT_COST_BY_RARITY.gold;
-  const currentGems = gemsBalance;
-  if(currentGems < craftCost){
-    toastHTML(`Не хватает гемов — нужно ${craftCost} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
-    return;
-  }
-  const craftRarityLabel = (r) => r ? r[0].toUpperCase() + r.slice(1) : "Bronze";
-  const craftChances = CRAFT_CHANCES[selectedItem.rarity] || CRAFT_CHANCES.gold;
-  const craftChanceLines = ["diamond", "platinum", "gold"]
-        .filter(r => craftChances[r] !== undefined)
-        .map(r => `${craftRarityLabel(r)}: ${craftChances[r] % 1 === 0 ? craftChances[r] : craftChances[r].toFixed(1)}%`)
-        .join("\n");
-  const craftConfirmed = await confirmAction(
-    `Крафт стоит ${craftCost} гемов, карта (${craftRarityLabel(selectedItem.rarity)}) будет уничтожена.\n\nШансы получить:\n${craftChanceLines}\n\nПродолжить?`
-  );
-  if(!craftConfirmed) return;
-
-  const craftUserCardId = selectedUserCardId;
-  const craftInputRarity = selectedItem.rarity;
-  document.getElementById("modal-overlay").classList.remove("active");
-  switchScreen("farm-screen");
-
-  const mySeq = ++farmRequestSeq; // also invalidates any in-flight farm, so it can't clobber this result
-  try{
-    const cards = await ensureAllCards();
-    const craftHint = craftHintHTML(craftInputRarity);
-    await startFarmAnimation(cards, craftHint);
-    if(mySeq !== farmRequestSeq) return;
-    const card = await api("/craft", { user_card_id: craftUserCardId });
-    if(mySeq !== farmRequestSeq) return;
-    document.getElementById("total-farmed").textContent = card.total_farmed; // a failed diamond craft destroys the card, so this can go DOWN
-    const stage = document.getElementById("farm-stage");
-    const rarityEl = document.getElementById("farm-result-rarity");
-    if(card.success === false){
-      stage.innerHTML = `<div class="placeholder">🔥</div><div class="drop-name">Карта уничтожена без результата</div>`;
-      document.getElementById("farm-result-number").textContent = "";
-      rarityEl.textContent = "";
-      rarityEl.className = "";
-      setGemsDisplay(card.gems);
-      tg?.HapticFeedback?.notificationOccurred("error");
-    }else{
-      stage.innerHTML = `<img class="rarity-border-${card.rarity}" src="/static/cards/${card.filename}?v=${CARD_IMG_VERSION}" alt="${card.name||''}"><div class="rarity-tag ${card.rarity}">${rarityTagText(card.rarity, card.drop_number)}</div><div class="drop-number">${fmtNum(card.drop_number)}</div><div class="drop-name">${card.name || "Новая картинка!"}</div>`;
-      document.getElementById("farm-result-number").textContent = `№${card.drop_number}`;
-      rarityEl.textContent = card.rarity || "";
-      rarityEl.className = card.rarity || "";
-      setGemsDisplay(card.gems);
-      tg?.HapticFeedback?.notificationOccurred("success");
-    }
-  }catch(e){
-    if(mySeq !== farmRequestSeq) return;
-    document.getElementById("farm-progress-wrap").classList.remove("active");
-    clearInterval(farmCycleTimer);
-    clearInterval(farmProgressTimer);
-    if(String(e.message).includes("not enough gems")){
-      toastHTML(`Не хватает гемов — нужно ${craftCost} <img src="/static/icons/diamond.png" alt="" style="width:14px;height:14px;vertical-align:-2px;">`);
-    }else{
-      toast("Ошибка крафта: " + e.message);
-    }
-  }
-});
-
 // ---------- Gem cases ("Кейсы") ----------
 const CASES = [
   {key:"hamster", name:"Хомяк", price:100, image:"case/case_hamster.jpg",
-   weights:{gold:97, platinum:2.5, diamond:0.5}},
+   weights:{gold:74.2, platinum:23, diamond:2.8}},
   {key:"duck", name:"Уточка", price:200, image:"case/case_utya.jpg",
-   weights:{gold:96, platinum:3, diamond:1}},
+   weights:{gold:25.4, platinum:70, diamond:4.6}},
   {key:"capybara", name:"Капибара", price:400, image:"case/case_capybara.jpg",
-   weights:{gold:15, platinum:85}},
+   weights:{platinum:85.3, diamond:14.7}},
   {key:"pepe", name:"Пепе", price:1000, image:"case/case_pep.jpg",
-   weights:{platinum:85, diamond:15}},
+   weights:{platinum:50, diamond:50}},
 ];
 
 function caseHintHTML(def){
@@ -9565,17 +9865,15 @@ async function openCustomNftFlow(){
   try{
     const namesRes = await api("/names/mine");
     const freeNames = namesRes.names.filter(n => !n.user_card_id || n.user_card_id === targetCardId);
-    if(!freeNames.length){
-      toast("Сначала создай/купи свободное имя в блоке «Имена»");
-      return;
-    }
     const numbersRes = await api("/numbers/mine");
     const freeNumbers = numbersRes.numbers.filter(n => !n.user_card_id || n.user_card_id === targetCardId);
     if(!freeNumbers.length){
       toast("Сначала выиграй/купи свободный номер в блоке «Номера»");
       return;
     }
-    const chosenName = await openSimplePicker("Выбери имя", freeNames, n => n.name);
+    // The name is optional: the first row keeps the card's current name (no name from the bank needed).
+    const nameOptions = [{keep:true, name:""}, ...freeNames];
+    const chosenName = await openSimplePicker("Выбери имя", nameOptions, n => n.keep ? "Оставить прежнее имя" : n.name);
     if(!chosenName) return;
     const chosenNumber = await openSimplePicker("Выбери номер", freeNumbers, n => "#" + n.number);
     if(!chosenNumber) return;
@@ -9610,7 +9908,7 @@ const RARITY_LABEL = {bronze:"Bronze", silver:"Silver", gold:"Gold", platinum:"P
 const RARITY_COLOR = {bronze:"#cd7f32", silver:"#9ca3af", gold:"#facc15", platinum:"#a78bfa", diamond:"#ff2fb0"};
 
 function countEligibleCards(rarity){
-  return inventory.filter(c => c.rarity === rarity && !c.custom_name && !c.staked_at && !c.listed_price && !c.swap_listed && !c.pvp_round_id && !c.in_giveaway).length;
+  return inventory.filter(c => c.rarity === rarity && !isVillaNum(c.drop_number) && !c.custom_name && !c.staked_at && !c.listed_price && !c.swap_listed && !c.pvp_round_id && !c.in_giveaway).length;
 }
 
 function renderBurnGrid(){
@@ -9681,7 +9979,7 @@ function openBurnPicker(recipe){
 
 function renderBurnPickerGrid(){
   const grid = document.getElementById("burn-picker-grid");
-  const eligible = inventory.filter(c => c.rarity === burnPickerRarity && !c.custom_name && !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.pinned_at && !c.in_giveaway);
+  const eligible = inventory.filter(c => c.rarity === burnPickerRarity && !isVillaNum(c.drop_number) && !c.custom_name && !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.pinned_at && !c.in_giveaway);
   if(eligible.length === 0){
     grid.innerHTML = `<div class="empty-state">Нет подходящих карт</div>`;
     return;
@@ -9718,7 +10016,7 @@ document.getElementById("burn-picker-cancel").addEventListener("click", ()=>{
 // a whole stack evolves in one confirm instead of repeating the 4-card cycle by hand.
 // A second tap while something is already selected clears the selection back to zero.
 document.getElementById("burn-picker-select-all").addEventListener("click", ()=>{
-  const eligible = inventory.filter(c => c.rarity === burnPickerRarity && !c.custom_name && !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.pinned_at && !c.in_giveaway);
+  const eligible = inventory.filter(c => c.rarity === burnPickerRarity && !isVillaNum(c.drop_number) && !c.custom_name && !c.pvp_round_id && !c.listed_price && !c.swap_listed && !c.staked_at && !c.pinned_at && !c.in_giveaway);
   if(burnPickerSelected.size > 0){
     burnPickerSelected = new Set();
   }else{
@@ -9745,8 +10043,8 @@ document.getElementById("burn-picker-confirm").addEventListener("click", async (
   const batches = n / burnPickerCount;
   const confirmed = await confirmAction(
     batches === 1
-      ? `Эволюционировать эти ${burnPickerCount} карт(ы) в 1 карту редкости ${RARITY_LABEL[burnPickerTarget]}?\n\nБесплатно, гарантированный результат, но карты уничтожаются безвозвратно. Продолжить?`
-      : `Эволюционировать ${n} карт (${batches} раз по ${burnPickerCount}) в ${batches} карт(ы) редкости ${RARITY_LABEL[burnPickerTarget]}?\n\nБесплатно, гарантированный результат, но карты уничтожаются безвозвратно. Продолжить?`
+      ? `Эволюционировать эти ${burnPickerCount} карт(ы) в 1 карту редкости ${RARITY_LABEL[burnPickerTarget]}?\n\nБесплатно, шанс успеха 90%. При неудаче (10%) карты сгорают, при успехе — тоже уничтожаются. Продолжить?`
+      : `Эволюционировать ${n} карт (${batches} раз по ${burnPickerCount}) в ${batches} карт(ы) редкости ${RARITY_LABEL[burnPickerTarget]}?\n\nБесплатно, шанс успеха 90%. При неудаче (10%) карты сгорают, при успехе — тоже уничтожаются. Продолжить?`
   );
   if(!confirmed) return;
   const rarity = burnPickerRarity;
@@ -9794,7 +10092,7 @@ function showBurnBulkResult(recipe, totalBatches, successes, gained){
   const rarityEl = document.getElementById("farm-result-rarity");
 
   const gainedLine = Object.entries(gained).map(([r, n]) => `${n}× ${RARITY_LABEL[r] || r}`).join(", ") || "ничего";
-  stage.innerHTML = `<div class="placeholder">${successes > 0 ? "✨" : "❌"}</div><div class="drop-name">Готово: ${successes}/${totalBatches} успешно</div>`;
+  stage.innerHTML = `<div class="placeholder" style="${successes > 0 ? 'color:inherit;' : ''}">${successes > 0 ? '<svg width="96" height="96" viewBox="0 0 96 96" fill="none"><circle cx="48" cy="48" r="42" fill="rgba(34,197,94,.14)" stroke="#22c55e" stroke-width="4"/><path d="M28 50l14 14 27-30" stroke="#22c55e" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/></svg>' : "❌"}</div><div class="drop-name">Готово: ${successes}/${totalBatches} успешно</div>`;
   document.getElementById("farm-result-number").textContent = `Получено: ${gainedLine}`;
   rarityEl.textContent = recipe.target || "";
   rarityEl.className = recipe.target || "";
@@ -9929,7 +10227,7 @@ document.getElementById("referral-share-btn").addEventListener("click", ()=>{
     return;
   }
   const refLink = `https://t.me/Peeppobot?start=ref${myId}`;
-  openShareSheet(refLink, "Залетай в Peeppo — фарми, торгуй, обменивайся и крафти карточки! 🎮");
+  openShareSheet(refLink, "Залетай в Peeppo — фарми, торгуй, обменивайся и собирай карточки! 🎮");
   document.getElementById("referral-overlay").classList.remove("active");
 });
 
@@ -9950,7 +10248,7 @@ document.getElementById("invite-btn").addEventListener("click", ()=>{
     return;
   }
   const refLink = `https://t.me/Peeppobot?start=ref${myId}`;
-  openShareSheet(refLink, "Залетай в Peeppo — фарми, торгуй, обменивайся и крафти карточки! 🎮");
+  openShareSheet(refLink, "Залетай в Peeppo — фарми, торгуй, обменивайся и собирай карточки! 🎮");
 });
 
 // initial load

@@ -188,6 +188,7 @@ class SwapOfferBody(InitDataBody):
 
 class PvpJoinBody(InitDataBody):
     user_card_ids: list[int]
+    round_id: int | None = None  # the round the player was looking at when he tapped stake
 
 
 class RedBlackPlayBody(InitDataBody):
@@ -315,7 +316,7 @@ class NameBuyListedBody(InitDataBody):
 
 class CustomNftCreateBody(InitDataBody):
     user_card_id: int
-    name: str
+    name: str = ""  # empty = keep the card's current name
     number: int
 
 
@@ -477,7 +478,8 @@ def villa_status(body: InitDataBody):
     latest = db.get_latest_villa(user["telegram_id"])
     return {**db.get_villa_overview(), "my_latest_uc_id": latest["user_card_id"] if latest else None,
             "my_last_purchase_id": db.get_last_villa_purchase_id(user["telegram_id"]),
-            "batch_max": db.VILLA_BATCH_MAX}
+            "batch_max": db.VILLA_BATCH_MAX,
+            "free_credits": db.get_villa_free_credits(user["telegram_id"])}
 
 
 class VillaInvoiceBody(InitDataBody):
@@ -486,6 +488,34 @@ class VillaInvoiceBody(InitDataBody):
 
 class VillaSinceBody(InitDataBody):
     after_id: int = 0
+
+
+@app.post("/api/villa/free")
+def villa_free(body: VillaInvoiceBody):
+    """Owner-only: grants `count` random villas with NO Stars payment (same draw/numbering as a
+    paid purchase). Only the ADMIN_ID account may call it.
+    DISABLED: the owner pays for villas with Stars like everyone else."""
+    raise HTTPException(410, "free villas have been disabled")
+    user = _authenticate(body.initData)
+    if not (ADMIN_ID and str(user["telegram_id"]) == str(ADMIN_ID)):
+        raise HTTPException(403, "admin only")
+    count = body.count
+    if count < 1 or count > db.VILLA_BATCH_MAX:
+        raise HTTPException(400, f"count must be 1..{db.VILLA_BATCH_MAX}")
+    res = db.buy_random_villas(user["telegram_id"], None, count, 0)
+    if not isinstance(res, list):
+        raise HTTPException(400, "not enough villas left")
+    return {"cards": res}
+
+
+@app.post("/api/villa/claim_free")
+def villa_claim_free(body: InitDataBody):
+    """Spends one free-villa attempt won in the chat giveaway and returns the villa drawn."""
+    user = _authenticate(body.initData)
+    card = db.claim_free_villa(user["telegram_id"])
+    if card is None:
+        raise HTTPException(400, "no free villa attempts")
+    return {"card": card}
 
 
 @app.post("/api/villa/since")
@@ -736,15 +766,9 @@ def swap_unlist(body: SwapListBody):
 
 @app.post("/api/craft")
 def craft(body: CraftBody):
-    user = _authenticate(body.initData)
-    try:
-        result = db.craft_card(user["telegram_id"], body.user_card_id)
-    except db.CraftNotOwned:
-        raise HTTPException(404, "card not found in your inventory, or it's busy (staked/listed for sale or swap/in a PvP round)")
-    except db.InsufficientGems:
-        raise HTTPException(400, "not enough gems")
-    result["gems"] = db.get_gems(user["telegram_id"])
-    return result
+    """Craft was removed from the game -- kept as a stub so old clients get a clear error."""
+    _authenticate(body.initData)
+    raise HTTPException(410, "craft has been removed")
 
 
 @app.post("/api/case/open")
@@ -832,11 +856,11 @@ async def pvp_join(body: PvpJoinBody):
     if not body.user_card_ids:
         raise HTTPException(400, "stake at least one card")
     try:
-        state = db.join_pvp_round(user["telegram_id"], body.user_card_ids)
+        state = db.join_pvp_round(user["telegram_id"], body.user_card_ids, body.round_id)
     except db.PvpCardNotOwned:
         raise HTTPException(400, "one of the cards isn't yours, or is already busy (listed/staked/in a round)")
     except db.PvpRoundLocked:
-        raise HTTPException(409, "round already locked, try again in a moment")
+        raise HTTPException(409, "Раунд уже закончился — карты не поставлены")
 
     # No chat ping when a new round opens anymore — the in-app pulsing PvP dot
     # (see webapp's checkPvpAmbient) is the only "something's happening" signal now.
@@ -1258,7 +1282,9 @@ def crypto_status(body: InitDataBody):
 async def _announce_collection_completions(user: dict, collection_names: list[str]):
     """Posts to PUBLIC_CHAT for every newly-completed collection in this request --
     skipped entirely for rzabeyda/zzabeyda (dev/test accounts), same exclusion the
-    diamond-farm announcement already uses."""
+    diamond-farm announcement already uses.
+    DISABLED: collection completions are no longer announced in the public chat."""
+    return
     if not collection_names:
         return
     if (user.get("username") or "").lower() in ("rzabeyda", "zzabeyda"):

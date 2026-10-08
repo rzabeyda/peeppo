@@ -164,7 +164,7 @@ async def handle_start(message: Message):
         photo=FSInputFile(STATIC_CARDS_DIR / "black_pepe.jpg"),
         caption=(
             "Добро Пожаловать в <b>Peeppo</b>!\n\n"
-            "Жми Фарм — собирай карточки, играй в PvP, крафти, обменивайся или продавай "
+            "Жми Фарм — собирай карточки, играй в PvP, обменивайся или продавай "
             "на рынке. Обменивай Diamond карты на Telegram Stars."
         ),
         reply_markup=_open_button(),
@@ -222,7 +222,6 @@ async def handle_admin_panel(message: Message):
         "",
         f"Фарм: <b>{stats['farms_pressed']}</b>",
         f"Эволюция: <b>{stats['cards_evolved']}</b>",
-        f"Крафт: <b>{stats['cards_crafted']}</b>",
         f"Кейсы: <b>{stats['cases_bought']}</b>",
         f"Обмен: <b>{stats['blind_swaps_completed']}</b>",
         "",
@@ -232,6 +231,35 @@ async def handle_admin_panel(message: Message):
     for key in ("redblack", "mines", "aviator", "poker", "plinko"):
         lines.append(_house_stats_line(key, all_stats[key]))
     await message.answer("\n".join(lines), parse_mode="HTML")
+
+
+@dp.message(Command("users"))
+async def handle_users_stats(message: Message):
+    """Admin-only: total players, how many were active today, the record day, and then EVERY day
+    with the number of distinct players that day (newest first), split into several messages
+    if it doesn't fit into one."""
+    if not _is_admin(message.from_user.id):
+        return
+    st = db.get_daily_active_stats()
+    days = st["all_days"]
+    head = ["👥 <b>Пользователи Peeppo</b>\n", f"Всего в боте: <b>{st['total']}</b>", f"Сегодня: <b>{st['today']}</b>"]
+    if days:
+        rec_day, rec_n = max(days, key=lambda x: (x[1], x[0]))
+        head.append(f"Рекорд за день: <b>{rec_n}</b> ({datetime.fromisoformat(rec_day):%d.%m.%Y})")
+    head.append(f"\n<b>По всем дням ({len(days)}):</b>")
+    rows = [f"• {datetime.fromisoformat(d):%d.%m.%Y} — {n}" + (" 🏆" if days and n == rec_n else "")
+            for d, n in reversed(days)]
+    foot = "\n<i>До первого дня после обновления считалось по активности (регистрация, получение карт), дальше — по открытиям приложения.</i>"
+    chunks, cur = [], "\n".join(head)
+    for row in rows:
+        if len(cur) + len(row) + 1 > 3800:
+            chunks.append(cur)
+            cur = row
+        else:
+            cur += "\n" + row
+    chunks.append(cur + "\n" + foot)
+    for c in chunks:
+        await message.answer(c, parse_mode="HTML")
 
 
 @dp.message(Command("pvpbot"))
@@ -585,8 +613,11 @@ async def handle_mute(message: Message):
         logger.warning("mute failed for %s in %s: %s", user_id, chat_id, e)
         await message.reply("Не получилось: бот должен быть админом чата с правом «Блокировка участников», а юзер — состоять в чате.")
         return
-    where = f" (в {PUBLIC_CHAT})" if message.chat.type == "private" else ""
-    await message.answer(f"🔇 {html.escape(name)} в муте на {_format_mute_duration(seconds)}{where}", parse_mode="HTML")
+    if message.chat.type == "private":
+        # short confirmation for the admin's DM: "@Solavee мут 500 мин"
+        await message.answer(f"{html.escape(name)} мут {_format_mute_duration(seconds).rstrip('.')}", parse_mode="HTML")
+    else:
+        await message.answer(f"🔇 {html.escape(name)} в муте на {_format_mute_duration(seconds)}", parse_mode="HTML")
     if message.chat.type != "private":
         try:
             await message.delete()
@@ -612,8 +643,10 @@ async def handle_unmute(message: Message):
         logger.warning("unmute failed for %s in %s: %s", user_id, chat_id, e)
         await message.reply("Не получилось снять мут: бот должен быть админом чата с правом «Блокировка участников».")
         return
-    where = f" (в {PUBLIC_CHAT})" if message.chat.type == "private" else ""
-    await message.answer(f"🔈 {html.escape(name)} снова может писать{where}", parse_mode="HTML")
+    if message.chat.type == "private":
+        await message.answer(f"{html.escape(name)} размут", parse_mode="HTML")
+    else:
+        await message.answer(f"🔈 {html.escape(name)} снова может писать", parse_mode="HTML")
     if message.chat.type != "private":
         try:
             await message.delete()
@@ -1140,6 +1173,128 @@ async def _announce_giveaway_result(giveaway: dict, result: dict):
         logger.warning("could not announce giveaway %s result", giveaway["id"])
 
 
+# ---------------------------------------------------------------------------
+# Villa giveaway: admin /villagiveaway posts a "Участвовать" button into PUBLIC_CHAT. At the
+# draw time the bot picks 5 random entrants; each gets one FREE villa attempt (Farm -> Villa).
+# ---------------------------------------------------------------------------
+VILLA_GIVEAWAY_WINNERS = 5
+VILLA_GIVEAWAY_DRAW_AT = datetime(2026, 10, 10, 15, 0, tzinfo=timezone.utc)  # 10.10.2026 18:00 MSK
+
+
+def _villa_giveaway_text(entries: list[dict]) -> str:
+    text = (
+        "🎁 РОЗЫГРЫШ ВИЛЛ\n\n"
+        f"{VILLA_GIVEAWAY_WINNERS} победителей получат по 1 бесплатной вилле.\n\n"
+        "Чтобы получить: зайди во вкладку Фарм → Вилла.\n\n"
+        "Итоги: 10 октября 2026, 18:00 по Москве.\n"
+        "Победителей выберет бот случайным образом.\n\n"
+        f"Участников: {len(entries)}"
+    )
+    if entries:
+        names = [_who_label(e["username"], e["first_name"], e["user_id"]) for e in entries]
+        shown, used = [], len(text) + 1
+        for n in names:
+            if used + len(n) + 2 > 3800:
+                break
+            shown.append(n)
+            used += len(n) + 2
+        text += "\n" + ", ".join(shown)
+        if len(shown) < len(names):
+            text += f" и ещё {len(names) - len(shown)}"
+    return text
+
+
+def _villa_giveaway_kb(gid: int):
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🎟 Участвовать", callback_data=f"vgw_join:{gid}")
+    return kb.as_markup()
+
+
+@dp.message(Command("villagiveaway"))
+async def handle_villa_giveaway(message: Message):
+    if not _is_admin(message.from_user.id):
+        return
+    if datetime.now(timezone.utc) >= VILLA_GIVEAWAY_DRAW_AT:
+        await message.answer("Время итогов уже прошло.")
+        return
+    gid = db.create_villa_giveaway(VILLA_GIVEAWAY_DRAW_AT.isoformat(), VILLA_GIVEAWAY_WINNERS)
+    try:
+        sent = await bot.send_message(PUBLIC_CHAT, _villa_giveaway_text([]), reply_markup=_villa_giveaway_kb(gid))
+    except Exception:
+        await message.answer(f"Не удалось опубликовать в {PUBLIC_CHAT} -- бот точно там состоит?")
+        return
+    db.set_villa_giveaway_message(gid, sent.chat.id, sent.message_id)
+    await message.answer(f"Розыгрыш вилл опубликован в {PUBLIC_CHAT}. Итоги: 10.10.2026 18:00 МСК.")
+
+
+@dp.callback_query(F.data.startswith("vgw_join:"))
+async def handle_villa_giveaway_join(call: CallbackQuery):
+    gid = int(call.data.split(":")[1])
+    db.get_or_create_user(
+        telegram_id=call.from_user.id,
+        username=call.from_user.username,
+        first_name=call.from_user.first_name,
+        ref_by=None,
+    )
+    status = db.join_villa_giveaway(gid, call.from_user.id, call.from_user.username, call.from_user.first_name)
+    if status == "joined":
+        await call.answer("Ты участвуешь! Удачи 🍀", show_alert=True)
+        g = db.get_villa_giveaway(gid)
+        if g and g.get("message_id"):
+            try:
+                await bot.edit_message_text(
+                    chat_id=g["chat_id"], message_id=g["message_id"],
+                    text=_villa_giveaway_text(db.get_villa_giveaway_entries(gid)),
+                    reply_markup=_villa_giveaway_kb(gid),
+                )
+            except Exception:
+                logger.warning("could not update villa giveaway %s post", gid)
+    elif status == "already_joined":
+        await call.answer("Ты уже участвуешь", show_alert=True)
+    elif status == "drawn":
+        await call.answer("Розыгрыш уже завершён", show_alert=True)
+    else:
+        await call.answer("Розыгрыш не найден", show_alert=True)
+
+
+async def villa_giveaway_scheduler():
+    """Draws due villa giveaways: edits the post with the winners and DMs each of them."""
+    logger.info("villa giveaway scheduler started")
+    while True:
+        try:
+            for g in db.get_due_villa_giveaways():
+                total = len(db.get_villa_giveaway_entries(g["id"]))
+                winners = db.draw_villa_giveaway(g["id"])
+                if winners:
+                    names = [_who_label(w["username"], w["first_name"], w["user_id"]) for w in winners]
+                    text = (
+                        "🏁 Розыгрыш вилл завершён!\n\nПобедители:\n" + "\n".join(names) +
+                        f"\n\nУчастников: {total}\nЧтобы получить виллу: зайди во вкладку Фарм → Вилла."
+                    )
+                else:
+                    text = "🏁 Розыгрыш вилл завершён -- участников не набралось, увы."
+                if g.get("message_id"):
+                    try:
+                        await bot.edit_message_text(chat_id=g["chat_id"], message_id=g["message_id"], text=text)
+                    except Exception:
+                        try:
+                            await bot.send_message(g["chat_id"] or PUBLIC_CHAT, text)
+                        except Exception:
+                            logger.warning("could not post villa giveaway %s results", g["id"])
+                for w in winners:
+                    try:
+                        await bot.send_message(
+                            w["user_id"],
+                            "🎉 Ты выиграл бесплатную виллу! Зайди во вкладку Фарм → Вилла и забери её.",
+                            reply_markup=_open_button(),
+                        )
+                    except Exception:
+                        logger.info("could not DM villa giveaway winner %s", w["user_id"])
+        except Exception:
+            logger.exception("villa giveaway scheduler iteration failed")
+        await asyncio.sleep(30)
+
+
 async def giveaway_scheduler():
     """Background loop living for the lifetime of the bot process: every few minutes,
     checks for giveaways whose draw time has passed and draws them — both the regular
@@ -1375,11 +1530,11 @@ async def handle_successful_payment(message: Message):
         elif isinstance(res, list):
             if len(res) == 1:
                 v = res[0]
-                await message.answer(f"🏠 Тебе выпала вилла «{v['name']}» ({v['rarity'].upper()}) — V#{v['villa_number']}!")
+                await message.answer(f"🏠 Тебе выпала вилла «{v['name']}» ({_villa_tier(v['rarity']).upper()}) — #{v['villa_number']}!")
                 db.log_stars_payment(uid, stars, f"вилла {v['name']}")
-                await notify_admin_payment(message.from_user, stars, f"виллу «{v['name']}» ({v['rarity']}) V#{v['villa_number']}")
+                await notify_admin_payment(message.from_user, stars, f"виллу «{v['name']}» ({_villa_tier(v['rarity'])}) #{v['villa_number']}")
             else:
-                lines = "\n".join(f"• «{v['name']}» ({v['rarity'].upper()}) — V#{v['villa_number']}" for v in res[:30])
+                lines = "\n".join(f"• «{v['name']}» ({_villa_tier(v['rarity']).upper()}) — #{v['villa_number']}" for v in res[:30])
                 more = f"\n…и ещё {len(res) - 30}" if len(res) > 30 else ""
                 await message.answer(f"🏠 Тебе выпало вилл: {len(res)}\n{lines}{more}")
                 db.log_stars_payment(uid, stars, f"виллы ×{len(res)}")
@@ -1409,6 +1564,10 @@ async def notify_diamond_farmed(who_name: str, card_name: str):
         )
     except Exception:
         logger.warning("could not announce diamond farm to %s", PUBLIC_CHAT)
+
+
+def _villa_tier(r: str) -> str:
+    return {"diamond": "legend", "platinum": "epic", "gold": "rare"}.get(r, r)
 
 
 async def notify_collection_completed(who_name: str, collection_name: str):
@@ -1751,7 +1910,7 @@ async def share_redblack_result(round_id: int) -> bool:
     if round_row is None:
         return False
     name = _display_name(round_row.get("username"), round_row.get("first_name"))
-    color = "🔴 Красное" if round_row["result"] == "red" else "⚫ Чёрное"
+    color = {"red": "🔴 Красное", "black": "⚫ Чёрное", "green": "🟢 Зелёное"}.get(round_row["result"], "⚫ Чёрное")
     if round_row["won"]:
         profit = round_row["payout"] - round_row["bet"]
         text = f"🎲 {name} сыграл в Red&Black — выпало {color}, угадал и забрал +{profit} 💎!"
@@ -2156,7 +2315,7 @@ async def handle_redblack_choice(call: CallbackQuery):
             pass
         await asyncio.sleep(0.65)
 
-    color_emoji = "🔴" if result["result"] == "red" else "⚫"
+    color_emoji = {"red": "🔴", "black": "⚫", "green": "🟢"}[result["result"]]
     if result["won"]:
         text = (
             f"{color_emoji} Выпало: <b>{result['result'].upper()}</b>!\n\n"
@@ -2423,6 +2582,7 @@ async def handle_aviator_cashout(call: CallbackQuery):
 # soonest-first only for readability; the loop checks each every tick.
 REF_RACE_COUNTDOWN_STAGES = [
     ("3d", timedelta(days=3), "⏰ До конца реферальной гонки осталось 3 дня! Приглашай друзей и попади в топ-5 🏆"),
+    ("2d", timedelta(days=2), "⏰ До конца реферальной гонки осталось 2 дня! Самое время позвать друзей 🏆"),
     ("1d", timedelta(days=1), "🔥 До конца реферальной гонки остались сутки! Успей пригласить друзей"),
     ("1h", timedelta(hours=1), "⌛ До конца реферальной гонки остался 1 час! Последний шанс попасть в топ-5"),
     ("5m", timedelta(minutes=5), "🚨 До конца реферальной гонки осталось 5 минут!"),
@@ -2491,7 +2651,7 @@ async def handle_refend(message: Message):
         if now >= end - remaining:
             db.mark_ref_race_countdown_sent(f"{end_iso}|{stage}")
             skipped.append(stage)
-    text = f"✅ Реф-гонка закончится {end:%d.%m.%Y %H:%M} (Таллин). Предупреждения: за 3 дня, 1 день, 1 час и 5 минут."
+    text = f"✅ Реф-гонка закончится {end:%d.%m.%Y %H:%M} (Таллин). Предупреждения: за 3 дня, 2 дня, 1 день, 1 час и 5 минут."
     if skipped:
         text += f"\nУже прошли и пропущены: {', '.join(skipped)}."
     await message.answer(text)
@@ -2580,6 +2740,7 @@ async def main():
     asyncio.create_task(gem_drop_scheduler())
     asyncio.create_task(gem_drop_100_scheduler())
     asyncio.create_task(giveaway_scheduler())
+    asyncio.create_task(villa_giveaway_scheduler())
     asyncio.create_task(ref_race_scheduler())
     asyncio.create_task(referral_chat_verification_scheduler())
     asyncio.create_task(giveaway_reminder_scheduler())
