@@ -832,6 +832,21 @@ def init_db():
         # every time a player's client calls /api/auth, i.e. every time they open the app)
         if "last_seen_at" not in u_cols:
             conn.execute("ALTER TABLE users ADD COLUMN last_seen_at TEXT")
+        # migration for /top (admin): app_opens counts real app opens -- a new open is an
+        # /api/auth call more than APP_OPEN_GAP_MIN after the previous one (the webapp hits
+        # /auth many times per session, so raw calls would overcount). Starts at 0 for everyone.
+        if "app_opens" not in u_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN app_opens INTEGER NOT NULL DEFAULT 0")
+        if "last_open_at" not in u_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN last_open_at TEXT")
+        # /top: messages the player sent anywhere the bot sees (DM with the bot + group chats)
+        if "chat_messages" not in u_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN chat_messages INTEGER NOT NULL DEFAULT 0")
+        # /top: seconds spent with the mini app open, summed from webapp heartbeats
+        if "app_seconds" not in u_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN app_seconds INTEGER NOT NULL DEFAULT 0")
+        if "last_heartbeat_at" not in u_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN last_heartbeat_at TEXT")
         # migration for gem mining (see collect_gem_mining()) — a repeatable "press to
         # start, wait 60 min, press again to collect + restart" passive gem timer.
         if "gem_mining_started_at" not in u_cols:
@@ -841,6 +856,10 @@ def init_db():
         # "nothing bought", so the time-based rank alone still applies.
         if "purchased_rank_tier" not in u_cols:
             conn.execute("ALTER TABLE users ADD COLUMN purchased_rank_tier INTEGER NOT NULL DEFAULT 0")
+        # migration for choosing which unlocked rank to display (see set_selected_rank()).
+        # NULL means "show the highest unlocked rank" (the old behaviour).
+        if "selected_rank_tier" not in u_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN selected_rank_tier INTEGER")
         # migration for the referral-race leaderboard (/ref command + the one-time
         # scheduled announcement) — a referral only counts towards the race once the
         # referred player has both farmed at least one card AND joined PUBLIC_CHAT.
@@ -1086,7 +1105,7 @@ RANK_TIERS = ["bronze", "silver", "gold", "platinum", "diamond", "obsidian", "ra
 # time-based rank (purchased_rank_tier on users), so it never downgrades and the
 # time-based rank can still carry a player past it later for free. No bronze entry —
 # it's the free starting tier, nothing to buy.
-RANK_STARS_PRICE = {"silver": 200, "gold": 300, "platinum": 400, "diamond": 500, "obsidian": 1000, "rare": 2000, "epic": 3000, "legend": 5000}
+RANK_STARS_PRICE = {"silver": 100, "gold": 200, "platinum": 300, "diamond": 400, "obsidian": 500, "rare": 600, "epic": 800, "legend": 1000}
 
 
 def _time_based_rank_tier(created_at: str) -> int:
@@ -1106,22 +1125,67 @@ def _time_based_rank_tier(created_at: str) -> int:
         return 4
 
 
-def get_player_rank_tier(user_id: int) -> int:
-    """Effective 0-4 tier: the higher of the time-based rank and whatever's been bought
-    (purchased_rank_tier). Falls back to 0 (bronze) if the user isn't found."""
+def _max_rank_tier_from_row(user_id: int, row) -> int:
+    """Highest unlocked tier: the admin account (ADMIN_ID) has every rank for free,
+    everyone else gets the higher of the time-based rank and purchased_rank_tier."""
+    if ADMIN_ID and str(user_id) == str(ADMIN_ID):
+        return len(RANK_TIERS) - 1
+    return max(_time_based_rank_tier(row["created_at"]), row["purchased_rank_tier"] or 0)
+
+
+def get_player_max_rank_tier(user_id: int) -> int:
+    """Highest rank tier the player has unlocked (earned by time, bought, or admin).
+    Falls back to 0 (bronze) if the user isn't found."""
     with get_conn() as conn:
         row = conn.execute(
             "SELECT created_at, purchased_rank_tier FROM users WHERE telegram_id = ?", (user_id,)
         ).fetchone()
     if row is None:
         return 0
-    return max(_time_based_rank_tier(row["created_at"]), row["purchased_rank_tier"] or 0)
+    return _max_rank_tier_from_row(user_id, row)
+
+
+def get_player_rank_tier(user_id: int) -> int:
+    """Displayed tier: the rank the player picked (selected_rank_tier) if it's still
+    unlocked, otherwise the highest unlocked one. Falls back to 0 (bronze)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT created_at, purchased_rank_tier, selected_rank_tier FROM users WHERE telegram_id = ?", (user_id,)
+        ).fetchone()
+    if row is None:
+        return 0
+    max_tier = _max_rank_tier_from_row(user_id, row)
+    selected = row["selected_rank_tier"]
+    if selected is not None and 0 <= selected <= max_tier:
+        return selected
+    return max_tier
 
 
 def get_player_rank(user_id: int) -> str:
-    """The effective rank name (see get_player_rank_tier) — bronze/silver/gold/platinum/
-    diamond. Falls back to bronze if the user isn't found."""
+    """The displayed rank name (see get_player_rank_tier). Falls back to bronze."""
     return RANK_TIERS[get_player_rank_tier(user_id)]
+
+
+def get_player_max_rank(user_id: int) -> str:
+    """The highest unlocked rank name (see get_player_max_rank_tier)."""
+    return RANK_TIERS[get_player_max_rank_tier(user_id)]
+
+
+class RankNotUnlocked(Exception):
+    """Raised by set_selected_rank for an unknown rank or one the player hasn't unlocked."""
+
+
+def set_selected_rank(user_id: int, rank: str) -> str:
+    """Lets a player display any rank they've unlocked (earned, bought, or admin).
+    Returns the displayed rank name. Raises RankNotUnlocked otherwise."""
+    if rank not in RANK_TIERS:
+        raise RankNotUnlocked()
+    tier = RANK_TIERS.index(rank)
+    if tier > get_player_max_rank_tier(user_id):
+        raise RankNotUnlocked()
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET selected_rank_tier = ? WHERE telegram_id = ?", (tier, user_id))
+    return get_player_rank(user_id)
 
 
 class RankNotForSale(Exception):
@@ -1140,7 +1204,7 @@ def set_purchased_rank(user_id: int, rank: str) -> str:
     tier = RANK_TIERS.index(rank)
     with get_conn() as conn:
         conn.execute(
-            "UPDATE users SET purchased_rank_tier = MAX(purchased_rank_tier, ?) WHERE telegram_id = ?",
+            "UPDATE users SET purchased_rank_tier = MAX(purchased_rank_tier, ?), selected_rank_tier = NULL WHERE telegram_id = ?",
             (tier, user_id),
         )
     return get_player_rank(user_id)
@@ -1726,13 +1790,13 @@ def get_games_turnover_24h() -> dict:
     return out
 
 
-_TOP_GAME_CACHE = {"at": 0.0, "game": None}
+_TOP_GAME_CACHE = {"at": 0.0, "game": []}
 
 
-def get_top_game_last_7d() -> str | None:
-    """The game (front-end mode key) with the most plays over the last 7 days -- it gets the "TOP"
-    badge on its icon in the games tab. Plays are counted per round (PvP: per player joining a
-    round); the dev/test accounts are left out. Cached for 5 minutes. None if nobody played."""
+def get_top_game_last_7d() -> list[str]:
+    """The 3 games (front-end mode keys) with the most plays over the last 7 days, most played first --
+    they get the "TOP1".."TOP3" badges on their icons in the games tab. Ranked by unique players, ties broken by plays (per round;
+    PvP: per player joining a round); the dev/test accounts are left out. Cached for 5 minutes. Empty if nobody played."""
     import time
     if time.time() - _TOP_GAME_CACHE["at"] < 300:
         return _TOP_GAME_CACHE["game"]
@@ -1744,23 +1808,23 @@ def get_top_game_last_7d() -> str | None:
         "poker": "poker_rounds", "plinko": "plinko_rounds", "roulette": "roulette_rounds", "slots": "slots_rounds",
         "dice": "dice_rounds",
     }
-    counts = {}
+    counts = {}  # game -> (unique players, plays)
     with get_conn() as conn:
         for key, table in tables.items():
-            counts[key] = conn.execute(
-                f"SELECT COUNT(*) FROM {table} t JOIN users u ON u.telegram_id = t.user_id "
+            counts[key] = tuple(conn.execute(
+                f"SELECT COUNT(DISTINCT t.user_id), COUNT(*) FROM {table} t JOIN users u ON u.telegram_id = t.user_id "
                 f"WHERE t.created_at >= ? AND LOWER(COALESCE(u.username, '')) NOT IN ({ph})",
                 [since] + excl,
-            ).fetchone()[0]
-        counts["cards"] = conn.execute(
-            "SELECT COUNT(*) FROM (SELECT DISTINCT e.round_id, e.user_id FROM pvp_entries e JOIN users u ON u.telegram_id = e.user_id "
+            ).fetchone())
+        counts["cards"] = tuple(conn.execute(
+            "SELECT COUNT(DISTINCT user_id), COUNT(*) FROM (SELECT DISTINCT e.round_id, e.user_id FROM pvp_entries e JOIN users u ON u.telegram_id = e.user_id "
             f"WHERE e.created_at >= ? AND LOWER(COALESCE(u.username, '')) NOT IN ({ph}))",
             [since] + excl,
-        ).fetchone()[0]
-    best = max(counts, key=lambda k: counts[k])
-    game = best if counts[best] > 0 else None
-    _TOP_GAME_CACHE.update(at=time.time(), game=game)
-    return game
+        ).fetchone())
+    ranked = sorted((k for k in counts if counts[k][0] > 0), key=lambda k: counts[k], reverse=True)
+    top3 = ranked[:3]
+    _TOP_GAME_CACHE.update(at=time.time(), game=top3)
+    return top3
 
 
 # ---------------------------------------------------------------------------
@@ -2416,6 +2480,41 @@ def get_all_house_stats() -> dict:
         "slots": get_slots_house_stats(),
         "dice": get_dice_house_stats(),
     }
+
+
+def get_total_gems_lost() -> int:
+    """All-time gems players have lost across every gems game (/admin "Проиграно"):
+    per resolved round, whatever part of the bet didn't come back (bet - payout when
+    that's positive; wins count as 0, not as negative losses). Unlike
+    get_poker_house_stats() there's no POKER_STATS_RESET_AT cutoff -- this is the full
+    history. Excludes LEADERBOARD_EXCLUDED_USERNAMES (the dev's own test play), same
+    as the per-game house stats."""
+    excl = list(LEADERBOARD_EXCLUDED_USERNAMES)
+    ph = ",".join("?" for _ in excl)
+    # (table, payout expression, extra WHERE for resolved rounds only)
+    games = [
+        ("mines_rounds", "t.payout", "t.status IN ('won', 'lost')"),
+        ("aviator_rounds",
+         "CASE WHEN t.status = 'won' THEN CAST(ROUND(t.bet * t.cashout_multiplier) AS INTEGER) ELSE 0 END",
+         "t.status IN ('won', 'lost')"),
+        ("poker_rounds", "t.current_payout", "t.status IN ('collected', 'busted', 'lost')"),
+        ("redblack_rounds", "t.payout", "1"),
+        ("plinko_rounds", "t.payout", "1"),
+        ("roulette_rounds", "t.payout", "1"),
+        ("slots_rounds", "t.payout", "1"),
+        ("dice_rounds", "t.payout", "1"),
+    ]
+    total = 0
+    with get_conn() as conn:
+        for table, paid, resolved in games:
+            row = conn.execute(
+                f"SELECT COALESCE(SUM(MAX(t.bet - COALESCE({paid}, 0), 0)), 0) AS lost "
+                f"FROM {table} t JOIN users u ON u.telegram_id = t.user_id "
+                f"WHERE {resolved} AND LOWER(COALESCE(u.username, '')) NOT IN ({ph})",
+                excl,
+            ).fetchone()
+            total += int(row["lost"] or 0)
+    return total
 
 
 def log_stars_payment(user_id: int, stars: int, description: str) -> None:
@@ -8028,6 +8127,81 @@ def get_daily_active_stats() -> dict:
         ).fetchall()
         days = conn.execute("SELECT COUNT(DISTINCT day) AS n FROM daily_active").fetchone()["n"]
     return {"total": total, "today": today_n, "all_days": [(r["day"], r["n"]) for r in top], "days": days}
+
+
+APP_OPEN_GAP_MIN = 30  # /api/auth calls closer together than this count as the same app open
+
+
+def record_app_open(telegram_id: int) -> None:
+    """Called from /api/auth only (not from bot commands): bumps app_opens when this is a new
+    visit, i.e. the previous /auth was more than APP_OPEN_GAP_MIN minutes ago."""
+    now = datetime.now(timezone.utc)
+    with get_conn() as conn:
+        row = conn.execute("SELECT last_open_at FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+        if row is None:
+            return
+        new_open = True
+        if row["last_open_at"]:
+            try:
+                new_open = now - _parse_utc(row["last_open_at"]) > timedelta(minutes=APP_OPEN_GAP_MIN)
+            except Exception:
+                new_open = True
+        if new_open:
+            conn.execute(
+                "UPDATE users SET app_opens = app_opens + 1, last_open_at = ? WHERE telegram_id = ?",
+                (_now(), telegram_id),
+            )
+        else:
+            conn.execute("UPDATE users SET last_open_at = ? WHERE telegram_id = ?", (_now(), telegram_id))
+
+
+HEARTBEAT_MAX_GAP_SEC = 90  # webapp pings every 30s while visible; a longer gap = app was closed
+
+
+def record_app_heartbeat(telegram_id: int) -> None:
+    """Webapp pings /api/heartbeat every 30s while the app is open and visible. Each ping adds
+    the time since the previous one to app_seconds -- unless that gap is longer than
+    HEARTBEAT_MAX_GAP_SEC (app was closed/backgrounded in between), then it only restarts the clock."""
+    now = datetime.now(timezone.utc)
+    with get_conn() as conn:
+        row = conn.execute("SELECT last_heartbeat_at FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+        if row is None:
+            return
+        add = 0
+        if row["last_heartbeat_at"]:
+            try:
+                gap = (now - _parse_utc(row["last_heartbeat_at"])).total_seconds()
+                if 0 < gap <= HEARTBEAT_MAX_GAP_SEC:
+                    add = int(gap)
+            except Exception:
+                add = 0
+        conn.execute(
+            "UPDATE users SET app_seconds = app_seconds + ?, last_heartbeat_at = ? WHERE telegram_id = ?",
+            (add, _now(), telegram_id),
+        )
+
+
+def record_chat_message(telegram_id: int) -> None:
+    """Bot sees a message from this player (DM with the bot or a group chat) -- for /top."""
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET chat_messages = chat_messages + 1 WHERE telegram_id = ?", (telegram_id,))
+
+
+def get_top_active_users(limit: int = 10) -> list[dict]:
+    """For admin /top: most active players -- by app opens (tracked since /top was added),
+    then by number of distinct days they opened the app (daily_active, has full history)."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT u.telegram_id, u.username, u.first_name, u.app_opens, u.last_seen_at, "
+            "u.chat_messages, u.app_seconds, "
+            "COALESCE(d.days, 0) AS days FROM users u "
+            "LEFT JOIN (SELECT user_id, COUNT(*) AS days FROM daily_active GROUP BY user_id) d "
+            "ON d.user_id = u.telegram_id "
+            "ORDER BY u.app_opens DESC, u.app_seconds DESC, u.chat_messages DESC, days DESC, "
+            "u.last_seen_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def get_card_by_id(card_id: int) -> sqlite3.Row | None:

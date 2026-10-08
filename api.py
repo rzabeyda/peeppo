@@ -352,9 +352,18 @@ class WallUnpinBody(InitDataBody):
 # Routes
 # ---------------------------------------------------------------------------
 
+@app.post("/api/heartbeat")
+def heartbeat(body: InitDataBody):
+    """Webapp pings this every 30s while open+visible -- sums time spent in the app (admin /top)."""
+    tg_user = validate_init_data(body.initData)
+    db.record_app_heartbeat(tg_user["id"])
+    return {"ok": True}
+
+
 @app.post("/api/auth")
 def auth(body: InitDataBody):
     user = _authenticate(body.initData)
+    db.record_app_open(user["telegram_id"])  # admin /top: counts app opens (deduped, see db)
     daily_bonus = db.claim_daily_bonus(user["telegram_id"])
     bonus_info = db.get_daily_bonus_info(user["telegram_id"])
     return {
@@ -386,6 +395,8 @@ def auth(body: InitDataBody):
         # Player rank (time-played tier, not card rarity) — shown next to the name in
         # Profile with matching avatar/card border colors.
         "player_rank": db.get_player_rank(user["telegram_id"]),
+        # Highest unlocked rank — every rank up to it can be picked for display.
+        "player_rank_max": db.get_player_max_rank(user["telegram_id"]),
         # Login streak — consecutive days claim_daily_bonus() above has fired without
         # a gap. Shown as the "День: N" tile in Profile (separate from bot_day, which
         # counts days the BOT has existed, not this player's own login streak).
@@ -669,7 +680,7 @@ async def rank_invoice(body: RankInvoiceBody):
     user = _authenticate(body.initData)
     if body.rank not in db.RANK_STARS_PRICE:
         raise HTTPException(400, "this rank isn't for sale")
-    current_tier = db.get_player_rank_tier(user["telegram_id"])
+    current_tier = db.get_player_max_rank_tier(user["telegram_id"])
     if db.RANK_TIERS.index(body.rank) <= current_tier:
         raise HTTPException(400, "you already have this rank or higher")
 
@@ -678,6 +689,17 @@ async def rank_invoice(body: RankInvoiceBody):
     stars = db.RANK_STARS_PRICE[body.rank]
     link = await bot_module.create_rank_invoice(user["telegram_id"], body.rank, stars)
     return {"invoice_link": link, "stars": stars}
+
+
+@app.post("/api/rank/select")
+def rank_select(body: RankInvoiceBody):
+    """Switch the displayed rank to any rank the player has unlocked."""
+    user = _authenticate(body.initData)
+    try:
+        rank = db.set_selected_rank(user["telegram_id"], body.rank)
+    except db.RankNotUnlocked:
+        raise HTTPException(400, "this rank isn't unlocked")
+    return {"player_rank": rank}
 
 
 # ---------------------------------------------------------------------------
@@ -1018,9 +1040,10 @@ def games_turnover(body: InitDataBody):
 
 @app.post("/api/games/top")
 def games_top(body: InitDataBody):
-    """Which game was played the most over the last 7 days (gets the TOP badge in the games tab)."""
+    """The 3 most played games over the last 7 days (get the TOP1..TOP3 badges in the games tab)."""
     _authenticate(body.initData)
-    return {"game": db.get_top_game_last_7d()}
+    games = db.get_top_game_last_7d()
+    return {"games": games, "game": games[0] if games else None}
 
 
 @app.post("/api/roulette/play")

@@ -2105,10 +2105,6 @@
   .number-row .info .lbl{font-size:11px; color:#888; margin-bottom:2px;}
   .number-row .info .val{font-size:13px; font-weight:800; color:var(--accent2); display:flex; align-items:center; gap:3px;}
   .number-row .info .val img{width:13px; height:13px;}
-  .number-row.mine{border-color:#22c55e;}
-  .auc-timer{display:inline-flex; align-items:center; gap:4px; margin-bottom:4px; padding:2px 8px; border-radius:8px; background:rgba(250,204,21,.14); border:1px solid rgba(250,204,21,.45); color:#facc15; font-size:12px; font-weight:800; font-variant-numeric:tabular-nums; letter-spacing:.3px;}
-  .auc-timer.soon{background:rgba(239,68,68,.16); border-color:rgba(239,68,68,.55); color:#f87171;}
-  .number-row .my-bid{font-size:10px; font-weight:800; color:#22c55e; background:rgba(34,197,94,.15); border-radius:6px; padding:1px 6px; margin-left:4px;}
   .number-row .act{
     flex-shrink:0; border:none; border-radius:10px; padding:9px 12px;
     font-size:12px; font-weight:800; cursor:pointer; color:#fff;
@@ -4695,15 +4691,6 @@ async function refreshGems(){
   }catch(e){ /* non-critical */ }
 }
 refreshGems();
-
-// Time-in-app tracking for the admin /top: ping every 30s while the app is open and on
-// screen; the server sums the gaps (a gap over 90s = app was closed, not counted).
-function sendHeartbeat(){
-  if(document.visibilityState === "visible") api("/heartbeat").catch(()=>{});
-}
-sendHeartbeat();
-setInterval(sendHeartbeat, 30000);
-document.addEventListener("visibilitychange", sendHeartbeat);
 
 // Read-once in-app popup for "you earned 25 gems for a referral" — replaces the old
 // bot-DM notifications, auto-closes on its own after 3s (no button to tap).
@@ -10150,26 +10137,6 @@ function numberTimeLeftLabel(expiresAt){
   return h > 0 ? `осталось ${h}ч ${m}м` : `осталось ${m}м`;
 }
 
-// live countdown pill for auction rows (numbers + names); ticks every second
-function auctionTimerText(expiresAt){
-  const ms = new Date(expiresAt).getTime() - Date.now();
-  if(ms <= 0) return "завершается...";
-  const t = Math.floor(ms / 1000);
-  const pad = n => String(n).padStart(2, "0");
-  return `${pad(Math.floor(t / 3600))}:${pad(Math.floor(t % 3600 / 60))}:${pad(t % 60)}`;
-}
-function auctionTimerHtml(expiresAt){
-  if(!expiresAt) return "";
-  const soon = new Date(expiresAt).getTime() - Date.now() < 3600000;
-  return `<div class="auc-timer${soon ? " soon" : ""}" data-exp="${expiresAt}">⏱ ${auctionTimerText(expiresAt)}</div>`;
-}
-setInterval(()=>{
-  document.querySelectorAll(".auc-timer[data-exp]").forEach(el=>{
-    el.textContent = "⏱ " + auctionTimerText(el.dataset.exp);
-    el.classList.toggle("soon", new Date(el.dataset.exp).getTime() - Date.now() < 3600000);
-  });
-}, 1000);
-
 async function loadNumbers(){
   const board = await api("/numbers/board");
   numbersBoard = board;
@@ -10186,12 +10153,6 @@ async function loadNumbers(){
   renderNumbersList();
 }
 
-// true when the current highest bid on an auction row belongs to the viewing user
-function isMyBid(a){
-  const me = myTelegramId ?? tg?.initDataUnsafe?.user?.id;
-  return me != null && a.highest_bidder_id != null && Number(a.highest_bidder_id) === Number(me);
-}
-
 function renderNumbersList(){
   const list = document.getElementById("numbers-list");
   const sub = document.getElementById("numbers-sub");
@@ -10204,10 +10165,10 @@ function renderNumbersList(){
     }
     list.innerHTML = numbersBoard.auctions.map(a=>{
       const leading = a.status === "auction"
-        ? `${auctionTimerHtml(a.bid_expires_at)}<div class="lbl">Ставка</div><div class="val">${a.highest_bid} <img src="/static/icons/diamond.png" alt="">${isMyBid(a) ? `<span class="my-bid">Ваша ставка</span>` : ""}</div>`
+        ? `<div class="lbl">Ставка (${numberTimeLeftLabel(a.bid_expires_at)})</div><div class="val">${a.highest_bid} <img src="/static/icons/diamond.png" alt=""></div>`
         : `<div class="lbl">Свободен</div><div class="val">от ${numbersBoard.min_bid || 25} <img src="/static/icons/diamond.png" alt=""></div>`;
       return `
-        <div class="number-row${a.status === "auction" && isMyBid(a) ? " mine" : ""}" data-number="${a.number}">
+        <div class="number-row" data-number="${a.number}">
           <div class="num">#${a.number}</div>
           <div class="info">${leading}</div>
           <button class="act bid" data-number="${a.number}" data-min="${Math.max(numbersBoard.min_bid || 25, (a.highest_bid||0)+1)}">Ставка</button>
@@ -10461,9 +10422,9 @@ function renderNamesList(){
       list.innerHTML = `<div class="empty-state">Пока никто не создал имя</div>`;
     }else{
       list.innerHTML = namesBoard.auctions.map(a => `
-        <div class="number-row${isMyBid(a) ? " mine" : ""}" data-name="${a.name}">
+        <div class="number-row" data-name="${a.name}">
           <div class="num">${capName(a.name)}</div>
-          <div class="info">${auctionTimerHtml(a.bid_expires_at)}<div class="lbl">Ставка</div><div class="val">${a.highest_bid} <img src="/static/icons/diamond.png" alt="">${isMyBid(a) ? `<span class="my-bid">Ваша ставка</span>` : ""}</div></div>
+          <div class="info"><div class="lbl">Ставка (${numberTimeLeftLabel(a.bid_expires_at)})</div><div class="val">${a.highest_bid} <img src="/static/icons/diamond.png" alt=""></div></div>
           <button class="act bid" data-name="${a.name}" data-min="${Math.max(namesBoard.min_bid || 25, (a.highest_bid||0)+1)}">Ставка</button>
         </div>`).join("");
       list.querySelectorAll(".act.bid").forEach(btn=>{

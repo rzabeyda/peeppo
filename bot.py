@@ -105,6 +105,18 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 
+@dp.message.outer_middleware()
+async def _count_chat_messages(handler, event, data):
+    """Counts every message a player sends that the bot sees (DM + group chats) for admin /top.
+    Runs before the handlers and never blocks them."""
+    try:
+        if event.from_user and not event.from_user.is_bot:
+            db.record_chat_message(event.from_user.id)
+    except Exception:
+        logger.exception("could not count chat message")
+    return await handler(event, data)
+
+
 def _open_button():
     kb = InlineKeyboardBuilder()
     kb.button(text="Фармить", web_app=WebAppInfo(url=f"{WEBAPP_URL}?v={WEBAPP_VERSION}"))
@@ -230,6 +242,40 @@ async def handle_admin_panel(message: Message):
     all_stats = db.get_all_house_stats()
     for key in ("redblack", "mines", "aviator", "poker", "plinko", "roulette", "slots", "dice"):
         lines.append(_house_stats_line(key, all_stats[key]))
+    lost = f"{db.get_total_gems_lost():,}".replace(",", " ")
+    lines += ["", f"Проиграно: <b>{lost}</b> гемов"]
+    await message.answer("\n".join(lines), parse_mode="HTML")
+
+
+@dp.message(Command("top"))
+async def handle_top_users(message: Message):
+    """Admin-only: top 15 most active players -- app opens (counted since /top was added)
+    and number of distinct days they opened the app (full history)."""
+    if not _is_admin(message.from_user.id):
+        return
+    try:
+        rows = db.get_top_active_users(15)
+    except Exception as e:
+        logger.exception("/top failed")
+        await message.answer(f"/top ошибка: {html.escape(repr(e))}", parse_mode="HTML")
+        return
+    if not rows:
+        await message.answer("Пока нет данных.")
+        return
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    lines = ["🔥 <b>Топ-15 самых активных</b>\n"]
+    for i, r in enumerate(rows, 1):
+        name = f"@{r['username']}" if r["username"] else (r["first_name"] or str(r["telegram_id"]))
+        place = medals.get(i, f"{i}.")
+        mins = r["app_seconds"] // 60
+        spent = f"{mins // 60}ч {mins % 60}м" if mins >= 60 else f"{mins}м"
+        lines.append(f"{place} {html.escape(name)} <code>{r['telegram_id']}</code>")
+        lines.append(f"     🚪 {r['app_opens']}  ⏱ {spent}  💬 {r['chat_messages']}  📅 {r['days']}")
+    lines += [
+        "",
+        "🚪 заходы в апку  ⏱ время в апке  💬 сообщения в чатах и боту  📅 дней активности",
+        "<i>🚪 ⏱ 💬 считаются с момента добавления, 📅 за всё время.</i>",
+    ]
     await message.answer("\n".join(lines), parse_mode="HTML")
 
 
