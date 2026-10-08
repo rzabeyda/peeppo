@@ -319,6 +319,49 @@ CREATE TABLE IF NOT EXISTS plinko_rounds (
 
 CREATE INDEX IF NOT EXISTS idx_plinko_rounds_user ON plinko_rounds(user_id);
 
+-- European roulette (0-36, single zero, RTP 97.3%) -- see play_roulette(). One row per spin;
+-- `bets` holds the whole bet slip as JSON.
+CREATE TABLE IF NOT EXISTS roulette_rounds (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL REFERENCES users(telegram_id),
+    bet           INTEGER NOT NULL,
+    number        INTEGER NOT NULL,
+    bets          TEXT NOT NULL,
+    payout        INTEGER NOT NULL,
+    created_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_roulette_rounds_user ON roulette_rounds(user_id);
+
+-- Slots (3 reels, one line) -- see play_slots(). `reels` is the three symbol keys, e.g. "D,D,C".
+CREATE TABLE IF NOT EXISTS slots_rounds (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL REFERENCES users(telegram_id),
+    bet           INTEGER NOT NULL,
+    reels         TEXT NOT NULL,
+    multiplier    REAL NOT NULL,
+    payout        INTEGER NOT NULL,
+    created_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_slots_rounds_user ON slots_rounds(user_id);
+
+-- Dice -- roll 0.00..99.99 (stored as an integer 0..9999); the player picks the win chance and
+-- the side (under / over). See play_dice().
+CREATE TABLE IF NOT EXISTS dice_rounds (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL REFERENCES users(telegram_id),
+    bet           INTEGER NOT NULL,
+    chance        REAL NOT NULL,
+    direction     TEXT NOT NULL,
+    roll          INTEGER NOT NULL,
+    multiplier    REAL NOT NULL,
+    payout        INTEGER NOT NULL,
+    created_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_dice_rounds_user ON dice_rounds(user_id);
+
 -- American Poker '90s -- one row per hand from deal() through its eventual
 -- collect()/bust. status: dealt (waiting on draw()) -> won/lost (post-draw; won means
 -- payout > 0 and still open to gamble or collect) -> collected/busted (final). Gems are
@@ -1242,6 +1285,7 @@ def spin_fortune_wheel(user_id: int) -> dict:
 
 REDBLACK_DEFAULT_BET = 25
 REDBLACK_MIN_BET = 25
+REDBLACK_MAX_BET = 100000
 REDBLACK_GREEN_CHANCE = 0.02  # green: everyone loses -> 98% RTP
 
 
@@ -1263,6 +1307,8 @@ def play_redblack(user_id: int, bet: int, choice: str) -> dict:
         raise RedBlackError("choice must be 'red' or 'black'")
     if not isinstance(bet, int) or bet < REDBLACK_MIN_BET:
         raise RedBlackError(f"bet must be a whole number >= {REDBLACK_MIN_BET}")
+    if bet > REDBLACK_MAX_BET:
+        raise RedBlackError(f"max bet is {REDBLACK_MAX_BET} gems")
     with get_conn() as conn:
         row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
         if row is None or row["gems"] < bet:
@@ -1406,6 +1452,411 @@ def get_plinko_house_stats() -> dict:
             "SELECT COUNT(*) AS n, COALESCE(SUM(pr.bet), 0) AS wagered, COALESCE(SUM(pr.payout), 0) AS paid "
             "FROM plinko_rounds pr JOIN users u ON u.telegram_id = pr.user_id "
             f"WHERE LOWER(COALESCE(u.username, '')) NOT IN ({excl_placeholders})",
+            list(LEADERBOARD_EXCLUDED_USERNAMES),
+        ).fetchone()
+    return _house_stats_row(row["n"], row["wagered"], row["paid"])
+
+
+# ---------------------------------------------------------------------------
+# Roulette -- European, one zero (0..36). The bet slip can hold several bets; every bet
+# pays bet * ROULETTE_PAYOUT[type] (stake included) when it wins, 0 otherwise -- the classic
+# table, house edge 1/37, RTP 97.3%.
+# ---------------------------------------------------------------------------
+
+ROULETTE_MIN_BET = 25          # outside bets (colour, parity, halves, dozens)
+ROULETTE_MIN_STRAIGHT = 1      # a single number can be played from 1 gem
+ROULETTE_MAX_BETS = 60
+ROULETTE_RED = {1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
+# total return multiplier (stake included)
+ROULETTE_PAYOUT = {"straight": 36, "red": 2, "black": 2, "even": 2, "odd": 2, "low": 2, "high": 2, "dozen": 3}
+
+
+class RouletteError(Exception):
+    """Raised by play_roulette() for a malformed bet slip (not a balance problem)."""
+
+
+def _roulette_bet_wins(kind: str, value, number: int) -> bool:
+    if kind == "straight":
+        return number == value
+    if number == 0:
+        return False  # zero loses every outside bet
+    if kind == "red":
+        return number in ROULETTE_RED
+    if kind == "black":
+        return number not in ROULETTE_RED
+    if kind == "even":
+        return number % 2 == 0
+    if kind == "odd":
+        return number % 2 == 1
+    if kind == "low":
+        return 1 <= number <= 18
+    if kind == "high":
+        return 19 <= number <= 36
+    if kind == "dozen":
+        return (value - 1) * 12 < number <= value * 12
+    return False
+
+
+def play_roulette(user_id: int, bets: list) -> dict:
+    """One spin in one atomic step. `bets` = [{"type": "straight"|"red"|"black"|"even"|"odd"|"low"|
+    "high"|"dozen", "value": int|None, "amount": int}, ...] (straight needs value 0..36, dozen 1..3).
+    Raises RouletteError for a bad slip, InsufficientGems if the balance can't cover the total.
+    Returns {"number", "color", "bet", "payout", "gems", "wins": [indexes of winning bets]}."""
+    if not isinstance(bets, list) or not bets or len(bets) > ROULETTE_MAX_BETS:
+        raise RouletteError("bad bet slip")
+    clean = []
+    for b in bets:
+        if not isinstance(b, dict):
+            raise RouletteError("bad bet slip")
+        kind, value, amount = b.get("type"), b.get("value"), b.get("amount")
+        if kind not in ROULETTE_PAYOUT:
+            raise RouletteError("unknown bet type")
+        min_bet = ROULETTE_MIN_STRAIGHT if kind == "straight" else ROULETTE_MIN_BET
+        if not isinstance(amount, int) or isinstance(amount, bool) or amount < min_bet:
+            raise RouletteError(f"bet must be a whole number >= {min_bet}")
+        if kind == "straight":
+            if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 36:
+                raise RouletteError("number must be 0..36")
+        elif kind == "dozen":
+            if not isinstance(value, int) or isinstance(value, bool) or value not in (1, 2, 3):
+                raise RouletteError("dozen must be 1..3")
+        else:
+            value = None
+        clean.append({"type": kind, "value": value, "amount": amount})
+    total = sum(b["amount"] for b in clean)
+    with get_conn() as conn:
+        row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        if row is None or row["gems"] < total:
+            raise InsufficientGems()
+        number = random.randint(0, 36)
+        payout = 0
+        wins = []
+        for i, b in enumerate(clean):
+            if _roulette_bet_wins(b["type"], b["value"], number):
+                payout += b["amount"] * ROULETTE_PAYOUT[b["type"]]
+                wins.append(i)
+        net = payout - total
+        if net >= 0:
+            conn.execute(
+                "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
+                (net, net, user_id),
+            )
+        else:
+            conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (-net, user_id))
+        new_gems = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()["gems"]
+        cur = conn.execute(
+            "INSERT INTO roulette_rounds (user_id, bet, number, bets, payout, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, total, number, json.dumps(clean), payout, _now()),
+        )
+    color = "green" if number == 0 else ("red" if number in ROULETTE_RED else "black")
+    return {"round_id": cur.lastrowid, "number": number, "color": color, "bet": total,
+            "payout": payout, "gems": new_gems, "wins": wins}
+
+
+def get_roulette_history(limit: int = 50) -> list[dict]:
+    with get_conn() as conn:
+        excl = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        rows = conn.execute(
+            "SELECT rr.id, rr.user_id, rr.bet, rr.number, rr.payout, rr.created_at, u.username, u.first_name "
+            "FROM roulette_rounds rr JOIN users u ON u.telegram_id = rr.user_id "
+            f"WHERE LOWER(COALESCE(u.username, '')) NOT IN ({excl}) ORDER BY rr.id DESC LIMIT ?",
+            list(LEADERBOARD_EXCLUDED_USERNAMES) + [limit],
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_roulette_last_numbers(limit: int = 10) -> list[int]:
+    """Last drawn numbers, newest first -- every spin counts (the numbers aren't personal, so unlike the
+    history/top lists the excluded accounts' spins are included too)."""
+    with get_conn() as conn:
+        rows = conn.execute("SELECT number FROM roulette_rounds ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    return [r["number"] for r in rows]
+
+
+def get_roulette_leaderboard(limit: int = 12) -> list[dict]:
+    with get_conn() as conn:
+        excl = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        rows = conn.execute(
+            "SELECT rr.user_id AS telegram_id, u.username AS username, u.first_name AS first_name, "
+            "SUM(rr.payout - rr.bet) AS net_profit, COUNT(*) AS rounds_played "
+            "FROM roulette_rounds rr JOIN users u ON u.telegram_id = rr.user_id "
+            f"WHERE LOWER(COALESCE(u.username, '')) NOT IN ({excl}) "
+            "GROUP BY rr.user_id ORDER BY net_profit DESC LIMIT ?",
+            list(LEADERBOARD_EXCLUDED_USERNAMES) + [limit],
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_roulette_house_stats() -> dict:
+    with get_conn() as conn:
+        excl = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(rr.bet), 0) AS wagered, COALESCE(SUM(rr.payout), 0) AS paid "
+            "FROM roulette_rounds rr JOIN users u ON u.telegram_id = rr.user_id "
+            f"WHERE LOWER(COALESCE(u.username, '')) NOT IN ({excl})",
+            list(LEADERBOARD_EXCLUDED_USERNAMES),
+        ).fetchone()
+    return _house_stats_row(row["n"], row["wagered"], row["paid"])
+
+
+# ---------------------------------------------------------------------------
+# Slots -- 3 reels, one line. Each reel independently draws a symbol by SLOTS_WEIGHTS.
+# D = our diamond, W = watermelon, G = grapes, L = lemon, C = cherry.
+# Three of a kind pays SLOTS_TRIPLE[symbol]; exactly two cherries pay SLOTS_TWO_CHERRIES.
+# Exact enumeration of the 125 combinations gives RTP ~97.8% (tuned by hand, see the table).
+# ---------------------------------------------------------------------------
+
+SLOTS_MIN_BET = 25
+SLOTS_SYMBOLS = ["D", "W", "G", "L", "C"]
+SLOTS_WEIGHTS = {"D": 6, "W": 10, "G": 14, "L": 20, "C": 30}
+SLOTS_TRIPLE = {"D": 130, "W": 30, "G": 15, "L": 8, "C": 5}
+SLOTS_TWO_CHERRIES = 1.5
+
+
+class SlotsError(Exception):
+    """Raised by play_slots() for a malformed bet."""
+
+
+def _slots_multiplier(reels: list[str]) -> float:
+    if reels[0] == reels[1] == reels[2]:
+        return SLOTS_TRIPLE[reels[0]]
+    if reels.count("C") == 2:
+        return SLOTS_TWO_CHERRIES
+    return 0
+
+
+def play_slots(user_id: int, bet: int) -> dict:
+    """One spin: validates, draws the three reels server-side, settles bet*multiplier (same net-profit
+    convention as the other games). Returns {"reels": ["D","C","L"], "multiplier", "bet", "payout", "gems"}."""
+    if not isinstance(bet, int) or isinstance(bet, bool) or bet < SLOTS_MIN_BET:
+        raise SlotsError(f"bet must be a whole number >= {SLOTS_MIN_BET}")
+    with get_conn() as conn:
+        row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        if row is None or row["gems"] < bet:
+            raise InsufficientGems()
+        reels = random.choices(SLOTS_SYMBOLS, weights=[SLOTS_WEIGHTS[x] for x in SLOTS_SYMBOLS], k=3)
+        multiplier = _slots_multiplier(reels)
+        payout = round(bet * multiplier)
+        net = payout - bet
+        if net >= 0:
+            conn.execute(
+                "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
+                (net, net, user_id),
+            )
+        else:
+            conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (-net, user_id))
+        new_gems = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()["gems"]
+        cur = conn.execute(
+            "INSERT INTO slots_rounds (user_id, bet, reels, multiplier, payout, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, bet, ",".join(reels), multiplier, payout, _now()),
+        )
+    return {"round_id": cur.lastrowid, "reels": reels, "multiplier": multiplier, "bet": bet,
+            "payout": payout, "gems": new_gems}
+
+
+def get_slots_history(limit: int = 50) -> list[dict]:
+    with get_conn() as conn:
+        excl = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        rows = conn.execute(
+            "SELECT sr.id, sr.user_id, sr.bet, sr.reels, sr.multiplier, sr.payout, sr.created_at, u.username, u.first_name "
+            "FROM slots_rounds sr JOIN users u ON u.telegram_id = sr.user_id "
+            f"WHERE LOWER(COALESCE(u.username, '')) NOT IN ({excl}) ORDER BY sr.id DESC LIMIT ?",
+            list(LEADERBOARD_EXCLUDED_USERNAMES) + [limit],
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_slots_leaderboard(limit: int = 12) -> list[dict]:
+    with get_conn() as conn:
+        excl = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        rows = conn.execute(
+            "SELECT sr.user_id AS telegram_id, u.username AS username, u.first_name AS first_name, "
+            "SUM(sr.payout - sr.bet) AS net_profit, COUNT(*) AS rounds_played "
+            "FROM slots_rounds sr JOIN users u ON u.telegram_id = sr.user_id "
+            f"WHERE LOWER(COALESCE(u.username, '')) NOT IN ({excl}) "
+            "GROUP BY sr.user_id ORDER BY net_profit DESC LIMIT ?",
+            list(LEADERBOARD_EXCLUDED_USERNAMES) + [limit],
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_slots_house_stats() -> dict:
+    with get_conn() as conn:
+        excl = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(sr.bet), 0) AS wagered, COALESCE(SUM(sr.payout), 0) AS paid "
+            "FROM slots_rounds sr JOIN users u ON u.telegram_id = sr.user_id "
+            f"WHERE LOWER(COALESCE(u.username, '')) NOT IN ({excl})",
+            list(LEADERBOARD_EXCLUDED_USERNAMES),
+        ).fetchone()
+    return _house_stats_row(row["n"], row["wagered"], row["paid"])
+
+
+_TURNOVER_CACHE = {"at": 0.0, "data": {}}
+
+
+def get_games_turnover_24h() -> dict:
+    """Turnover of every game over the last 24 hours, keyed by the front-end mode key: gems wagered for the
+    gem games, number of cards staked for PvP ("cards"). Dev/test accounts are left out; cached 60 s."""
+    import time
+    if time.time() - _TURNOVER_CACHE["at"] < 60:
+        return _TURNOVER_CACHE["data"]
+    since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    excl = list(LEADERBOARD_EXCLUDED_USERNAMES)
+    ph = ",".join("?" for _ in excl)
+    tables = {
+        "redblack": "redblack_rounds", "aviator": "aviator_rounds", "mines": "mines_rounds",
+        "poker": "poker_rounds", "plinko": "plinko_rounds", "roulette": "roulette_rounds", "slots": "slots_rounds",
+        "dice": "dice_rounds",
+    }
+    out = {}
+    with get_conn() as conn:
+        for key, table in tables.items():
+            out[key] = conn.execute(
+                f"SELECT COALESCE(SUM(t.bet), 0) FROM {table} t JOIN users u ON u.telegram_id = t.user_id "
+                f"WHERE t.created_at >= ? AND LOWER(COALESCE(u.username, '')) NOT IN ({ph})",
+                [since] + excl,
+            ).fetchone()[0]
+        out["cards"] = conn.execute(
+            "SELECT COUNT(*) FROM pvp_entries e JOIN users u ON u.telegram_id = e.user_id "
+            f"WHERE e.created_at >= ? AND LOWER(COALESCE(u.username, '')) NOT IN ({ph})",
+            [since] + excl,
+        ).fetchone()[0]
+    _TURNOVER_CACHE.update(at=time.time(), data=out)
+    return out
+
+
+_TOP_GAME_CACHE = {"at": 0.0, "game": None}
+
+
+def get_top_game_last_7d() -> str | None:
+    """The game (front-end mode key) with the most plays over the last 7 days -- it gets the "TOP"
+    badge on its icon in the games tab. Plays are counted per round (PvP: per player joining a
+    round); the dev/test accounts are left out. Cached for 5 minutes. None if nobody played."""
+    import time
+    if time.time() - _TOP_GAME_CACHE["at"] < 300:
+        return _TOP_GAME_CACHE["game"]
+    since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    excl = list(LEADERBOARD_EXCLUDED_USERNAMES)
+    ph = ",".join("?" for _ in excl)
+    tables = {
+        "redblack": "redblack_rounds", "aviator": "aviator_rounds", "mines": "mines_rounds",
+        "poker": "poker_rounds", "plinko": "plinko_rounds", "roulette": "roulette_rounds", "slots": "slots_rounds",
+        "dice": "dice_rounds",
+    }
+    counts = {}
+    with get_conn() as conn:
+        for key, table in tables.items():
+            counts[key] = conn.execute(
+                f"SELECT COUNT(*) FROM {table} t JOIN users u ON u.telegram_id = t.user_id "
+                f"WHERE t.created_at >= ? AND LOWER(COALESCE(u.username, '')) NOT IN ({ph})",
+                [since] + excl,
+            ).fetchone()[0]
+        counts["cards"] = conn.execute(
+            "SELECT COUNT(*) FROM (SELECT DISTINCT e.round_id, e.user_id FROM pvp_entries e JOIN users u ON u.telegram_id = e.user_id "
+            f"WHERE e.created_at >= ? AND LOWER(COALESCE(u.username, '')) NOT IN ({ph}))",
+            [since] + excl,
+        ).fetchone()[0]
+    best = max(counts, key=lambda k: counts[k])
+    game = best if counts[best] > 0 else None
+    _TOP_GAME_CACHE.update(at=time.time(), game=game)
+    return game
+
+
+# ---------------------------------------------------------------------------
+# Dice -- the server draws an integer 0..9999 (a roll of 0.00..99.99). The player picks a win chance
+# (2%..95%, two decimals max) and a side: "under" wins when roll < chance, "over" wins when
+# roll >= 100 - chance -- either way exactly `chance` percent of the 10 000 outcomes win. A win pays
+# bet * DICE_RTP_PERCENT / chance (stake included): RTP ~98%.
+# ---------------------------------------------------------------------------
+
+DICE_MIN_BET = 25
+DICE_MIN_CHANCE = 2.0
+DICE_MAX_CHANCE = 95.0
+DICE_RTP_PERCENT = 98.0
+
+
+class DiceError(Exception):
+    """Raised by play_dice() for a malformed bet / chance / side."""
+
+
+def dice_multiplier(chance: float) -> float:
+    return round(DICE_RTP_PERCENT / chance, 4)
+
+
+def play_dice(user_id: int, bet: int, chance: float, direction: str) -> dict:
+    """One roll in one atomic step. Returns {"roll": 0..9999, "won": bool, "chance", "direction",
+    "multiplier", "bet", "payout", "gems"}. Raises DiceError for a bad slip, InsufficientGems if the
+    balance can't cover the bet."""
+    if direction not in ("under", "over"):
+        raise DiceError("direction must be 'under' or 'over'")
+    if not isinstance(bet, int) or isinstance(bet, bool) or bet < DICE_MIN_BET:
+        raise DiceError(f"bet must be a whole number >= {DICE_MIN_BET}")
+    if isinstance(chance, bool) or not isinstance(chance, (int, float)):
+        raise DiceError("bad chance")
+    k = round(chance * 100)  # winning outcomes out of 10 000
+    if abs(k - chance * 100) > 1e-6 or not (DICE_MIN_CHANCE * 100 <= k <= DICE_MAX_CHANCE * 100):
+        raise DiceError(f"chance must be {DICE_MIN_CHANCE}..{DICE_MAX_CHANCE} with at most 2 decimals")
+    chance = k / 100
+    multiplier = dice_multiplier(chance)
+    with get_conn() as conn:
+        row = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()
+        if row is None or row["gems"] < bet:
+            raise InsufficientGems()
+        roll = random.randint(0, 9999)
+        won = roll < k if direction == "under" else roll >= 10000 - k
+        payout = int(bet * multiplier + 0.5) if won else 0
+        net = payout - bet
+        if net >= 0:
+            conn.execute(
+                "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
+                (net, net, user_id),
+            )
+        else:
+            conn.execute("UPDATE users SET gems = gems - ? WHERE telegram_id = ?", (-net, user_id))
+        new_gems = conn.execute("SELECT gems FROM users WHERE telegram_id = ?", (user_id,)).fetchone()["gems"]
+        cur = conn.execute(
+            "INSERT INTO dice_rounds (user_id, bet, chance, direction, roll, multiplier, payout, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (user_id, bet, chance, direction, roll, multiplier, payout, _now()),
+        )
+    return {"round_id": cur.lastrowid, "roll": roll, "won": won, "chance": chance, "direction": direction,
+            "multiplier": multiplier, "bet": bet, "payout": payout, "gems": new_gems}
+
+
+def get_dice_history(limit: int = 50) -> list[dict]:
+    with get_conn() as conn:
+        excl = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        rows = conn.execute(
+            "SELECT dr.id, dr.user_id, dr.bet, dr.chance, dr.direction, dr.roll, dr.multiplier, dr.payout, dr.created_at, "
+            "u.username, u.first_name FROM dice_rounds dr JOIN users u ON u.telegram_id = dr.user_id "
+            f"WHERE LOWER(COALESCE(u.username, '')) NOT IN ({excl}) ORDER BY dr.id DESC LIMIT ?",
+            list(LEADERBOARD_EXCLUDED_USERNAMES) + [limit],
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_dice_leaderboard(limit: int = 12) -> list[dict]:
+    with get_conn() as conn:
+        excl = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        rows = conn.execute(
+            "SELECT dr.user_id AS telegram_id, u.username AS username, u.first_name AS first_name, "
+            "SUM(dr.payout - dr.bet) AS net_profit, COUNT(*) AS rounds_played "
+            "FROM dice_rounds dr JOIN users u ON u.telegram_id = dr.user_id "
+            f"WHERE LOWER(COALESCE(u.username, '')) NOT IN ({excl}) "
+            "GROUP BY dr.user_id ORDER BY net_profit DESC LIMIT ?",
+            list(LEADERBOARD_EXCLUDED_USERNAMES) + [limit],
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_dice_house_stats() -> dict:
+    with get_conn() as conn:
+        excl = ",".join("?" for _ in LEADERBOARD_EXCLUDED_USERNAMES)
+        row = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(dr.bet), 0) AS wagered, COALESCE(SUM(dr.payout), 0) AS paid "
+            "FROM dice_rounds dr JOIN users u ON u.telegram_id = dr.user_id "
+            f"WHERE LOWER(COALESCE(u.username, '')) NOT IN ({excl})",
             list(LEADERBOARD_EXCLUDED_USERNAMES),
         ).fetchone()
     return _house_stats_row(row["n"], row["wagered"], row["paid"])
@@ -1961,6 +2412,9 @@ def get_all_house_stats() -> dict:
         "aviator": get_aviator_house_stats(),
         "poker": get_poker_house_stats(),
         "plinko": get_plinko_house_stats(),
+        "roulette": get_roulette_house_stats(),
+        "slots": get_slots_house_stats(),
+        "dice": get_dice_house_stats(),
     }
 
 
@@ -4846,6 +5300,13 @@ def create_custom_nft(user_id: int, user_card_id: int, name: str, number: int) -
 
         target = _usable_owned_card(conn, user_id, user_card_id)
         if target is None:
+            raise NumberCardNotUsable()
+        # Villas (LEGEND / EPIC / RARE) can't be turned into custom cards.
+        is_villa = conn.execute(
+            "SELECT 1 FROM user_cards uc JOIN cards c ON c.id = uc.card_id WHERE uc.id = ? AND c.series = 'villa'",
+            (user_card_id,),
+        ).fetchone()
+        if is_villa:
             raise NumberCardNotUsable()
 
         existing_custom_name = conn.execute(

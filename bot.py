@@ -228,7 +228,7 @@ async def handle_admin_panel(message: Message):
         "📊 <b>Статистика казны по всем играм</b>\n",
     ]
     all_stats = db.get_all_house_stats()
-    for key in ("redblack", "mines", "aviator", "poker", "plinko"):
+    for key in ("redblack", "mines", "aviator", "poker", "plinko", "roulette", "slots", "dice"):
         lines.append(_house_stats_line(key, all_stats[key]))
     await message.answer("\n".join(lines), parse_mode="HTML")
 
@@ -301,6 +301,9 @@ _HOUSE_STATS_LABELS = {
     "aviator": ("🚀", "Ракетка", 98),
     "poker": ("🃏", "Покер", 98),
     "plinko": ("🎱", "Плинко", 98),
+    "roulette": ("🎡", "Рулетка", 97.3),
+    "slots": ("🎰", "Слоты", 98),
+    "dice": ("🎲", "Dice", 98),
 }
 
 
@@ -317,7 +320,7 @@ async def handle_house_stats(message: Message):
         return
     all_stats = db.get_all_house_stats()
     lines = ["📊 <b>Статистика казны по всем играм</b>\n"]
-    for key in ("redblack", "mines", "aviator", "poker", "plinko"):
+    for key in ("redblack", "mines", "aviator", "poker", "plinko", "roulette", "slots", "dice"):
         lines.append(_house_stats_line(key, all_stats[key]))
     await message.answer("\n".join(lines), parse_mode="HTML")
 
@@ -2262,6 +2265,9 @@ async def handle_redblack_command(message: Message):
             return
         if bet < db.REDBLACK_MIN_BET:
             await message.answer(f"Минимальная ставка -- {db.REDBLACK_MIN_BET} гемов")
+            return
+        if bet > db.REDBLACK_MAX_BET:
+            await message.answer(f"Максимальная ставка -- {db.REDBLACK_MAX_BET} гемов")
             return
     else:
         bet = db.REDBLACK_DEFAULT_BET

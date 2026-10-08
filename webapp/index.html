@@ -987,6 +987,7 @@
   .market-filter-btn:active{transform:scale(.95);}
   .market-filter-btn.active{background:rgba(255,45,149,.18); color:#ff2d95; border-color:#ff2d95;}
   #market-filter-row .market-filter-btn.active{background:#fff; color:#000; border-color:#fff;}
+  #market-filter-row .market-filter-btn[data-sort="legend"], #market-filter-row .market-filter-btn[data-sort="diamond"]{font-size:12px; letter-spacing:.3px;}
   .mode-switch{
     flex:1 1 auto;
     min-width:0;
@@ -998,6 +999,7 @@
     padding:3px;
   }
   .mode-switch-btn{
+    position:relative;
     flex:1 1 0;
     min-width:0;
     border:none; background:none;
@@ -1009,11 +1011,6 @@
     white-space:nowrap;
     text-align:center;
   }
-  .mode-switch-btn[data-mode="trade"].active{background:rgba(34,197,94,.18); color:#22c55e;}
-  .mode-switch-btn[data-mode="swap"].active{background:rgba(250,204,21,.18); color:#facc15;}
-  #market-mode-switch .mode-switch-btn[data-mode="trade"].active{background:rgba(250,204,21,.18); color:#facc15;}
-  #market-mode-switch .mode-switch-btn[data-mode="swap"].active{background:rgba(59,130,246,.18); color:#3b82f6;}
-  #market-mode-switch .mode-switch-btn[data-mode="villa"].active{background:linear-gradient(135deg,#5eead4,#0d9488); color:#042f2e;}
   .mode-switch-btn:active{transform:scale(.95);}
   #pvp-mode-switch{display:grid; grid-template-columns:repeat(3,1fr); gap:2px;}
 
@@ -1036,10 +1033,6 @@
     white-space:nowrap;
     text-align:center;
   }
-  .pvp-top-submode-btn.active{background:rgba(236,20,144,.18); color:#ec1490;}
-  #pvp-top-submode-switch .pvp-top-submode-btn[data-submode="wins"].active{background:rgba(34,197,94,.18); color:#22c55e;}
-  #pvp-top-submode-switch .pvp-top-submode-btn[data-submode="cards"].active{background:rgba(59,130,246,.18); color:#3b82f6;}
-  #pvp-top-submode-switch .pvp-top-submode-btn[data-submode="diamond"].active{background:rgba(236,20,144,.18); color:#ec1490;}
   .pvp-top-submode-btn:active{transform:scale(.95);}
   .market-item{
     display:flex; align-items:center; gap:12px;
@@ -1059,7 +1052,7 @@
     border:none; border-radius:10px; padding:7px 12px; font-size:11px; font-weight:700; cursor:pointer; white-space:nowrap;
   }
   .btn-buy{background:#22c55e; color:#fff;}
-  .btn-offer{background:#facc15; color:#1a1a1a;}
+  .btn-offer{background:#3b82f6; color:#fff;}
   .btn-unlist{background:rgba(239,68,68,.15); color:var(--danger); border:1px solid rgba(239,68,68,.3) !important;}
   .btn-propose{background:rgba(139,92,246,.18); color:var(--accent); border:1px solid rgba(139,92,246,.35) !important;}
   .market-mine-tag{font-size:10px; color:#666; text-transform:uppercase; letter-spacing:.4px;}
@@ -1120,6 +1113,7 @@
   #market-item-actions button{padding:12px; border-radius:12px; border:none; font-weight:700; font-size:13px; cursor:pointer; width:100%;}
   #market-item-actions .btn-buy{background:#fff; color:#000;}
   #market-item-actions #mi-unlist{background:#fff; color:#000; border:none !important;}
+  #market-item-actions #mi-edit{background:#facc15; color:#1a1400; border:none !important;}
   #market-item-actions #mi-unlist-swap{background:#fff; color:#000; border:none !important;}
   #market-item-actions .btn-close-bottom{background:#000; color:#fff; border:1px solid rgba(255,255,255,.25) !important;}
 
@@ -1449,21 +1443,21 @@
   .pvp-rules-row .w{font-size:13px; font-weight:800; color:#eee;}
   #pvp-rules-footnote{font-size:11.5px; color:#888; line-height:1.5;}
 
-  #av-rules-overlay, #rb-rules-overlay, #mines-rules-overlay, #poker-rules-overlay, #plinko-rules-overlay{
+  #av-rules-overlay, #rb-rules-overlay, #mines-rules-overlay, #poker-rules-overlay, #plinko-rules-overlay, #roulette-rules-overlay, #slots-rules-overlay, #dice-rules-overlay{
     position:absolute; inset:0;
     background:rgba(0,0,0,.92);
     display:none; align-items:center; justify-content:center;
     z-index:92; padding:24px;
   }
-  #av-rules-overlay.active, #rb-rules-overlay.active, #mines-rules-overlay.active, #poker-rules-overlay.active, #plinko-rules-overlay.active{display:flex;}
-  #av-rules-card, #rb-rules-card, #mines-rules-card, #poker-rules-card, #plinko-rules-card{
+  #av-rules-overlay.active, #rb-rules-overlay.active, #mines-rules-overlay.active, #poker-rules-overlay.active, #plinko-rules-overlay.active, #roulette-rules-overlay.active, #slots-rules-overlay.active, #dice-rules-overlay.active{display:flex;}
+  #av-rules-card, #rb-rules-card, #mines-rules-card, #poker-rules-card, #plinko-rules-card, #roulette-rules-card, #slots-rules-card, #dice-rules-card{
     position:relative;
     width:100%; max-width:320px; max-height:86vh; overflow-y:auto;
     background:var(--card-bg); border:1px solid var(--card-border); border-radius:20px;
     padding:22px 18px 18px; box-sizing:border-box;
   }
-  #av-rules-title, #rb-rules-title, #mines-rules-title, #poker-rules-title, #plinko-rules-title{font-size:16px; font-weight:800; margin-bottom:12px;}
-  #av-rules-text, #rb-rules-text, #mines-rules-text, #poker-rules-text, #plinko-rules-text{font-size:13px; color:#ccc; line-height:1.5;}
+  #av-rules-title, #rb-rules-title, #mines-rules-title, #poker-rules-title, #plinko-rules-title, #roulette-rules-title, #slots-rules-title, #dice-rules-title{font-size:16px; font-weight:800; margin-bottom:12px;}
+  #av-rules-text, #rb-rules-text, #mines-rules-text, #poker-rules-text, #plinko-rules-text, #roulette-rules-text, #slots-rules-text, #dice-rules-text{font-size:13px; color:#ccc; line-height:1.5;}
   #poker-rules-text{margin-bottom:10px;}
   #poker-rules-text2{font-size:13px; color:#ccc; line-height:1.5; margin:14px 0 10px;}
   #poker-rules-footnote{font-size:11.5px; color:#888; line-height:1.5; margin-top:10px;}
@@ -1520,6 +1514,10 @@
   .game-title-row{display:flex; align-items:center; justify-content:space-between; margin-bottom:2px;}
   .game-info-btn{width:24px; height:24px; border-radius:50%; border:1px solid #444; background:rgba(255,255,255,.06); color:#ccc; font-weight:800; font-size:13px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
   .game-info-btn:active{transform:scale(.92);}
+  .game-turnover{flex:1; text-align:right; margin-right:10px; font-size:12px; font-weight:800; color:#3b82f6; text-shadow:0 0 10px rgba(59,130,246,.45); letter-spacing:.3px; white-space:nowrap; display:flex; align-items:center; justify-content:flex-end; gap:3px;}
+  .game-turnover:empty{visibility:hidden;}
+  .game-turnover .gem-icon-inline{width:12px; height:12px;}
+  .pvp-title-row{margin:0 4px 10px;}
   .poker-idle{display:flex; flex-direction:column; gap:12px;}
   .poker-bet-row{display:flex; align-items:center; gap:8px; background:#161616; border:1px solid var(--card-border); border-radius:12px; padding:10px 12px;}
   .poker-bet-label{font-size:12.5px; color:#ccc; font-weight:700;}
@@ -1843,10 +1841,6 @@
   }
   #numbers-mode-switch{margin-bottom:10px;}
   #names-mode-switch{margin-bottom:14px;}
-  #numbers-mode-switch .mode-switch-btn[data-mode="auction"].active{background:rgba(59,130,246,.18); color:#3b82f6;}
-  #numbers-mode-switch .mode-switch-btn[data-mode="listings"].active{background:rgba(250,204,21,.18); color:#facc15;}
-  #numbers-mode-switch .mode-switch-btn[data-mode="mine"].active{background:rgba(34,197,94,.18); color:#22c55e;}
-  #numbers-mode-switch .mode-switch-btn[data-mode="owners"].active{background:rgba(236,20,144,.18); color:#ec1490;}
   #numbers-owners-btn{
     width:100%; background:#000; color:#fff; border:none; border-radius:10px;
     padding:10px; font-size:13px; font-weight:800; cursor:pointer; margin-bottom:10px;
@@ -1858,12 +1852,88 @@
   }
   #names-owners-btn:active{transform:scale(.98);}
   #pvp-mode-switch{margin-bottom:10px;}
-  #pvp-mode-switch .mode-switch-btn[data-mode="cards"].active{background:rgba(236,20,144,.18); color:#ec1490;}
-  #pvp-mode-switch .mode-switch-btn[data-mode="redblack"].active{background:rgba(239,68,68,.18); color:#ef4444;}
-  #pvp-mode-switch .mode-switch-btn[data-mode="aviator"].active{background:rgba(250,204,21,.18); color:#facc15;}
-  #pvp-mode-switch .mode-switch-btn[data-mode="mines"].active{background:rgba(249,115,22,.18); color:#f97316;}
-  #pvp-mode-switch .mode-switch-btn[data-mode="poker"].active{background:rgba(59,130,246,.18); color:#3b82f6;}
-  #pvp-mode-switch .mode-switch-btn[data-mode="plinko"].active{background:rgba(255,255,255,.28); color:#fff;}
+  /* "TOP" badge on the icon of the most played game of the last 7 days */
+  .top-badge{
+    position:absolute; top:0; right:1px; padding:1px 4px; border-radius:5px;
+    background:linear-gradient(135deg,#f97316,#ef4444); color:#fff;
+    font-size:7px; font-weight:900; letter-spacing:.3px; line-height:1.3;
+    box-shadow:0 0 8px rgba(249,115,22,.7); pointer-events:none; z-index:2;
+  }
+  /* "NEW" / "PvP" badges, top-right corner of the game button */
+  .new-badge, .pvp-badge{
+    position:absolute; top:0; right:1px; padding:1px 4px; border-radius:5px;
+    background:linear-gradient(135deg,#22c55e,#16a34a); color:#fff;
+    font-size:7px; font-weight:900; letter-spacing:.3px; line-height:1.3;
+    box-shadow:0 0 8px rgba(34,197,94,.7); pointer-events:none; z-index:2;
+  }
+  .pvp-badge{background:linear-gradient(135deg,#ec1490,#a21caf); box-shadow:0 0 8px rgba(236,20,144,.7);}
+  /* a button that carries two badges: TOP moves to the left corner */
+  .new-badge ~ .top-badge, .pvp-badge ~ .top-badge{right:auto; left:1px;}
+  /* ---------- Roulette ---------- */
+  .rt-table{display:grid; grid-template-columns:repeat(12,1fr); gap:2px; margin:6px 0;}
+  .rt-cell{position:relative; display:flex; align-items:center; justify-content:center; height:30px; border-radius:5px; font-size:11px; font-weight:800; color:#fff; cursor:pointer; user-select:none; border:1px solid rgba(255,255,255,.08); box-sizing:border-box;}
+  .rt-cell:active{transform:scale(.94);}
+  .rt-red{background:#b91c1c;} .rt-black{background:#1f1f1f;} .rt-green{background:#15803d;} .rt-plain{background:#232323;}
+  .rt-zero{grid-column:1 / -1;}
+  .rt-span4{grid-column:span 4;} .rt-span2{grid-column:span 2;}
+  .rt-cell.rt-outside{height:34px; font-size:10.5px;}
+  .rt-chip{position:absolute; top:-6px; right:-4px; min-width:16px; padding:1px 3px; border-radius:9px; background:#facc15; color:#1a1400; font-size:8.5px; font-weight:900; line-height:1.25; text-align:center; z-index:3; pointer-events:none;}
+  .rt-cell.win{outline:2px solid #22c55e; z-index:2; box-shadow:0 0 10px #22c55e;}
+  .rt-wheel{display:flex; align-items:center; justify-content:center; margin:4px auto; width:84px; height:84px; border-radius:50%; font-size:34px; font-weight:900; color:#fff; background:#222; border:4px solid #444; box-sizing:border-box;}
+  .rt-wheel.red{background:#b91c1c; border-color:#ef4444;} .rt-wheel.black{background:#1f1f1f; border-color:#777;} .rt-wheel.green{background:#15803d; border-color:#22c55e;}
+  .rt-wheel.spinning{animation:rtPulse .25s linear infinite alternate;}
+  @keyframes rtPulse{from{transform:scale(1);}to{transform:scale(1.07);}}
+  .rt-strip{display:flex; gap:4px; justify-content:center; flex-wrap:wrap; min-height:22px;}
+  .rt-dot{width:22px; height:22px; border-radius:50%; font-size:10px; font-weight:800; color:#fff; display:flex; align-items:center; justify-content:center;}
+  .rt-btn-row{display:flex; gap:8px;}
+  .rt-btn-row button{flex:1; padding:9px 0; border-radius:10px; border:1px solid var(--card-border); background:#161616; color:#ccc; font-weight:700; font-size:12.5px; cursor:pointer;}
+  /* ---------- Slots ---------- */
+  .slot-machine{display:flex; gap:8px; justify-content:center; margin:6px 0; padding:14px 10px; background:#0d0d0d; border:1px solid var(--card-border); border-radius:16px;}
+  .slot-reel{width:84px; height:84px; border-radius:12px; background:linear-gradient(180deg,#262626,#141414); border:1px solid var(--card-border); display:flex; align-items:center; justify-content:center; font-size:44px; line-height:1; overflow:hidden;}
+  .slot-reel img{width:54px; height:54px; object-fit:contain; display:block;}
+  .slot-reel.spin{filter:blur(1.4px);}
+  .slot-reel.win{border-color:#facc15; box-shadow:0 0 16px rgba(250,204,21,.65);}
+  /* ---------- Dice ---------- */
+  .dice-display{display:flex; flex-direction:column; align-items:center; gap:10px; margin:6px 0; padding:16px 12px 14px; background:#0d0d0d; border:1px solid var(--card-border); border-radius:16px;}
+  .dice-roll{font-size:46px; font-weight:800; line-height:1; letter-spacing:1px; color:#fff; font-variant-numeric:tabular-nums; transition:color .2s, text-shadow .2s;}
+  .dice-roll.win{color:#4ade80; text-shadow:0 0 18px rgba(74,222,128,.55);}
+  .dice-roll.lose{color:#f87171; text-shadow:0 0 18px rgba(248,113,113,.45);}
+  .dice-bar-wrap{position:relative; width:100%; padding:0 2px;}
+  .dice-bar{position:relative; height:16px; border-radius:8px; background:#7f1d1d; overflow:hidden;}
+  .dice-bar-win{position:absolute; top:0; bottom:0; background:#16a34a;}
+  .dice-marker{position:absolute; top:-5px; width:3px; height:26px; margin-left:-1.5px; border-radius:2px; background:#fff; box-shadow:0 0 8px #fff; left:50%; opacity:0; transition:left .5s cubic-bezier(.2,.8,.2,1), opacity .2s;}
+  .dice-marker.show{opacity:1;}
+  .dice-scale{display:flex; justify-content:space-between; font-size:10px; color:#777; margin-top:6px;}
+  .dice-dir{display:flex; gap:8px;}
+  .dice-dir button{flex:1; padding:10px 0; border-radius:10px; border:1px solid var(--card-border); background:#161616; color:#ccc; font-weight:700; font-size:13px; cursor:pointer;}
+  .dice-dir button.active{background:#fff; color:#000; border-color:#fff;}
+  .dice-slider-row{display:flex; flex-direction:column; gap:6px; padding:10px 12px; background:#161616; border:1px solid var(--card-border); border-radius:12px;}
+  .dice-slider-row input[type=range]{width:100%; accent-color:#4ade80; margin:0;}
+  .dice-slider-labels{display:flex; justify-content:space-between; font-size:11px; color:#777;}
+  .dice-stats{display:grid; grid-template-columns:repeat(3,1fr); gap:6px;}
+  .dice-stat{background:#161616; border:1px solid var(--card-border); border-radius:10px; padding:7px 4px; text-align:center;}
+  .dice-stat .k{font-size:10px; color:#888; margin-bottom:2px;}
+  .dice-stat .v{font-size:14px; font-weight:800; color:#fff;}
+  .dice-stat .v.gold{color:#facc15;}
+  .dice-range-text{font-size:11.5px; color:#999; text-align:center;}
+  .slot-pay{display:flex; flex-direction:column; gap:4px;}
+  .slot-pay-row{display:flex; align-items:center; justify-content:space-between; padding:5px 10px; border-radius:8px; background:#161616; font-size:13px; font-weight:700;}
+  .slot-pay-row .syms{display:flex; align-items:center; gap:3px; font-size:16px;}
+  .slot-pay-row .syms img{width:18px; height:18px; object-fit:contain;}
+  .slot-pay-row .mult{color:#facc15;}
+  /* the selected game block always glows white */
+  /* every selected block (game / market / numbers / top switches) glows with the same white neon */
+  .mode-switch-btn.active, .pvp-top-submode-btn.active{
+    background:rgba(255,255,255,.18); color:#fff;
+    box-shadow:0 0 10px rgba(255,255,255,.5), inset 0 0 0 1px rgba(255,255,255,.4);
+    text-shadow:0 0 8px rgba(255,255,255,.7);
+    animation:neonBlockPulse 2.4s ease-in-out infinite;
+  }
+  #market-filter-row .market-filter-btn.active{box-shadow:0 0 10px rgba(255,255,255,.55); animation:neonBlockPulse 2.4s ease-in-out infinite;}
+  @keyframes neonBlockPulse{
+    0%, 100%{ box-shadow:0 0 6px rgba(255,255,255,.35), inset 0 0 0 1px rgba(255,255,255,.35); }
+    50%{ box-shadow:0 0 16px rgba(255,255,255,.75), inset 0 0 0 1px rgba(255,255,255,.55); }
+  }
   .mode-switch-icon{
     width:22px; height:22px; object-fit:contain; display:block; margin:0 auto;
     opacity:.5; filter:grayscale(100%);
@@ -2927,11 +2997,14 @@
     <!-- PVP -->
     <section id="pvp-screen" class="screen">
       <div class="mode-switch" id="pvp-mode-switch">
-        <button class="mode-switch-btn active" data-mode="cards"><img class="mode-switch-icon" src="/static/icons/swords.png" alt="PvP"></button>
+        <button class="mode-switch-btn active" data-mode="cards"><img class="mode-switch-icon" src="/static/icons/swords.png" alt="PvP"><span class="pvp-badge">PvP</span></button>
         <button class="mode-switch-btn" data-mode="aviator"><img class="mode-switch-icon" src="/static/icons/rocket.png" alt="Ракетка"></button>
         <button class="mode-switch-btn" data-mode="mines"><img class="mode-switch-icon" src="/static/icons/blast.png" alt="Мины"></button>
         <button class="mode-switch-btn" data-mode="poker"><img class="mode-switch-icon" src="/static/icons/joker.png" alt="Покер"></button>
-        <button class="mode-switch-btn" data-mode="plinko"><img class="mode-switch-icon" src="/static/icons/plinko.png" alt="Плинко"></button>
+        <button class="mode-switch-btn" data-mode="plinko"><img class="mode-switch-icon" src="/static/icons/coin.png" alt="Плинко"></button>
+        <button class="mode-switch-btn" data-mode="roulette"><img class="mode-switch-icon" src="/static/icons/roulette.png" alt="Рулетка"><span class="new-badge">NEW</span></button>
+        <button class="mode-switch-btn" data-mode="slots"><img class="mode-switch-icon" src="/static/icons/slot.png" alt="Слоты"><span class="new-badge">NEW</span></button>
+        <button class="mode-switch-btn" data-mode="dice"><img class="mode-switch-icon" src="/static/icons/dice.png" alt="Dice"><span class="new-badge">NEW</span></button>
         <button class="mode-switch-btn" data-mode="redblack"><img class="mode-switch-icon" src="/static/icons/red.png" alt="R&amp;B"></button>
       </div>
 
@@ -2940,6 +3013,10 @@
           <button type="button" id="pvp-rules-btn" class="market-filter-btn">Правила</button>
           <button type="button" id="pvp-top-btn" class="market-filter-btn">Топ</button>
           <button type="button" id="pvp-history-btn" class="market-filter-btn">История</button>
+        </div>
+        <div class="game-title-row pvp-title-row">
+          <div class="rb-title">PvP</div>
+          <span class="game-turnover" data-game="cards" style="margin-right:2px;"></span>
         </div>
         <div id="pvp-list"></div>
       </div>
@@ -2953,6 +3030,7 @@
         <div class="av-card">
           <div class="game-title-row">
             <div class="av-title">Ракетка</div>
+            <span class="game-turnover" data-game="aviator"></span>
             <button type="button" id="av-info-btn" class="game-info-btn">?</button>
           </div>
 
@@ -2993,6 +3071,7 @@
         <div class="rb-card">
           <div class="game-title-row">
             <div class="rb-title">Red&amp;Black</div>
+            <span class="game-turnover" data-game="redblack"></span>
             <button type="button" id="rb-info-btn" class="game-info-btn">?</button>
           </div>
           <div class="rb-bet-row">
@@ -3027,6 +3106,7 @@
         <div class="rb-card">
           <div class="game-title-row">
             <div class="rb-title">Минные поля</div>
+            <span class="game-turnover" data-game="mines"></span>
             <button type="button" id="mines-info-btn" class="game-info-btn">?</button>
           </div>
           <div class="rb-bet-row">
@@ -3068,6 +3148,7 @@
         <div class="poker-card">
           <div class="game-title-row">
             <div class="poker-title">Американский покер</div>
+            <span class="game-turnover" data-game="poker"></span>
             <button type="button" id="poker-info-btn" class="game-info-btn">?</button>
           </div>
 
@@ -3111,6 +3192,7 @@
         <div class="rb-card">
           <div class="game-title-row">
             <div class="rb-title">Плинко</div>
+            <span class="game-turnover" data-game="plinko"></span>
             <button type="button" id="plinko-info-btn" class="game-info-btn">?</button>
           </div>
           <div class="rb-bet-row">
@@ -3139,6 +3221,132 @@
           <div class="rb-result" id="plinko-result"></div>
         </div>
       </div>
+
+      <div id="pvp-roulette-block" style="display:none">
+        <div class="market-subrow game-actions-row">
+          <button type="button" id="roulette-rules-btn" class="market-filter-btn">Правила</button>
+          <button type="button" id="roulette-top-btn" class="market-filter-btn">Топ</button>
+          <button type="button" id="roulette-history-btn" class="market-filter-btn">История</button>
+        </div>
+        <div class="rb-card">
+          <div class="game-title-row">
+            <div class="rb-title">Рулетка</div>
+            <span class="game-turnover" data-game="roulette"></span>
+            <button type="button" id="roulette-info-btn" class="game-info-btn">?</button>
+          </div>
+          <div class="rb-bet-row">
+            <span class="rb-bet-label">Фишка:</span>
+            <span class="rb-bet-value" id="roulette-chip-value">25</span>
+            <span class="rb-bet-unit"><img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></span>
+            <button class="rb-bet-edit" id="roulette-chip-edit">Изменить</button>
+          </div>
+          <div class="rb-presets" id="roulette-presets">
+            <button data-bet="1">1</button>
+            <button data-bet="25" class="active">25</button>
+            <button data-bet="50">50</button>
+            <button data-bet="100">100</button>
+            <button data-bet="250">250</button>
+            <button data-bet="500">500</button>
+          </div>
+          <div class="rt-wheel" id="roulette-wheel">?</div>
+          <div class="rt-strip" id="roulette-strip"></div>
+          <div class="rt-table" id="roulette-table"></div>
+          <div class="rt-btn-row">
+            <button type="button" id="roulette-undo">Отменить</button>
+            <button type="button" id="roulette-clear">Очистить</button>
+          </div>
+          <button class="mines-start-btn" id="roulette-spin-btn">Крутить за <span id="roulette-total">0</span> <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></button>
+          <div class="rb-result" id="roulette-result"></div>
+        </div>
+      </div>
+
+      <div id="pvp-slots-block" style="display:none">
+        <div class="market-subrow game-actions-row">
+          <button type="button" id="slots-rules-btn" class="market-filter-btn">Правила</button>
+          <button type="button" id="slots-top-btn" class="market-filter-btn">Топ</button>
+          <button type="button" id="slots-history-btn" class="market-filter-btn">История</button>
+        </div>
+        <div class="rb-card">
+          <div class="game-title-row">
+            <div class="rb-title">Слоты</div>
+            <span class="game-turnover" data-game="slots"></span>
+            <button type="button" id="slots-info-btn" class="game-info-btn">?</button>
+          </div>
+          <div class="rb-bet-row">
+            <span class="rb-bet-label">Ставка:</span>
+            <span class="rb-bet-value" id="slots-bet-value">25</span>
+            <span class="rb-bet-unit"><img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></span>
+            <button class="rb-bet-edit" id="slots-bet-edit">Изменить</button>
+          </div>
+          <div class="rb-presets" id="slots-presets">
+            <button data-bet="25" class="active">25</button>
+            <button data-bet="50">50</button>
+            <button data-bet="100">100</button>
+            <button data-bet="250">250</button>
+            <button data-bet="500">500</button>
+          </div>
+          <div class="slot-machine" id="slots-machine">
+            <div class="slot-reel" id="slot-reel-0">🍒</div>
+            <div class="slot-reel" id="slot-reel-1">🍒</div>
+            <div class="slot-reel" id="slot-reel-2">🍒</div>
+          </div>
+          <div class="slot-pay" id="slots-pay"></div>
+          <button class="mines-start-btn" id="slots-spin-btn">Крутить за <span id="slots-spin-bet">25</span> <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></button>
+          <div class="rb-result" id="slots-result"></div>
+        </div>
+      </div>
+
+      <div id="pvp-dice-block" style="display:none">
+        <div class="market-subrow game-actions-row">
+          <button type="button" id="dice-rules-btn" class="market-filter-btn">Правила</button>
+          <button type="button" id="dice-top-btn" class="market-filter-btn">Топ</button>
+          <button type="button" id="dice-history-btn" class="market-filter-btn">История</button>
+        </div>
+        <div class="rb-card">
+          <div class="game-title-row">
+            <div class="rb-title">Dice</div>
+            <span class="game-turnover" data-game="dice"></span>
+            <button type="button" id="dice-info-btn" class="game-info-btn">?</button>
+          </div>
+          <div class="rb-bet-row">
+            <span class="rb-bet-label">Ставка:</span>
+            <span class="rb-bet-value" id="dice-bet-value">25</span>
+            <span class="rb-bet-unit"><img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></span>
+            <button class="rb-bet-edit" id="dice-bet-edit">Изменить</button>
+          </div>
+          <div class="rb-presets" id="dice-presets">
+            <button data-bet="25" class="active">25</button>
+            <button data-bet="50">50</button>
+            <button data-bet="100">100</button>
+            <button data-bet="250">250</button>
+            <button data-bet="500">500</button>
+          </div>
+          <div class="dice-display">
+            <div class="dice-roll" id="dice-roll">--.--</div>
+            <div class="dice-bar-wrap">
+              <div class="dice-bar"><div class="dice-bar-win" id="dice-bar-win"></div></div>
+              <div class="dice-marker" id="dice-marker"></div>
+              <div class="dice-scale"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+            </div>
+          </div>
+          <div class="dice-dir" id="dice-dir">
+            <button data-dir="under" class="active">Меньше ▼</button>
+            <button data-dir="over">Больше ▲</button>
+          </div>
+          <div class="dice-slider-row">
+            <input type="range" id="dice-chance" min="2" max="95" step="1" value="50">
+            <div class="dice-slider-labels"><span>2%</span><span>шанс выигрыша</span><span>95%</span></div>
+          </div>
+          <div class="dice-stats">
+            <div class="dice-stat"><div class="k">Шанс</div><div class="v" id="dice-st-chance">50%</div></div>
+            <div class="dice-stat"><div class="k">Множитель</div><div class="v gold" id="dice-st-mult">x1.96</div></div>
+            <div class="dice-stat"><div class="k">Выигрыш</div><div class="v" id="dice-st-pay">49</div></div>
+          </div>
+          <div class="dice-range-text" id="dice-range-text"></div>
+          <button class="mines-start-btn" id="dice-roll-btn">Бросить за <span id="dice-roll-bet">25</span> <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></button>
+          <div class="rb-result" id="dice-result"></div>
+        </div>
+      </div>
     </section>
 
     <section id="market-screen" class="screen">
@@ -3153,8 +3361,8 @@
       <div class="market-subrow" id="market-filter-row">
         <button type="button" class="market-filter-btn active" data-sort="price">Цена ↑</button>
         <button type="button" class="market-filter-btn" data-sort="number"># ↑</button>
-        <button type="button" class="market-filter-btn" data-sort="legend">Legend</button>
-        <button type="button" class="market-filter-btn" data-sort="diamond">Diamond</button>
+        <button type="button" class="market-filter-btn" data-sort="legend">LEGEND</button>
+        <button type="button" class="market-filter-btn" data-sort="diamond">DIAMOND</button>
       </div>
       <div id="blind-swap-status-row" class="hidden"></div>
       <div id="market-list"></div>
@@ -3880,7 +4088,7 @@
         <div class="pvp-rules-row"><span class="rarity-tag gold">gold</span><span class="w">8</span></div>
         <div class="pvp-rules-row"><span class="rarity-tag platinum">platinum</span><span class="w">20</span></div>
         <div class="pvp-rules-row"><span class="rarity-tag diamond">diamond</span><span class="w">50</span></div>
-        <div class="pvp-rules-row"><span class="rarity-tag vt-rare">rare</span><span class="w">32</span></div>
+        <div class="pvp-rules-row" style="margin-top:16px; padding-top:12px; border-top:1px solid rgba(255,255,255,.12);"><span class="rarity-tag vt-rare">rare</span><span class="w">32</span></div>
         <div class="pvp-rules-row"><span class="rarity-tag vt-epic">epic</span><span class="w">80</span></div>
         <div class="pvp-rules-row"><span class="rarity-tag vt-legend">legend</span><span class="w">200</span></div>
       </div>
@@ -3904,7 +4112,7 @@
       <button class="btn-close-inline" id="rb-rules-close">✕</button>
       <div id="rb-rules-title">Правила Red&amp;Black</div>
       <div id="rb-rules-text">
-        Ставишь гемы и выбираешь цвет — красное или чёрное. Угадал — забираешь x2 (ставка + столько же сверху), не угадал — ставка сгорает полностью. Красное и чёрное выпадают по 49%, а в 2% случаев выпадает зелёное — тогда проигрывают все ставки. Возврат игрокам 98%.
+        Ставишь гемы и выбираешь цвет — красное или чёрное. Угадал — забираешь x2 (ставка + столько же сверху), не угадал — ставка сгорает полностью. Максимальная ставка — 100 000 гемов. Красное и чёрное выпадают по 49%, а в 2% случаев выпадает зелёное — тогда проигрывают все ставки. Возврат игрокам 98%.
       </div>
     </div>
   </div>
@@ -3915,6 +4123,36 @@
       <div id="plinko-rules-title">Правила Плинко</div>
       <div id="plinko-rules-text">
         Делаешь ставку и выбираешь уровень риска (Low/Medium/High) — шарик падает сквозь 16 рядов гвоздей и попадает в одну из 17 ячейк со своим множителем. Чем выше риск — тем больше разброс: на краях множители огромные, в центре — меньше единицы. Средняя отдача (RTP) — 98%.
+      </div>
+    </div>
+  </div>
+
+  <div id="roulette-rules-overlay">
+    <div id="roulette-rules-card">
+      <button class="btn-close-inline" id="roulette-rules-close">✕</button>
+      <div id="roulette-rules-title">Правила Рулетки</div>
+      <div id="roulette-rules-text">
+        Европейская рулетка: числа от 0 до 36, одно зеро. Выбери размер фишки и нажимай на поля стола — на одно поле можно ставить несколько раз, а ставок за один спин может быть сколько угодно. Минимальная ставка: на число — от 1 гема, на остальные поля — от 25. Выплаты: число — x36, красное/чёрное, чёт/нечёт, 1–18 и 19–36 — x2, дюжины 1–12, 13–24 и 25–36 — x3. Зеро проигрывают все ставки, кроме ставки прямо на 0. Средняя отдача (RTP) — 97.3%.
+      </div>
+    </div>
+  </div>
+
+  <div id="dice-rules-overlay">
+    <div id="dice-rules-card">
+      <button class="btn-close-inline" id="dice-rules-close">✕</button>
+      <div id="dice-rules-title">Правила Dice</div>
+      <div id="dice-rules-text">
+        Каждый бросок — случайное число от 0.00 до 99.99. Выбираешь сторону: «Меньше» — выигрыш, если выпало число ниже порога, «Больше» — если выше. Ползунком задаёшь шанс выигрыша от 2% до 95%: чем он меньше, тем выше множитель (x1.03 при 95% и до x49 при 2%). Выигрыш = ставка × множитель, зелёная зона на шкале показывает, какие числа выигрывают. Минимальная ставка 25 гемов. Средний возврат игры — 98%.
+      </div>
+    </div>
+  </div>
+
+  <div id="slots-rules-overlay">
+    <div id="slots-rules-card">
+      <button class="btn-close-inline" id="slots-rules-close">✕</button>
+      <div id="slots-rules-title">Правила Слотов</div>
+      <div id="slots-rules-text">
+        Три барабана, одна линия. Выигрыш — три одинаковых символа в ряд, множители указаны под барабанами: три алмаза — самый крупный приз. Две вишни тоже платят x1.5. Средняя отдача (RTP) — около 98%.
       </div>
     </div>
   </div>
@@ -4308,7 +4546,43 @@ function switchScreen(screenId){
   if(screenId === "farm-screen") loadStats(); // re-sync "Всего" — it drifts stale otherwise, since it only updates from THIS player's own farm/craft/case/burn actions
   if(screenId === "profile-screen") loadProfile();
   if(screenId === "market-screen"){ resetMarketSort(); refreshMarketScreen(); }
-  if(screenId === "pvp-screen"){ pvpTabJustOpened = true; loadPvpState(); setPvpPulse(false); }
+  if(screenId === "pvp-screen"){ pvpTabJustOpened = true; loadPvpState(); setPvpPulse(false); loadTopGameBadge(); loadTurnover(); }
+}
+
+// "NEW" badges (roulette + slots) disappear on their own two weeks after launch.
+if(Date.now() > Date.parse("2026-10-22T00:00:00+03:00")){
+  document.querySelectorAll(".new-badge").forEach(b => b.remove());
+}
+
+// Turnover over the last 24 h shown in every game's title row (PvP: cards staked).
+async function loadTurnover(){
+  try{
+    const r = await api("/games/turnover");
+    const t = r.turnover || {};
+    document.querySelectorAll(".game-turnover").forEach(el => {
+      const v = t[el.dataset.game] ?? 0;
+      const num = Number(v).toLocaleString("ru-RU");
+      el.innerHTML = el.dataset.game === "cards"
+        ? `ОБОРОТ 24Ч: ${num} карт`
+        : `ОБОРОТ 24Ч: ${num} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">`;
+    });
+  }catch(e){ /* non-critical */ }
+}
+
+// "TOP" badge: the game with the most plays over the last 7 days (server decides).
+async function loadTopGameBadge(){
+  try{
+    const r = await api("/games/top");
+    document.querySelectorAll("#pvp-mode-switch .top-badge").forEach(b => b.remove());
+    if(!r.game) return;
+    const btn = document.querySelector(`#pvp-mode-switch .mode-switch-btn[data-mode="${r.game}"]`);
+    if(btn){
+      const b = document.createElement("span");
+      b.className = "top-badge";
+      b.textContent = "TOP";
+      btn.appendChild(b);
+    }
+  }catch(e){ /* non-critical */ }
 }
 
 // Ambient PvP check — runs regardless of which tab is open, so a round starting
@@ -4658,8 +4932,8 @@ let marketSortDesc = false;
 const MARKET_SORT_LABELS = {
   price:   ["Цена ↑", "Цена ↓"],
   number:  ["# ↑", "# ↓"],
-  legend:  ["Legend", "Rare"],     // the label shows which end is on top
-  diamond: ["Diamond", "Gold"],
+  legend:  ["LEGEND", "RARE"],     // the label shows which end is on top
+  diamond: ["DIAMOND", "GOLD"],
 };
 function updateMarketSortButtons(){
   document.querySelectorAll("#market-filter-row .market-filter-btn").forEach(b=>{
@@ -4873,6 +5147,24 @@ async function openHistory(explicitMode){
       const data = await api("/mines/history");
       renderMinesHistoryList(data.rounds || []);
     }catch(e){ list.innerHTML = `<div class="empty-state">Не удалось загрузить историю</div>`; }
+  }else if(mode === "roulette"){
+    title.textContent = "История Рулетки";
+    try{
+      const data = await api("/roulette/history");
+      renderRouletteHistoryList(data.rounds || []);
+    }catch(e){ list.innerHTML = `<div class="empty-state">Не удалось загрузить историю</div>`; }
+  }else if(mode === "slots"){
+    title.textContent = "История Слотов";
+    try{
+      const data = await api("/slots/history");
+      renderSlotsHistoryList(data.rounds || []);
+    }catch(e){ list.innerHTML = `<div class="empty-state">Не удалось загрузить историю</div>`; }
+  }else if(mode === "dice"){
+    title.textContent = "История Dice";
+    try{
+      const data = await api("/dice/history");
+      renderDiceHistoryList(data.rounds || []);
+    }catch(e){ list.innerHTML = `<div class="empty-state">Не удалось загрузить историю</div>`; }
   }else if(mode === "plinko"){
     title.textContent = "История Плинко";
     try{
@@ -4944,7 +5236,7 @@ function renderPvpHistory(rounds){
     return `
     <div class="history-row pvp-history-row${underdog}">
       <div class="info">
-        <div class="line1">${r.loser_name && r.loser_win_pct != null ? `${r.winner_name} с ${r.winner_win_pct}% забрал у ${r.loser_name} с ${r.loser_win_pct}% ${pluralCards(r.total_cards)}` : `${r.winner_name} забрал ${pluralCards(r.total_cards)} с ${r.winner_win_pct != null ? r.winner_win_pct : "?"}%`}</div>
+        <div class="line1">${r.loser_name && r.loser_win_pct != null ? `${r.winner_name} с ${r.winner_win_pct}% забрал у ${r.loser_name} ${pluralCards(r.total_cards)}` : `${r.winner_name} забрал ${pluralCards(r.total_cards)} с ${r.winner_win_pct != null ? r.winner_win_pct : "?"}%`}</div>
         <div class="line2">Игроки: ${r.total_players} | ${fmtHistoryTime(r.resolved_at)}</div>
       </div>
     </div>
@@ -5055,6 +5347,9 @@ document.getElementById("market-history-btn").addEventListener("click", ()=>open
 document.getElementById("pvp-history-btn").addEventListener("click", ()=>openHistory("pvp"));
 document.getElementById("rb-history-btn").addEventListener("click", ()=>openHistory("redblack"));
 document.getElementById("plinko-history-btn").addEventListener("click", ()=>openHistory("plinko"));
+document.getElementById("roulette-history-btn").addEventListener("click", ()=>openHistory("roulette"));
+document.getElementById("slots-history-btn").addEventListener("click", ()=>openHistory("slots"));
+document.getElementById("dice-history-btn").addEventListener("click", ()=>openHistory("dice"));
 document.getElementById("poker-history-btn").addEventListener("click", ()=>openHistory("poker"));
 document.getElementById("av-history-btn").addEventListener("click", ()=>openHistory("aviator"));
 document.getElementById("history-close").addEventListener("click", ()=>{
@@ -5090,6 +5385,14 @@ document.getElementById("plinko-rules-btn").addEventListener("click", ()=>{
 });
 document.getElementById("plinko-info-btn").addEventListener("click", ()=>{
   document.getElementById("plinko-rules-overlay").classList.add("active");
+});
+["roulette", "slots", "dice"].forEach(g=>{
+  const open = ()=> document.getElementById(g + "-rules-overlay").classList.add("active");
+  document.getElementById(g + "-rules-btn").addEventListener("click", open);
+  document.getElementById(g + "-info-btn").addEventListener("click", open);
+  document.getElementById(g + "-rules-close").addEventListener("click", ()=>{
+    document.getElementById(g + "-rules-overlay").classList.remove("active");
+  });
 });
 document.getElementById("plinko-rules-close").addEventListener("click", ()=>{
   document.getElementById("plinko-rules-overlay").classList.remove("active");
@@ -5127,6 +5430,12 @@ const GAME_TOP_CONFIG = {
               title: "🏆 Топ Покера", sub: "Больше всего выигранных гемов" },
   mines:    { endpoint: "/mines/leaderboard",    empty: "Пока никто не сыграл ни одного раунда.",  empty_emoji: "💣",
               title: "🏆 Топ Минных полей", sub: "Больше всего выигранных гемов" },
+  roulette: { endpoint: "/roulette/leaderboard", empty: "Пока никто не играл в Рулетку.",  empty_emoji: "🎡",
+              title: "🏆 Топ Рулетки", sub: "Больше всего выигранных гемов" },
+  slots:    { endpoint: "/slots/leaderboard",    empty: "Пока никто не играл в Слоты.",  empty_emoji: "🎰",
+              title: "🏆 Топ Слотов", sub: "Больше всего выигранных гемов" },
+  dice:     { endpoint: "/dice/leaderboard",     empty: "Пока никто не играл в Dice.",  empty_emoji: "🎲",
+              title: "🏆 Топ Dice", sub: "Больше всего выигранных гемов" },
   plinko:   { endpoint: "/plinko/leaderboard",   empty: "Пока никто не играл в Плинко.",  empty_emoji: "🎱",
               title: "🏆 Топ Плинко", sub: "Больше всего выигранных гемов" },
 };
@@ -5197,6 +5506,9 @@ document.getElementById("rb-top-btn").addEventListener("click", ()=>openGameTop(
 document.getElementById("av-top-btn").addEventListener("click", ()=>openGameTop("aviator"));
 document.getElementById("poker-top-btn").addEventListener("click", ()=>openGameTop("poker"));
 document.getElementById("plinko-top-btn").addEventListener("click", ()=>openGameTop("plinko"));
+document.getElementById("roulette-top-btn").addEventListener("click", ()=>openGameTop("roulette"));
+document.getElementById("slots-top-btn").addEventListener("click", ()=>openGameTop("slots"));
+document.getElementById("dice-top-btn").addEventListener("click", ()=>openGameTop("dice"));
 document.getElementById("mines-top-btn").addEventListener("click", ()=>openGameTop("mines"));
 document.getElementById("pvp-top-close").addEventListener("click", ()=>{
   document.getElementById("pvp-top-overlay").classList.remove("active");
@@ -5389,7 +5701,22 @@ function openMarketItem(ucId, mode){
     priceRow.style.display = "flex";
     priceRow.innerHTML = `<img src="/static/icons/diamond.png" alt="">${item.listed_price}`;
     if(item.is_mine){
-      actions.innerHTML = `<button class="btn-unlist" id="mi-unlist">Отмена</button>`;
+      actions.innerHTML = `<button class="btn-edit-price" id="mi-edit">Изменить</button><button class="btn-unlist" id="mi-unlist">Отмена</button>`;
+      document.getElementById("mi-edit").addEventListener("click", async ()=>{
+        const minPrice = minListingPrice(item.rarity, item.drop_number);
+        const price = await promptNumber(`Новая цена в гемах (минимум ${minPrice})`);
+        if(!price) return;
+        if(price < minPrice){ toast(`Минимальная цена продажи ${minPrice} гемов`); return; }
+        try{
+          await api("/market/list", { user_card_id: ucId, price_gems: price });
+          toast("Цена изменена");
+          closeMarketItem();
+          loadMarket();
+        }catch(e){
+          if(String(e.message).includes("minimum price")) toast(`Минимальная цена продажи ${minPrice} гемов`);
+          else toast("Не получилось: " + e.message);
+        }
+      });
       document.getElementById("mi-unlist").addEventListener("click", async ()=>{
         try{
           await api("/market/unlist", { user_card_id: ucId });
@@ -5620,6 +5947,16 @@ document.getElementById("pvp-mode-switch").addEventListener("click", (e)=>{
   document.getElementById("pvp-mines-block").style.display = pvpMode === "mines" ? "" : "none";
   document.getElementById("pvp-poker-block").style.display = pvpMode === "poker" ? "" : "none";
   document.getElementById("pvp-plinko-block").style.display = pvpMode === "plinko" ? "" : "none";
+  document.getElementById("pvp-roulette-block").style.display = pvpMode === "roulette" ? "" : "none";
+  document.getElementById("pvp-slots-block").style.display = pvpMode === "slots" ? "" : "none";
+  document.getElementById("pvp-dice-block").style.display = pvpMode === "dice" ? "" : "none";
+  if(pvpMode === "roulette"){
+    if(!rouletteInited){ initRoulette(); rouletteInited = true; }
+    loadRouletteLast();
+  }
+  if(pvpMode === "slots" && !slotsInited){ initSlots(); slotsInited = true; }
+  if(pvpMode === "dice" && !diceInited){ initDice(); diceInited = true; }
+  loadTurnover();
   if(pvpMode === "mines"){ resumeMinesRound(); syncMinesActiveRound(); }
   if(pvpMode === "plinko" && !plinkoInited){ initPlinkoBoard(); plinkoInited = true; }
   if(pvpMode === "cards" && pendingPvpReveal){
@@ -5785,7 +6122,411 @@ function renderPlinkoHistoryList(rounds){
   }).join("");
 }
 
+// ---------- Roulette (European, one zero) ----------
+const ROULETTE_MIN_BET = 25;       // outside bets
+const ROULETTE_MIN_STRAIGHT = 1;    // a single number: from 1 gem
+const ROULETTE_RED = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+let rouletteChip = 25;
+let rouletteBets = new Map();   // "type:value" -> amount
+let rouletteStack = [];         // placement order, for "Отменить"
+let rouletteBusy = false;
+let rouletteInited = false;
+let rouletteLast = [];
+
+function rtColor(n){ return n === 0 ? "green" : (ROULETTE_RED.has(n) ? "red" : "black"); }
+function rtKey(type, value){ return type + ":" + (value ?? ""); }
+function rtShort(n){ return n >= 1000 ? (Math.round(n / 100) / 10) + "k" : String(n); }
+
+function initRoulette(){
+  const t = document.getElementById("roulette-table");
+  const cell = (cls, type, value, label, extra = "") =>
+    `<div class="rt-cell ${cls} ${extra}" data-type="${type}" data-value="${value ?? ""}">${label}</div>`;
+  let html = cell("rt-green rt-zero", "straight", 0, "0");
+  for(let row = 0; row < 3; row++){
+    for(let col = 0; col < 12; col++){
+      const n = col * 3 + (3 - row);
+      html += cell("rt-" + rtColor(n), "straight", n, n);
+    }
+  }
+  html += cell("rt-plain rt-span4", "dozen", 1, "1–12") + cell("rt-plain rt-span4", "dozen", 2, "13–24") + cell("rt-plain rt-span4", "dozen", 3, "25–36");
+  html += cell("rt-plain rt-span2 rt-outside", "low", null, "1–18");
+  html += cell("rt-plain rt-span2 rt-outside", "even", null, "ЧЁТ");
+  html += cell("rt-red rt-span2 rt-outside", "red", null, "КРАСН");
+  html += cell("rt-black rt-span2 rt-outside", "black", null, "ЧЁРН");
+  html += cell("rt-plain rt-span2 rt-outside", "odd", null, "НЕЧЁТ");
+  html += cell("rt-plain rt-span2 rt-outside", "high", null, "19–36");
+  t.innerHTML = html;
+  renderRouletteBets();
+  renderRouletteStrip();
+}
+
+function renderRouletteBets(){
+  document.querySelectorAll("#roulette-table .rt-cell").forEach(el => {
+    const key = rtKey(el.dataset.type, el.dataset.value === "" ? null : parseInt(el.dataset.value, 10));
+    const amt = rouletteBets.get(key) || 0;
+    let chip = el.querySelector(".rt-chip");
+    if(amt > 0){
+      if(!chip){ chip = document.createElement("span"); chip.className = "rt-chip"; el.appendChild(chip); }
+      chip.textContent = rtShort(amt);
+    }else if(chip){ chip.remove(); }
+  });
+  let total = 0;
+  rouletteBets.forEach(v => total += v);
+  document.getElementById("roulette-total").textContent = total;
+}
+
+async function loadRouletteLast(){
+  try{
+    const data = await api("/roulette/last");
+    rouletteLast = (data.numbers || []).slice(0, 10);
+    renderRouletteStrip();
+  }catch(e){ /* non-critical */ }
+}
+
+function renderRouletteStrip(){
+  document.getElementById("roulette-strip").innerHTML = rouletteLast.map(n =>
+    `<div class="rt-dot rt-${rtColor(n)}">${n}</div>`).join("");
+}
+
+document.getElementById("roulette-presets").addEventListener("click", (e)=>{
+  const btn = e.target.closest("button[data-bet]");
+  if(!btn) return;
+  rouletteChip = parseInt(btn.dataset.bet, 10);
+  document.getElementById("roulette-chip-value").textContent = rouletteChip;
+  document.querySelectorAll("#roulette-presets button").forEach(b => b.classList.toggle("active", b === btn));
+});
+document.getElementById("roulette-chip-edit").addEventListener("click", async ()=>{
+  const val = await promptNumber("Фишка (гемов, на числа от 1, на остальное от " + ROULETTE_MIN_BET + ")");
+  if(val && val >= ROULETTE_MIN_STRAIGHT){
+    rouletteChip = val;
+    document.getElementById("roulette-chip-value").textContent = rouletteChip;
+    document.querySelectorAll("#roulette-presets button").forEach(b => b.classList.remove("active"));
+  }else if(val){
+    toast("Минимальная ставка 1 гем");
+  }
+});
+
+document.getElementById("roulette-table").addEventListener("click", (e)=>{
+  const el = e.target.closest(".rt-cell");
+  if(!el || rouletteBusy) return;
+  if(el.dataset.type !== "straight" && rouletteChip < ROULETTE_MIN_BET){
+    toast("На это поле минимум " + ROULETTE_MIN_BET + " гемов — на числа можно от 1");
+    return;
+  }
+  document.querySelectorAll("#roulette-table .rt-cell.win").forEach(c => c.classList.remove("win"));
+  const key = rtKey(el.dataset.type, el.dataset.value === "" ? null : parseInt(el.dataset.value, 10));
+  rouletteBets.set(key, (rouletteBets.get(key) || 0) + rouletteChip);
+  rouletteStack.push({ key, amount: rouletteChip });
+  renderRouletteBets();
+  tg?.HapticFeedback?.impactOccurred?.("light");
+});
+// "Отменить" -- takes ALL chips off the table; "Очистить" -- takes off only the last chip placed.
+document.getElementById("roulette-undo").addEventListener("click", ()=>{
+  if(rouletteBusy) return;
+  rouletteBets = new Map(); rouletteStack = [];
+  document.querySelectorAll("#roulette-table .rt-cell.win").forEach(c => c.classList.remove("win"));
+  renderRouletteBets();
+});
+document.getElementById("roulette-clear").addEventListener("click", ()=>{
+  if(rouletteBusy || !rouletteStack.length) return;
+  const last = rouletteStack.pop();
+  const left = (rouletteBets.get(last.key) || 0) - last.amount;
+  if(left > 0) rouletteBets.set(last.key, left); else rouletteBets.delete(last.key);
+  renderRouletteBets();
+});
+
+function rtDelay(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+document.getElementById("roulette-spin-btn").addEventListener("click", async ()=>{
+  if(rouletteBusy) return;
+  if(rouletteBets.size === 0){ toast("Сделай ставку — нажми на поле стола"); return; }
+  let total = 0;
+  rouletteBets.forEach(v => total += v);
+  if(total > gemsBalance){ notEnoughGemsToast(); return; }
+  const bets = [...rouletteBets].map(([key, amount]) => {
+    const [type, v] = key.split(":");
+    return { type, value: v === "" ? null : parseInt(v, 10), amount };
+  });
+  rouletteBusy = true;
+  const btn = document.getElementById("roulette-spin-btn");
+  btn.disabled = true;
+  const wheel = document.getElementById("roulette-wheel");
+  const resultEl = document.getElementById("roulette-result");
+  resultEl.textContent = "";
+  document.querySelectorAll("#roulette-table .rt-cell.win").forEach(c => c.classList.remove("win"));
+  wheel.className = "rt-wheel spinning";
+  const timer = setInterval(()=>{
+    const n = Math.floor(Math.random() * 37);
+    wheel.textContent = n;
+    wheel.className = "rt-wheel spinning " + rtColor(n);
+  }, 70);
+  try{
+    const res = await api("/roulette/play", { bets });
+    await rtDelay(1500);
+    clearInterval(timer);
+    wheel.className = "rt-wheel " + res.color;
+    wheel.textContent = res.number;
+    setGemsDisplay(res.gems);
+    // light up the winning cells
+    res.wins.forEach(i => {
+      const b = bets[i];
+      const sel = `#roulette-table .rt-cell[data-type="${b.type}"][data-value="${b.value ?? ""}"]`;
+      const c = document.querySelector(sel);
+      if(c) c.classList.add("win");
+    });
+    const net = res.payout - res.bet;
+    resultEl.innerHTML = net >= 0
+      ? `Выпало ${res.number}! ${net > 0 ? "+" + net : "Ставка вернулась"} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">`
+      : `Выпало ${res.number} — -${Math.abs(net)} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">`;
+    tg?.HapticFeedback?.notificationOccurred(net > 0 ? "success" : "error");
+    rouletteLast.unshift(res.number);
+    rouletteLast = rouletteLast.slice(0, 10);
+    renderRouletteStrip();
+  }catch(e){
+    clearInterval(timer);
+    wheel.className = "rt-wheel"; wheel.textContent = "?";
+    if(String(e.message).includes("not enough gems")) notEnoughGemsToast();
+    else toast("Ошибка Рулетки: " + e.message);
+  }finally{
+    rouletteBusy = false;
+    btn.disabled = false;
+  }
+});
+
+function renderRouletteHistoryList(rounds){
+  const list = document.getElementById("history-list");
+  if(!rounds.length){
+    list.innerHTML = `<div class="empty-state"><span class="emoji">🎡</span>Раундов пока не было.</div>`;
+    return;
+  }
+  const colorWord = { red: "красное", black: "чёрное", green: "зеро" };
+  list.innerHTML = rounds.map(r => {
+    const name = r.username ? maskedName(r.username) : (r.first_name || "Игрок");
+    const net = r.payout - r.bet;
+    const sign = net >= 0 ? `+${net}` : `-${Math.abs(net)}`;
+    return `
+      <div class="history-row pvp-history-row">
+        <div class="info">
+          <div class="line1">🎡 ${name} — ${r.number} (${colorWord[rtColor(r.number)]}) ${sign} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></div>
+          <div class="line2">ставка ${r.bet} · ${fmtHistoryTime(r.created_at)}</div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+// ---------- Slots (3 reels, one line) ----------
+// Mirrors database.py's SLOTS_* -- display only, the server decides every spin.
+const SLOTS_MIN_BET = 25;
+const SLOT_SYM = { D: '<img src="/static/icons/diamond.png" alt="">', W: "🍉", G: "🍇", L: "🍋", C: "🍒" };
+const SLOT_SYMBOLS = ["D", "W", "G", "L", "C"];
+const SLOT_PAY = [["D", 130], ["W", 30], ["G", 15], ["L", 8], ["C", 5]];
+const SLOT_TWO_CHERRIES = 1.5;
+let slotsBet = 25;
+let slotsBusy = false;
+let slotsInited = false;
+
+function initSlots(){
+  const row = (syms, mult) => `<div class="slot-pay-row"><span class="syms">${syms}</span><span class="mult">x${mult}</span></div>`;
+  document.getElementById("slots-pay").innerHTML =
+    SLOT_PAY.map(([k, m]) => row(SLOT_SYM[k].repeat(3), m)).join("") +
+    row(SLOT_SYM.C.repeat(2), SLOT_TWO_CHERRIES);
+  [0, 1, 2].forEach(i => { document.getElementById("slot-reel-" + i).innerHTML = SLOT_SYM.C; });
+}
+function renderSlotsBet(){
+  document.getElementById("slots-bet-value").textContent = slotsBet;
+  document.getElementById("slots-spin-bet").textContent = slotsBet;
+  document.querySelectorAll("#slots-presets button").forEach(b => b.classList.toggle("active", parseInt(b.dataset.bet, 10) === slotsBet));
+}
+document.getElementById("slots-presets").addEventListener("click", (e)=>{
+  const btn = e.target.closest("button[data-bet]");
+  if(!btn) return;
+  slotsBet = parseInt(btn.dataset.bet, 10);
+  renderSlotsBet();
+});
+document.getElementById("slots-bet-edit").addEventListener("click", async ()=>{
+  const val = await promptNumber("Ставка (гемов, минимум " + SLOTS_MIN_BET + ")");
+  if(val && val >= SLOTS_MIN_BET){ slotsBet = val; renderSlotsBet(); }
+  else if(val){ toast("Минимальная ставка " + SLOTS_MIN_BET + " гемов"); }
+});
+
+document.getElementById("slots-spin-btn").addEventListener("click", async ()=>{
+  if(slotsBusy) return;
+  if(slotsBet < SLOTS_MIN_BET){ toast("Минимальная ставка " + SLOTS_MIN_BET + " гемов"); return; }
+  if(slotsBet > gemsBalance){ notEnoughGemsToast(); return; }
+  slotsBusy = true;
+  const btn = document.getElementById("slots-spin-btn");
+  btn.disabled = true;
+  const reels = [0, 1, 2].map(i => document.getElementById("slot-reel-" + i));
+  const resultEl = document.getElementById("slots-result");
+  resultEl.textContent = "";
+  reels.forEach(r => { r.classList.remove("win"); r.classList.add("spin"); });
+  const rnd = () => SLOT_SYM[SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)]];
+  const timers = reels.map(r => setInterval(()=>{ r.innerHTML = rnd(); }, 70));
+  try{
+    const res = await api("/slots/play", { bet: slotsBet });
+    for(let i = 0; i < 3; i++){
+      await rtDelay(i === 0 ? 650 : 450);
+      clearInterval(timers[i]);
+      reels[i].classList.remove("spin");
+      reels[i].innerHTML = SLOT_SYM[res.reels[i]];
+      tg?.HapticFeedback?.impactOccurred?.("light");
+    }
+    setGemsDisplay(res.gems);
+    const net = res.payout - res.bet;
+    if(res.multiplier > 0) reels.forEach(r => r.classList.add("win"));
+    resultEl.innerHTML = res.multiplier > 0
+      ? `Выигрыш x${res.multiplier}! ${net > 0 ? "+" + net : "Ставка вернулась"} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">`
+      : `Не повезло — -${res.bet} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">`;
+    tg?.HapticFeedback?.notificationOccurred(net > 0 ? "success" : "error");
+  }catch(e){
+    timers.forEach(clearInterval);
+    reels.forEach(r => r.classList.remove("spin"));
+    if(String(e.message).includes("not enough gems")) notEnoughGemsToast();
+    else toast("Ошибка Слотов: " + e.message);
+  }finally{
+    slotsBusy = false;
+    btn.disabled = false;
+  }
+});
+
+function renderSlotsHistoryList(rounds){
+  const list = document.getElementById("history-list");
+  if(!rounds.length){
+    list.innerHTML = `<div class="empty-state"><span class="emoji">🎰</span>Раундов пока не было.</div>`;
+    return;
+  }
+  const sym = k => k === "D" ? '<img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">' : SLOT_SYM[k];
+  list.innerHTML = rounds.map(r => {
+    const name = r.username ? maskedName(r.username) : (r.first_name || "Игрок");
+    const net = r.payout - r.bet;
+    const sign = net >= 0 ? `+${net}` : `-${Math.abs(net)}`;
+    return `
+      <div class="history-row pvp-history-row">
+        <div class="info">
+          <div class="line1">🎰 ${name} — ${r.reels.split(",").map(sym).join("")} ${r.multiplier > 0 ? "x" + r.multiplier + " " : ""}${sign} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></div>
+          <div class="line2">ставка ${r.bet} · ${fmtHistoryTime(r.created_at)}</div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+// ---------- Dice ----------
+const DICE_MIN_BET = 25;
+const DICE_RTP = 98; // mirrors database.py -- the server computes the real payout
+let diceBet = 25;
+let diceChance = 50;
+let diceDir = "under";
+let diceBusy = false;
+let diceInited = false;
+
+function diceMult(ch){ return Math.round(DICE_RTP / ch * 10000) / 10000; }
+function fmtMult(m){ return String(Math.round(m * 100) / 100); }
+function renderDice(){
+  const m = diceMult(diceChance);
+  document.getElementById("dice-bet-value").textContent = diceBet;
+  document.getElementById("dice-roll-bet").textContent = diceBet;
+  document.querySelectorAll("#dice-presets button").forEach(b => b.classList.toggle("active", parseInt(b.dataset.bet, 10) === diceBet));
+  document.querySelectorAll("#dice-dir button").forEach(b => b.classList.toggle("active", b.dataset.dir === diceDir));
+  document.getElementById("dice-st-chance").textContent = diceChance + "%";
+  document.getElementById("dice-st-mult").textContent = "x" + fmtMult(m);
+  document.getElementById("dice-st-pay").textContent = Math.floor(diceBet * m + 0.5);
+  const win = document.getElementById("dice-bar-win");
+  if(diceDir === "under"){ win.style.left = "0"; win.style.width = diceChance + "%"; }
+  else { win.style.left = (100 - diceChance) + "%"; win.style.width = diceChance + "%"; }
+  const txt = document.getElementById("dice-range-text");
+  txt.textContent = diceDir === "under"
+    ? "Выигрыш при числе от 0.00 до " + (diceChance - 0.01).toFixed(2)
+    : "Выигрыш при числе от " + (100 - diceChance).toFixed(2) + " до 99.99";
+}
+function initDice(){ renderDice(); }
+document.getElementById("dice-presets").addEventListener("click", (e)=>{
+  const btn = e.target.closest("button[data-bet]");
+  if(!btn || diceBusy) return;
+  diceBet = parseInt(btn.dataset.bet, 10);
+  renderDice();
+});
+document.getElementById("dice-bet-edit").addEventListener("click", async ()=>{
+  const val = await promptNumber("Ставка (гемов, минимум " + DICE_MIN_BET + ")");
+  if(val && val >= DICE_MIN_BET){ diceBet = val; renderDice(); }
+  else if(val){ toast("Минимальная ставка " + DICE_MIN_BET + " гемов"); }
+});
+document.getElementById("dice-dir").addEventListener("click", (e)=>{
+  const btn = e.target.closest("button[data-dir]");
+  if(!btn || diceBusy) return;
+  diceDir = btn.dataset.dir;
+  renderDice();
+});
+document.getElementById("dice-chance").addEventListener("input", (e)=>{
+  diceChance = parseInt(e.target.value, 10);
+  renderDice();
+});
+document.getElementById("dice-roll-btn").addEventListener("click", async ()=>{
+  if(diceBusy) return;
+  if(diceBet < DICE_MIN_BET){ toast("Минимальная ставка " + DICE_MIN_BET + " гемов"); return; }
+  if(diceBet > gemsBalance){ notEnoughGemsToast(); return; }
+  diceBusy = true;
+  const btn = document.getElementById("dice-roll-btn");
+  btn.disabled = true;
+  document.getElementById("dice-chance").disabled = true;
+  const rollEl = document.getElementById("dice-roll");
+  const marker = document.getElementById("dice-marker");
+  const resultEl = document.getElementById("dice-result");
+  resultEl.textContent = "";
+  rollEl.classList.remove("win", "lose");
+  marker.classList.remove("show");
+  const timer = setInterval(()=>{ rollEl.textContent = (Math.random() * 100).toFixed(2); }, 55);
+  try{
+    const [res] = await Promise.all([
+      api("/dice/play", { bet: diceBet, chance: diceChance, direction: diceDir }),
+      rtDelay(900),
+    ]);
+    clearInterval(timer);
+    const val = res.roll / 100;
+    rollEl.textContent = val.toFixed(2);
+    rollEl.classList.add(res.won ? "win" : "lose");
+    marker.style.left = val + "%";
+    marker.classList.add("show");
+    setGemsDisplay(res.gems);
+    const net = res.payout - res.bet;
+    resultEl.innerHTML = res.won
+      ? `Выигрыш x${fmtMult(res.multiplier)}! +${net} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">`
+      : `Не повезло — -${res.bet} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">`;
+    tg?.HapticFeedback?.notificationOccurred(res.won ? "success" : "error");
+  }catch(e){
+    clearInterval(timer);
+    rollEl.textContent = "--.--";
+    if(String(e.message).includes("not enough gems")) notEnoughGemsToast();
+    else toast("Ошибка Dice: " + e.message);
+  }finally{
+    diceBusy = false;
+    btn.disabled = false;
+    document.getElementById("dice-chance").disabled = false;
+  }
+});
+
+function renderDiceHistoryList(rounds){
+  const list = document.getElementById("history-list");
+  if(!rounds.length){
+    list.innerHTML = `<div class="empty-state"><span class="emoji">🎲</span>Раундов пока не было.</div>`;
+    return;
+  }
+  list.innerHTML = rounds.map(r => {
+    const name = r.username ? maskedName(r.username) : (r.first_name || "Игрок");
+    const net = r.payout - r.bet;
+    const sign = net >= 0 ? `+${net}` : `-${Math.abs(net)}`;
+    const side = r.direction === "under" ? "меньше" : "больше";
+    return `
+      <div class="history-row pvp-history-row">
+        <div class="info">
+          <div class="line1">🎲 ${name} — выпало ${(r.roll / 100).toFixed(2)} ${r.payout > 0 ? "x" + fmtMult(r.multiplier) + " " : ""}${sign} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt=""></div>
+          <div class="line2">${side} · шанс ${r.chance}% · ставка ${r.bet} · ${fmtHistoryTime(r.created_at)}</div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
 // ---------- Red&Black (in-app, fully independent from the chat /redblack game) ----------
+const REDBLACK_MAX_BET = 100000; // mirrors database.py -- the server enforces it for real
 const REDBLACK_MIN_BET = 25; // mirrors database.py's REDBLACK_MIN_BET -- client-side pre-check only, server enforces for real
 let rbBet = 25;
 let rbBusy = false;
@@ -5807,7 +6548,9 @@ document.getElementById("rb-presets").addEventListener("click", (e)=>{
 
 document.getElementById("rb-bet-edit").addEventListener("click", async ()=>{
   const val = await promptNumber("Ставка (гемов, минимум " + REDBLACK_MIN_BET + ")");
-  if(val && val >= REDBLACK_MIN_BET){
+  if(val && val > REDBLACK_MAX_BET){
+    toast("Максимальная ставка " + REDBLACK_MAX_BET.toLocaleString("ru-RU") + " гемов");
+  }else if(val && val >= REDBLACK_MIN_BET){
     rbBet = val;
     renderRedBlackBet();
   }else if(val){
@@ -5828,6 +6571,7 @@ function prependRbHistory(res){
 async function playRedBlack(choice){
   if(rbBusy) return;
   if(rbBet < REDBLACK_MIN_BET){ toast("Минимальная ставка " + REDBLACK_MIN_BET + " гемов"); return; }
+  if(rbBet > REDBLACK_MAX_BET){ toast("Максимальная ставка " + REDBLACK_MAX_BET.toLocaleString("ru-RU") + " гемов"); return; }
   if(rbBet > gemsBalance && !isAdminUser){ toast("Не хватает гемов"); return; }
   rbBusy = true;
   const btnRed = document.getElementById("rb-pick-red");
@@ -8729,6 +9473,8 @@ function updateTransferButton(item){
 function updateCustomButton(item){
   const btn = document.getElementById("modal-custom");
   if(!btn) return;
+  // no "Кастом" on villas (LEGEND / EPIC / RARE)
+  btn.style.display = isVillaNum(item.drop_number) ? "none" : "";
   const busy = !!(item.staked_at || item.listed_price || item.swap_listed || item.pvp_round_id || item.pinned_at || item.in_giveaway);
   btn.disabled = busy;
   btn.classList.toggle("disabled", busy);

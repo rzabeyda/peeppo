@@ -201,6 +201,26 @@ class PlinkoPlayBody(InitDataBody):
     risk: str
 
 
+class RouletteBet(BaseModel):
+    type: str
+    value: int | None = None
+    amount: int
+
+
+class RoulettePlayBody(InitDataBody):
+    bets: list[RouletteBet]
+
+
+class SlotsPlayBody(InitDataBody):
+    bet: int
+
+
+class DicePlayBody(InitDataBody):
+    bet: int
+    chance: float
+    direction: str
+
+
 class AviatorStartBody(InitDataBody):
     bet: int
 
@@ -989,6 +1009,56 @@ def plinko_play(body: PlinkoPlayBody):
         raise HTTPException(400, "not enough gems")
 
 
+@app.post("/api/games/turnover")
+def games_turnover(body: InitDataBody):
+    """24-hour turnover per game (gems wagered; for PvP the number of cards staked)."""
+    _authenticate(body.initData)
+    return {"turnover": db.get_games_turnover_24h()}
+
+
+@app.post("/api/games/top")
+def games_top(body: InitDataBody):
+    """Which game was played the most over the last 7 days (gets the TOP badge in the games tab)."""
+    _authenticate(body.initData)
+    return {"game": db.get_top_game_last_7d()}
+
+
+@app.post("/api/roulette/play")
+def roulette_play(body: RoulettePlayBody):
+    """One roulette spin with a whole bet slip -- see play_roulette()."""
+    user = _authenticate(body.initData)
+    try:
+        return db.play_roulette(user["telegram_id"], [b.model_dump() for b in body.bets])
+    except db.RouletteError as e:
+        raise HTTPException(400, str(e))
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
+
+
+@app.post("/api/slots/play")
+def slots_play(body: SlotsPlayBody):
+    """One slots spin -- see play_slots()."""
+    user = _authenticate(body.initData)
+    try:
+        return db.play_slots(user["telegram_id"], body.bet)
+    except db.SlotsError as e:
+        raise HTTPException(400, str(e))
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
+
+
+@app.post("/api/dice/play")
+def dice_play(body: DicePlayBody):
+    """One dice roll -- see play_dice()."""
+    user = _authenticate(body.initData)
+    try:
+        return db.play_dice(user["telegram_id"], body.bet, body.chance, body.direction)
+    except db.DiceError as e:
+        raise HTTPException(400, str(e))
+    except db.InsufficientGems:
+        raise HTTPException(400, "not enough gems")
+
+
 @app.post("/api/aviator/start")
 def aviator_start(body: AviatorStartBody):
     """In-app Aviator -- fully independent from the chat /go game (chat_id IS NULL on
@@ -1184,6 +1254,48 @@ def plinko_history(body: InitDataBody):
 def plinko_leaderboard(body: InitDataBody):
     _authenticate(body.initData)
     return {"leaderboard": db.get_plinko_leaderboard(12)}
+
+
+@app.post("/api/roulette/history")
+def roulette_history(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"rounds": db.get_roulette_history()}
+
+
+@app.post("/api/roulette/last")
+def roulette_last(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"numbers": db.get_roulette_last_numbers(10)}
+
+
+@app.post("/api/roulette/leaderboard")
+def roulette_leaderboard(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"leaderboard": db.get_roulette_leaderboard(12)}
+
+
+@app.post("/api/slots/history")
+def slots_history(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"rounds": db.get_slots_history()}
+
+
+@app.post("/api/slots/leaderboard")
+def slots_leaderboard(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"leaderboard": db.get_slots_leaderboard(12)}
+
+
+@app.post("/api/dice/history")
+def dice_history(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"rounds": db.get_dice_history()}
+
+
+@app.post("/api/dice/leaderboard")
+def dice_leaderboard(body: InitDataBody):
+    _authenticate(body.initData)
+    return {"leaderboard": db.get_dice_leaderboard(12)}
 
 
 @app.post("/api/aviator/history")
