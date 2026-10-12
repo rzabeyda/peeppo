@@ -8224,7 +8224,7 @@ def get_card_by_id(card_id: int) -> sqlite3.Row | None:
 # ---------------------------------------------------------------------------
 
 GRAM_CARDS_PER_UNIT = 10  # 10 Diamond cards = 1 payout unit
-STARS_PER_UNIT = 100  # raised back from 50 -- only affects NEW requests, already-pending ones keep their stored gram_amount
+STARS_PER_UNIT = 50  # lowered back from 100 -- only affects NEW requests, already-pending ones keep their stored gram_amount
 
 
 class CryptoWithdrawalError(Exception):

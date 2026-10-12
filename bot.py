@@ -47,6 +47,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from dotenv import load_dotenv
 
 import database as db
+from profanity import contains_mat
 
 load_dotenv()
 
@@ -89,6 +90,7 @@ AVIATOR_MAX_CONCURRENT_PER_CHAT = 5  # see database.count_active_aviator_rounds_
 # keep every in-flight aviator ticker task referenced here until it finishes, per the
 # standard asyncio guidance (https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task).
 _active_aviator_tasks: set[asyncio.Task] = set()
+_background_tasks: set[asyncio.Task] = set()  # same weak-ref issue for the forever-running schedulers started in main()
 _split = urlsplit(WEBAPP_URL)
 WEBAPP_ORIGIN = f"{_split.scheme}://{_split.netloc}"  # WEBAPP_URL minus any ?query — safe to append /static/... to
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "Peeppobot")  # no leading @
@@ -115,6 +117,182 @@ async def _count_chat_messages(handler, event, data):
     except Exception:
         logger.exception("could not count chat message")
     return await handler(event, data)
+
+
+# ---------------------------------------------------------------------------
+# No links in PUBLIC_CHAT: any message with a link from anyone except the bot admin
+# (ADMIN_ID, same check as /admin) is deleted right away. Registered after
+# _count_chat_messages so the message still counts for /top. The bot needs the
+# "Delete messages" admin right in the chat.
+# ---------------------------------------------------------------------------
+
+_LINK_ENTITY_TYPES = {"url", "text_link"}
+_LINK_RE = re.compile(
+    r"(https?://|www\.|\b(t|telegram)\.(me|dog)/|tg://|\b[\w-]+\.(рф|ru|com|net|org|io|me|su|xyz|top|site|online|link|ly|gg|cc|to|app|dev|lol|ua|by|kz)\b)",
+    re.IGNORECASE,
+)
+
+
+# Usernames nobody but the bot admin may mention in PUBLIC_CHAT (lowercase, no "@").
+# A message containing one of them, with or without "@", is deleted like a link.
+PROTECTED_USERNAMES = {"zzabeyda"}
+
+
+def _message_mentions_protected(message: Message) -> bool:
+    texts = [message.text, message.caption]
+    if message.quote:
+        texts.append(message.quote.text)
+    blob = " ".join(t for t in texts if t).lower()
+    if any(name in blob for name in PROTECTED_USERNAMES):
+        return True
+    for entities in (message.entities, message.caption_entities):
+        for e in entities or ():
+            if e.type == "text_mention" and e.user and (e.user.username or "").lower() in PROTECTED_USERNAMES:
+                return True
+    return False
+
+
+def _message_has_link(message: Message) -> bool:
+    for entities in (message.entities, message.caption_entities):
+        if entities and any(e.type in _LINK_ENTITY_TYPES for e in entities):
+            return True
+    text = message.text or message.caption or ""
+    if text and _LINK_RE.search(text):
+        return True
+    markup = message.reply_markup
+    if markup and getattr(markup, "inline_keyboard", None):
+        if any(btn.url for row in markup.inline_keyboard for btn in row):
+            return True
+    return False
+
+
+async def _delete_if_forbidden_link(message: Message) -> bool:
+    """True if the message was a forbidden link and got deleted (or should have been)."""
+    if message.chat.type not in ("group", "supergroup") or not _is_public_chat(message.chat):
+        return False
+    if message.is_automatic_forward:  # posts auto-forwarded from the linked channel
+        return False
+    if message.sender_chat and message.sender_chat.id == message.chat.id:  # anonymous chat admin
+        return False
+    user = message.from_user
+    if user and (_is_admin(user.id) or user.id == bot.id):
+        return False
+    if not (_message_has_link(message) or _message_mentions_protected(message)):
+        return False
+    try:
+        await message.delete()
+    except Exception as e:
+        logger.warning("could not delete link message %s in %s: %s", message.message_id, message.chat.id, e)
+    return True
+
+
+@dp.message.outer_middleware()
+async def _block_links_in_public_chat(handler, event, data):
+    try:
+        if await _delete_if_forbidden_link(event):
+            return None
+    except Exception:
+        logger.exception("link filter failed")
+    return await handler(event, data)
+
+
+# ---------------------------------------------------------------------------
+# No мат in PUBLIC_CHAT: a message with Russian profanity (profanity.contains_mat) from
+# anyone except the bot admin (ADMIN_ID, same check as /admin) is deleted and its author
+# is muted for MAT_MUTE_SECONDS; a short notice goes to the chat and deletes itself.
+# Registered after the link filter, so the message still counts for /top. The bot needs
+# the "Delete messages" and "Ban users" admin rights in the chat. Chat admins can't be
+# restricted by Telegram -- their message is only deleted.
+# ---------------------------------------------------------------------------
+MAT_MUTE_SECONDS = 5 * 60
+MAT_NOTICE_TTL_SECONDS = 30
+_MAT_MUTED_PERMISSIONS = ChatPermissions(
+    can_send_messages=False, can_send_audios=False, can_send_documents=False,
+    can_send_photos=False, can_send_videos=False, can_send_video_notes=False,
+    can_send_voice_notes=False, can_send_polls=False, can_send_other_messages=False,
+    can_add_web_page_previews=False,
+)
+_mat_notice_tasks: set[asyncio.Task] = set()  # strong refs, same reason as _active_aviator_tasks
+_mat_last_notice: dict[int, datetime] = {}  # user_id -> last notice, so a burst of мат gets one notice
+
+
+async def _delete_later(msg: Message, delay: int):
+    await asyncio.sleep(delay)
+    try:
+        await msg.delete()
+    except Exception:
+        pass
+
+
+async def _mute_if_mat(message: Message) -> bool:
+    """True if the message had мат and got deleted (its author muted for MAT_MUTE_SECONDS)."""
+    if message.chat.type not in ("group", "supergroup") or not _is_public_chat(message.chat):
+        return False
+    if message.is_automatic_forward:
+        return False
+    if message.sender_chat and message.sender_chat.id == message.chat.id:  # anonymous chat admin
+        return False
+    user = message.from_user
+    if not user or user.is_bot or _is_admin(user.id):
+        return False
+    if not contains_mat(message.text or message.caption):
+        return False
+    try:
+        await message.delete()
+    except Exception as e:
+        logger.warning("could not delete мат message %s in %s: %s", message.message_id, message.chat.id, e)
+    now = datetime.now(timezone.utc)
+    try:
+        await bot.restrict_chat_member(
+            message.chat.id, user.id,
+            permissions=_MAT_MUTED_PERMISSIONS,
+            until_date=now + timedelta(seconds=MAT_MUTE_SECONDS),
+        )
+    except Exception as e:
+        logger.warning("мат mute failed for %s in %s: %s", user.id, message.chat.id, e)
+        return True
+    last = _mat_last_notice.get(user.id)
+    if last and (now - last).total_seconds() < MAT_MUTE_SECONDS:
+        return True
+    _mat_last_notice[user.id] = now
+    name = f"@{user.username}" if user.username else user.full_name
+    try:
+        notice = await bot.send_message(
+            message.chat.id,
+            f"🔇 {html.escape(name)} в муте на {MAT_MUTE_SECONDS // 60} мин. за мат",
+            parse_mode="HTML",
+            message_thread_id=message.message_thread_id if message.is_topic_message else None,
+        )
+        task = asyncio.create_task(_delete_later(notice, MAT_NOTICE_TTL_SECONDS))
+        _mat_notice_tasks.add(task)
+        task.add_done_callback(_mat_notice_tasks.discard)
+    except Exception as e:
+        logger.warning("could not post мат notice in %s: %s", message.chat.id, e)
+    return True
+
+
+@dp.message.outer_middleware()
+async def _mute_mat_in_public_chat(handler, event, data):
+    try:
+        if await _mute_if_mat(event):
+            return None
+    except Exception:
+        logger.exception("мат filter failed")
+    return await handler(event, data)
+
+
+@dp.edited_message()
+async def on_edited_message(message: Message):
+    """Catches a link or мат added by editing an already-sent message."""
+    try:
+        if await _delete_if_forbidden_link(message):
+            return
+    except Exception:
+        logger.exception("link filter (edit) failed")
+    try:
+        await _mute_if_mat(message)
+    except Exception:
+        logger.exception("мат filter (edit) failed")
 
 
 def _open_button():
@@ -281,31 +459,21 @@ async def handle_top_users(message: Message):
 
 @dp.message(Command("users"))
 async def handle_users_stats(message: Message):
-    """Admin-only: total players, how many were active today, the record day, and then EVERY day
-    with the number of distinct players that day (newest first), split into several messages
-    if it doesn't fit into one."""
+    """Admin-only: total players, how many were active today, the 3 record days (most distinct
+    players) and the last 5 days."""
     if not _is_admin(message.from_user.id):
         return
     st = db.get_daily_active_stats()
     days = st["all_days"]
-    head = ["👥 <b>Пользователи Peeppo</b>\n", f"Всего в боте: <b>{st['total']}</b>", f"Сегодня: <b>{st['today']}</b>"]
+    fmt = lambda d, n: f"• {datetime.fromisoformat(d):%d.%m.%Y} — {n}"
+    lines = ["👥 <b>Пользователи Peeppo</b>\n", f"Всего в боте: <b>{st['total']}</b>", f"Сегодня: <b>{st['today']}</b>"]
     if days:
-        rec_day, rec_n = max(days, key=lambda x: (x[1], x[0]))
-        head.append(f"Рекорд за день: <b>{rec_n}</b> ({datetime.fromisoformat(rec_day):%d.%m.%Y})")
-    head.append(f"\n<b>По всем дням ({len(days)}):</b>")
-    rows = [f"• {datetime.fromisoformat(d):%d.%m.%Y} — {n}" + (" 🏆" if days and n == rec_n else "")
-            for d, n in reversed(days)]
-    foot = "\n<i>До первого дня после обновления считалось по активности (регистрация, получение карт), дальше — по открытиям приложения.</i>"
-    chunks, cur = [], "\n".join(head)
-    for row in rows:
-        if len(cur) + len(row) + 1 > 3800:
-            chunks.append(cur)
-            cur = row
-        else:
-            cur += "\n" + row
-    chunks.append(cur + "\n" + foot)
-    for c in chunks:
-        await message.answer(c, parse_mode="HTML")
+        lines.append("\n📅 <b>Последние 5 дней:</b>")
+        lines += [fmt(d, n) for d, n in reversed(days[-5:])]
+        top = sorted(days, key=lambda x: (x[1], x[0]), reverse=True)[:3]
+        lines.append("\n🏆 <b>Топ-3 дня:</b>")
+        lines += [fmt(d, n) for d, n in top]
+    await message.answer("\n".join(lines), parse_mode="HTML")
 
 
 @dp.message(Command("pvpbot"))
@@ -1227,15 +1395,16 @@ async def _announce_giveaway_result(giveaway: dict, result: dict):
 # draw time the bot picks 5 random entrants; each gets one FREE villa attempt (Farm -> Villa).
 # ---------------------------------------------------------------------------
 VILLA_GIVEAWAY_WINNERS = 5
-VILLA_GIVEAWAY_DRAW_AT = datetime(2026, 10, 10, 15, 0, tzinfo=timezone.utc)  # 10.10.2026 18:00 MSK
+VILLA_GIVEAWAY_DRAW_AT = datetime(2026, 10, 12, 16, 0, tzinfo=timezone.utc)  # 12.10.2026 19:00 MSK
+VILLA_GIVEAWAY_DRAW_LABEL = "12 октября 2026, 19:00 по Москве"
 
 
 def _villa_giveaway_text(entries: list[dict]) -> str:
     text = (
         "🎁 РОЗЫГРЫШ ВИЛЛ\n\n"
-        f"{VILLA_GIVEAWAY_WINNERS} победителей получат по 1 бесплатной вилле.\n\n"
-        "Чтобы получить: зайди во вкладку Фарм → Вилла.\n\n"
-        "Итоги: 10 октября 2026, 18:00 по Москве.\n"
+        f"{VILLA_GIVEAWAY_WINNERS} победителей получат по 1 вилле.\n"
+        "Просто нажми «Участвовать» -- если выиграешь, вилла сама появится в твоей коллекции.\n\n"
+        f"Итоги: {VILLA_GIVEAWAY_DRAW_LABEL}.\n"
         "Победителей выберет бот случайным образом.\n\n"
         f"Участников: {len(entries)}"
     )
@@ -1273,7 +1442,46 @@ async def handle_villa_giveaway(message: Message):
         await message.answer(f"Не удалось опубликовать в {PUBLIC_CHAT} -- бот точно там состоит?")
         return
     db.set_villa_giveaway_message(gid, sent.chat.id, sent.message_id)
-    await message.answer(f"Розыгрыш вилл опубликован в {PUBLIC_CHAT}. Итоги: 10.10.2026 18:00 МСК.")
+    await message.answer(
+        f"Розыгрыш вилл опубликован в {PUBLIC_CHAT}. Итоги: {VILLA_GIVEAWAY_DRAW_LABEL}.\n"
+        "Начинаю рассылку всем пользователям бота, по окончании пришлю итог."
+    )
+    post_url = f"https://t.me/{str(PUBLIC_CHAT).lstrip('@')}/{sent.message_id}"
+    _background_tasks.add(asyncio.create_task(_villa_giveaway_broadcast(message.chat.id, post_url)))
+
+
+async def _villa_giveaway_broadcast(admin_chat_id: int, post_url: str):
+    """DMs every bot user about the villa giveaway with a button to the chat post.
+    ~20 msg/s, waits out flood control, skips users who blocked the bot."""
+    with db.get_conn() as conn:
+        user_ids = [r[0] for r in conn.execute("SELECT telegram_id FROM users").fetchall()]
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🎟 Участвовать", url=post_url)
+    markup = kb.as_markup()
+    text = (
+        "🎁 РОЗЫГРЫШ ВИЛЛ в @peeppo_chat!\n\n"
+        f"{VILLA_GIVEAWAY_WINNERS} победителей получат по 1 бесплатной вилле.\n"
+        f"Итоги: {VILLA_GIVEAWAY_DRAW_LABEL}.\n\n"
+        "Жми кнопку, открой пост и нажми «Участвовать» 👇"
+    )
+    ok = failed = 0
+    for uid in user_ids:
+        for _ in range(3):
+            try:
+                await bot.send_message(uid, text, reply_markup=markup)
+                ok += 1
+                break
+            except TelegramRetryAfter as e:
+                await asyncio.sleep(e.retry_after + 1)
+            except Exception:
+                failed += 1
+                break
+        await asyncio.sleep(0.05)
+    logger.info("villa giveaway broadcast done: %s sent, %s failed", ok, failed)
+    try:
+        await bot.send_message(admin_chat_id, f"Рассылка про розыгрыш вилл готова: доставлено {ok}, не доставлено {failed}.")
+    except Exception:
+        pass
 
 
 @dp.callback_query(F.data.startswith("vgw_join:"))
@@ -1314,11 +1522,23 @@ async def villa_giveaway_scheduler():
             for g in db.get_due_villa_giveaways():
                 total = len(db.get_villa_giveaway_entries(g["id"]))
                 winners = db.draw_villa_giveaway(g["id"])
+                # Winners get their villa right away: spend the credit the draw just gave
+                # (same random unsold-villa draw as Farm -> Villa), no claim step for them.
+                for w in winners:
+                    try:
+                        w["villa"] = db.claim_free_villa(w["user_id"])
+                    except Exception:
+                        logger.exception("could not auto-grant villa to giveaway winner %s", w["user_id"])
+                        w["villa"] = None
                 if winners:
-                    names = [_who_label(w["username"], w["first_name"], w["user_id"]) for w in winners]
+                    names = [
+                        _who_label(w["username"], w["first_name"], w["user_id"])
+                        + (f" -- «{w['villa']['name']}»" if w.get("villa") else "")
+                        for w in winners
+                    ]
                     text = (
                         "🏁 Розыгрыш вилл завершён!\n\nПобедители:\n" + "\n".join(names) +
-                        f"\n\nУчастников: {total}\nЧтобы получить виллу: зайди во вкладку Фарм → Вилла."
+                        f"\n\nУчастников: {total}\nВиллы уже начислены победителям в коллекцию."
                     )
                 else:
                     text = "🏁 Розыгрыш вилл завершён -- участников не набралось, увы."
@@ -1331,10 +1551,16 @@ async def villa_giveaway_scheduler():
                         except Exception:
                             logger.warning("could not post villa giveaway %s results", g["id"])
                 for w in winners:
+                    v = w.get("villa")
+                    dm = (
+                        f"🎉 Ты выиграл виллу «{v['name']}» ({_villa_tier(v['rarity']).upper()}) #{v['villa_number']}! Она уже в твоей коллекции."
+                        if v else
+                        "🎉 Ты выиграл бесплатную виллу! Зайди во вкладку Фарм → Вилла и забери её."
+                    )
                     try:
                         await bot.send_message(
                             w["user_id"],
-                            "🎉 Ты выиграл бесплатную виллу! Зайди во вкладку Фарм → Вилла и забери её.",
+                            dm,
                             reply_markup=_open_button(),
                         )
                     except Exception:
@@ -2633,13 +2859,16 @@ async def handle_aviator_cashout(call: CallbackQuery):
 # /refend re-arms every warning (and the final post) for the new date. Ordered
 # soonest-first only for readability; the loop checks each every tick.
 REF_RACE_COUNTDOWN_STAGES = [
-    ("3d", timedelta(days=3), "⏰ До конца реферальной гонки осталось 3 дня! Приглашай друзей и попади в топ-5 🏆"),
-    ("2d", timedelta(days=2), "⏰ До конца реферальной гонки осталось 2 дня! Самое время позвать друзей 🏆"),
-    ("1d", timedelta(days=1), "🔥 До конца реферальной гонки остались сутки! Успей пригласить друзей"),
+    ("48h", timedelta(hours=48), "⏰ До конца реферальной гонки осталось 2 дня! Приглашай друзей и попади в топ-5 🏆"),
+    ("36h", timedelta(hours=36), "⏰ До конца реферальной гонки осталось 36 часов! Самое время позвать друзей 🏆"),
+    ("24h", timedelta(hours=24), "⏰ До конца реферальной гонки остались сутки! Приглашай друзей и попади в топ-5 🏆"),
+    ("12h", timedelta(hours=12), "⏰ До конца реферальной гонки осталось 12 часов! Зови друзей и поднимайся в топ-5 🏆"),
+    ("4h", timedelta(hours=4), "🔥 До конца реферальной гонки осталось 4 часа! Ещё можно успеть в топ-5"),
     ("1h", timedelta(hours=1), "⌛ До конца реферальной гонки остался 1 час! Последний шанс попасть в топ-5"),
+    ("15m", timedelta(minutes=15), "🚨 До конца реферальной гонки осталось 15 минут! Последние приглашения"),
     ("5m", timedelta(minutes=5), "🚨 До конца реферальной гонки осталось 5 минут!"),
 ]
-REF_RACE_TZ = ZoneInfo("Europe/Tallinn")  # /refend input and displayed end time
+REF_RACE_TZ = ZoneInfo("Europe/Moscow")  # /refend input and displayed end time
 
 
 def _ref_race_end_dt() -> datetime | None:
@@ -2653,7 +2882,7 @@ def _ref_race_end_dt() -> datetime | None:
 
 
 def _parse_refend_args(text: str) -> datetime | None:
-    """'2026-10-12 20:00', '12.10.2026 20:00' or '12.10 20:00' (Tallinn time) -> aware dt."""
+    """'2026-10-12 20:00', '12.10.2026 20:00' or '12.10 20:00' (Moscow time) -> aware dt."""
     text = re.sub(r"\s+", " ", text.strip())
     now = datetime.now(REF_RACE_TZ)
     for fmt in ("%Y-%m-%d %H:%M", "%d.%m.%Y %H:%M", "%d.%m %H:%M"):
@@ -2669,8 +2898,8 @@ def _parse_refend_args(text: str) -> datetime | None:
 
 @dp.message(Command("refend"))
 async def handle_refend(message: Message):
-    """Admin-only: /refend 12.10 20:00 (Tallinn time) sets the end of the referral race;
-    /refend shows it; /refend off clears it. Warnings (3d/1d/1h/5m) and the final
+    """Admin-only: /refend 12.10 20:00 (Moscow time) sets the end of the referral race;
+    /refend shows it; /refend off clears it. Warnings (48h/36h/24h/12h/4h/1h/15m/5m) and the final
     results post go to PUBLIC_CHAT automatically from ref_race_scheduler()."""
     if not _is_admin(message.from_user.id):
         return
@@ -2679,9 +2908,9 @@ async def handle_refend(message: Message):
     if not arg:
         end = _ref_race_end_dt()
         if end is None:
-            await message.answer("Конец реф-гонки не задан. Пример: /refend 12.10 20:00 (время Таллина)")
+            await message.answer("Конец реф-гонки не задан. Пример: /refend 12.10 20:00 (МСК)")
         else:
-            await message.answer(f"Реф-гонка заканчивается: {end.astimezone(REF_RACE_TZ):%d.%m.%Y %H:%M} (Таллин)")
+            await message.answer(f"Реф-гонка заканчивается: {end.astimezone(REF_RACE_TZ):%d.%m.%Y %H:%M} (МСК)")
         return
     if arg.lower() in ("off", "стоп", "сброс"):
         db.set_ref_race_end(None)
@@ -2689,7 +2918,7 @@ async def handle_refend(message: Message):
         return
     end = _parse_refend_args(arg)
     if end is None:
-        await message.answer("Не понял дату. Пример: /refend 12.10 20:00 (время Таллина)")
+        await message.answer("Не понял дату. Пример: /refend 12.10 20:00 (МСК)")
         return
     now = datetime.now(REF_RACE_TZ)
     if end <= now:
@@ -2703,18 +2932,52 @@ async def handle_refend(message: Message):
         if now >= end - remaining:
             db.mark_ref_race_countdown_sent(f"{end_iso}|{stage}")
             skipped.append(stage)
-    text = f"✅ Реф-гонка закончится {end:%d.%m.%Y %H:%M} (Таллин). Предупреждения: за 3 дня, 2 дня, 1 день, 1 час и 5 минут."
+    text = f"✅ Реф-гонка закончится {end:%d.%m.%Y %H:%M} (МСК). Предупреждения: за 48 часов, 36 часов, 24 часа, 12 часов, 4 часа, 1 час, 15 минут и 5 минут."
     if skipped:
         text += f"\nУже прошли и пропущены: {', '.join(skipped)}."
     await message.answer(text)
 
 
+@dp.message(Command("reftest"))
+async def handle_reftest(message: Message):
+    """Admin-only: posts the current ref race top-5 to PUBLIC_CHAT right now and reports
+    back whether Telegram accepted it, so the chat delivery path can be checked on demand."""
+    if not _is_admin(message.from_user.id):
+        return
+    await sync_referral_chat_verification()
+    rows = db.get_ref_leaderboard(5, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)
+    text = "📣 Реферальная гонка идёт!\n\n" + format_ref_leaderboard(rows)
+    try:
+        await bot.send_message(PUBLIC_CHAT, text)
+    except Exception as e:
+        logger.warning("reftest: could not post to %s: %s", PUBLIC_CHAT, e)
+        await message.answer(f"❌ Не смог отправить в {PUBLIC_CHAT}: {e}")
+        return
+    end = _ref_race_end_dt()
+    if end is None:
+        await message.answer(f"✅ Отправил в {PUBLIC_CHAT}. Но дата конца НЕ задана, автонапоминаний не будет. Задай, например: /refend 18.10 15:00")
+        return
+    end_iso = db.get_ref_race_end()
+    now = datetime.now(timezone.utc)
+    lines = [f"✅ Отправил в {PUBLIC_CHAT}.", f"Конец: {end.astimezone(REF_RACE_TZ):%d.%m.%Y %H:%M} (МСК)"]
+    for stage, remaining, _ in REF_RACE_COUNTDOWN_STAGES:
+        at = (end - remaining).astimezone(REF_RACE_TZ)
+        if db.has_ref_race_countdown_been_sent(f"{end_iso}|{stage}"):
+            status = "отправлено"
+        elif now >= end - remaining:
+            status = "должно уйти сейчас"
+        else:
+            status = "ждёт"
+        lines.append(f"{stage}: {at:%d.%m %H:%M} — {status}")
+    await message.answer("\n".join(lines))
+
+
 async def ref_race_scheduler():
     """Background loop living for the lifetime of the bot process: while an end time is
-    set (/refend), posts a countdown ping to PUBLIC_CHAT at 3d/1d/1h/5m before it (each
+    set (/refend), posts a countdown ping to PUBLIC_CHAT at 48h/36h/24h/12h/4h/1h/15m/5m before it (each
     exactly once per end date) and the final leaderboard once the end passes. With no
     end set it just idles."""
-    logger.info("referral race scheduler started")
+    logger.info("referral race scheduler started, end_at=%s", db.get_ref_race_end())
     while True:
         try:
             end = _ref_race_end_dt()
@@ -2730,8 +2993,8 @@ async def ref_race_scheduler():
                         text = "🏁 Реферальная гонка завершена!\n\n" + format_ref_leaderboard(rows)
                         try:
                             await bot.send_message(PUBLIC_CHAT, text)
-                        except Exception:
-                            logger.warning("could not post ref race results to %s", PUBLIC_CHAT)
+                        except Exception as e:
+                            logger.warning("could not post ref race results to %s: %s", PUBLIC_CHAT, e)
                 else:
                     for stage, remaining, headline in REF_RACE_COUNTDOWN_STAGES:
                         key = f"{end_iso}|{stage}"
@@ -2744,8 +3007,9 @@ async def ref_race_scheduler():
                             text = headline + "\n\n" + format_ref_leaderboard(rows)
                             try:
                                 await bot.send_message(PUBLIC_CHAT, text)
-                            except Exception:
-                                logger.warning("could not post ref race %s countdown to %s", stage, PUBLIC_CHAT)
+                                logger.info("ref race %s countdown posted to %s", stage, PUBLIC_CHAT)
+                            except Exception as e:
+                                logger.warning("could not post ref race %s countdown to %s: %s", stage, PUBLIC_CHAT, e)
         except Exception:
             logger.exception("ref race scheduler iteration failed")
         await asyncio.sleep(30)  # tight enough that the 5-minute checkpoint stays meaningful
@@ -2789,15 +3053,15 @@ async def main():
         logger.exception("could not register bot command menu")
     await check_hundred_club()  # in case we already had 100+ users before this deploy
     await refund_all_active_aviator_rounds()  # clean up any /go left frozen by the restart that's happening right now
-    asyncio.create_task(gem_drop_scheduler())
-    asyncio.create_task(gem_drop_100_scheduler())
-    asyncio.create_task(giveaway_scheduler())
-    asyncio.create_task(villa_giveaway_scheduler())
-    asyncio.create_task(ref_race_scheduler())
-    asyncio.create_task(referral_chat_verification_scheduler())
-    asyncio.create_task(giveaway_reminder_scheduler())
-    asyncio.create_task(aviator_watchdog())
-    asyncio.create_task(daily_help_broadcast_scheduler())
+    _background_tasks.add(asyncio.create_task(gem_drop_scheduler()))
+    _background_tasks.add(asyncio.create_task(gem_drop_100_scheduler()))
+    _background_tasks.add(asyncio.create_task(giveaway_scheduler()))
+    _background_tasks.add(asyncio.create_task(villa_giveaway_scheduler()))
+    _background_tasks.add(asyncio.create_task(ref_race_scheduler()))
+    _background_tasks.add(asyncio.create_task(referral_chat_verification_scheduler()))
+    _background_tasks.add(asyncio.create_task(giveaway_reminder_scheduler()))
+    _background_tasks.add(asyncio.create_task(aviator_watchdog()))
+    # asyncio.create_task(daily_help_broadcast_scheduler())  # disabled on request: no daily /help post in the chat
     await dp.start_polling(bot)
 
 

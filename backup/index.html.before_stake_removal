@@ -280,47 +280,6 @@
   .pvp-top-row .rank{font-size:13px; font-weight:800; color:#ccc; width:26px; flex-shrink:0;}
   .pvp-top-row .name{font-size:12.5px; font-weight:700; color:#eee; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .pvp-top-row .wins{font-size:12.5px; font-weight:800; color:var(--accent2); flex-shrink:0;}
-  .case-btn{
-    position:absolute; right:0; bottom:0;
-    background:linear-gradient(135deg,#22c55e,#facc15);
-    color:#111; border:none; border-radius:999px;
-    padding:9px 16px; font-size:12px; font-weight:800; cursor:pointer;
-    box-shadow:0 4px 10px rgba(0,0,0,.35);
-  }
-  .case-btn:active{transform:scale(.95);}
-  .number-btn{
-    position:absolute; left:0; bottom:0;
-    background:linear-gradient(135deg,#3b82f6,#1d4ed8);
-    color:#fff; border:none; border-radius:999px;
-    padding:9px 16px; font-size:12px; font-weight:800; cursor:pointer;
-    box-shadow:0 4px 10px rgba(0,0,0,.35);
-  }
-  .number-btn:active{transform:scale(.95);}
-  .name-btn{
-    position:absolute; left:0; bottom:46px;
-    background:linear-gradient(135deg,#111,#3a3a3a);
-    color:#fff; border:none; border-radius:999px;
-    padding:9px 16px; font-size:12px; font-weight:800; cursor:pointer;
-    box-shadow:0 4px 10px rgba(0,0,0,.35);
-  }
-  .name-btn:active{transform:scale(.95);}
-  .mining-btn{
-    position:absolute; left:50%; bottom:0; transform:translateX(-50%);
-    background:linear-gradient(135deg,#f472b6,#c026d3);
-    color:#fff; border:none; border-radius:999px;
-    padding:9px 16px; font-size:12px; font-weight:800; cursor:pointer;
-    box-shadow:0 4px 14px rgba(192,38,211,.45);
-    white-space:nowrap;
-  }
-  .mining-btn:active{transform:translateX(-50%) scale(.95);}
-  .mining-btn.ready{
-    background:linear-gradient(135deg,#facc15,#fbbf24); color:#1a1400;
-    box-shadow:0 4px 14px rgba(250,204,21,.5);
-    animation:fortuneGlow 2.4s ease-in-out infinite;
-  }
-  .mining-btn.mining{
-    animation:miningBtnBreathe 1.6s ease-in-out infinite;
-  }
   @keyframes miningBtnBreathe{
     0%,100%{box-shadow:0 4px 14px rgba(192,38,211,.45); opacity:1;}
     50%{box-shadow:0 4px 22px rgba(192,38,211,.8); opacity:.88;}
@@ -692,15 +651,6 @@
 
   /* ---------- Collections ("Альбомы") -- button next to "Коллекция", two
      stacked modals: the list of collections, then one collection's slot grid. ---------- */
-  .collections-label-btn{
-    background:linear-gradient(135deg,#3b82f6,#1d4ed8);
-    color:#fff; border:none; border-radius:999px;
-    padding:5px 12px; margin:0; font-size:11px; font-weight:800;
-    cursor:pointer; display:inline-flex; align-items:center; gap:4px;
-    box-shadow:0 0 8px rgba(59,130,246,.4);
-    animation:collectionsBtnPulse 2.2s ease-in-out infinite;
-  }
-  .collections-label-btn:active{transform:scale(.95); animation:none;}
   @keyframes collectionsBtnPulse{
     0%,100%{box-shadow:0 0 6px rgba(59,130,246,.3);}
     50%{box-shadow:0 0 14px rgba(59,130,246,.7);}
@@ -813,16 +763,10 @@
     font-size:9px; line-height:1;
     box-shadow:0 2px 5px rgba(0,0,0,.4);
   }
-  .section-label{
-    font-size:12px; font-weight:700; color:#666;
-    text-transform:uppercase; letter-spacing:.6px;
-    margin:2px 2px 10px;
-  }
   .section-label-row{
     display:flex; align-items:center; justify-content:space-between;
     margin:2px 2px 10px;
   }
-  .section-label-row .section-label{margin:0;}
   .profile-action-row{
     display:flex; width:100%; box-sizing:border-box;
     background:rgba(255,255,255,.05); border:1px solid var(--card-border);
@@ -842,7 +786,7 @@
   .profile-action-item.pa-wall{color:#ef4444;}
   .profile-action-item.pa-collections{color:#38bdf8;}
   .profile-action-sep{width:1px; margin:6px 0; background:rgba(255,255,255,.08);}
-  #profile-sort-btn, #profile-rarity-sort-btn{
+  #profile-rarity-sort-btn{
     background:rgba(255,255,255,.06);
     color:#ccc;
     border:1px solid var(--card-border);
@@ -852,8 +796,7 @@
     cursor:pointer;
     opacity:.55;
   }
-  #profile-sort-btn.active-sort, #profile-rarity-sort-btn.active-sort{opacity:1;}
-  #profile-sort-btn:active, #profile-rarity-sort-btn:active{transform:scale(.95);}
+  #profile-rarity-sort-btn:active{transform:scale(.95);}
   .burn-open-btn{
     background:linear-gradient(135deg,#f97316,#ef4444);
     color:#fff; border:none; border-radius:999px;
@@ -875,20 +818,6 @@
     overflow:hidden;
     cursor:pointer;
     transition:transform .1s ease;
-  }
-  .blind-swap-tile{
-    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
-    border:2px dashed rgba(96,165,250,.5); background:rgba(96,165,250,.06);
-  }
-  .blind-swap-tile .blind-swap-plus{font-size:30px; font-weight:800; color:#60a5fa; line-height:1;}
-  .blind-swap-tile .blind-swap-label{font-size:9px; font-weight:700; color:#9ca3af; text-align:center; padding:0 6px;}
-  .blind-swap-tile.pending{border-color:rgba(96,165,250,.9); background:rgba(96,165,250,.14);}
-  .blind-swap-tile:active{transform:scale(.96);}
-  .blind-pending{cursor:pointer;}
-  .blind-pending .blind-pending-cancel{
-    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-    text-align:center; font-size:10px; font-weight:800; color:#fff; padding:6px;
-    background:rgba(0,0,0,.6);
   }
   .grid-item:active{transform:scale(.95);}
   .grid-item img{width:100%; height:100%; object-fit:cover;}
@@ -1043,10 +972,7 @@
     margin-bottom:10px;
   }
   .market-item img{width:56px; height:56px; border-radius:12px; object-fit:cover; flex-shrink:0;}
-  .market-item-info{flex:1; min-width:0;}
   .market-item-name{font-weight:700; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  .market-item-price{font-size:13px; font-weight:800; color:#ec1490; margin-top:4px; display:flex; align-items:center; gap:4px;}
-  .market-item-price img{width:14px; height:14px; border-radius:0;}
   .market-item-actions{display:flex; flex-direction:column; gap:6px; flex-shrink:0;}
   .market-item-actions button{
     border:none; border-radius:10px; padding:7px 12px; font-size:11px; font-weight:700; cursor:pointer; white-space:nowrap;
@@ -1055,7 +981,6 @@
   .btn-offer{background:#3b82f6; color:#fff;}
   .btn-unlist{background:rgba(239,68,68,.15); color:var(--danger); border:1px solid rgba(239,68,68,.3) !important;}
   .btn-propose{background:rgba(139,92,246,.18); color:var(--accent); border:1px solid rgba(139,92,246,.35) !important;}
-  .market-mine-tag{font-size:10px; color:#666; text-transform:uppercase; letter-spacing:.4px;}
   .market-price-tag{
     position:absolute; bottom:6px; right:6px;
     background:rgba(0,0,0,.75);
@@ -1204,11 +1129,6 @@
     filter:drop-shadow(0 2px 3px rgba(0,0,0,.5));
   }
 
-  .pvp-last-result{
-    font-size:11.5px; color:#999; text-align:center;
-    background:var(--card-bg); border:1px solid var(--card-border); border-radius:10px;
-    padding:8px 10px; margin-bottom:12px;
-  }
   .pvp-header{
     display:flex; align-items:center; justify-content:center; flex-wrap:wrap;
     gap:8px 10px; margin-bottom:2px; width:100%;
@@ -1483,7 +1403,6 @@
   .poker-paytable-row.tier-6{background:linear-gradient(135deg, rgba(250,204,21,.2), rgba(250,204,21,.06)); border-color:rgba(250,204,21,.4); color:#fde68a;}
   .poker-paytable-row.tier-7{background:linear-gradient(135deg, rgba(249,115,22,.2), rgba(249,115,22,.06)); border-color:rgba(249,115,22,.4); color:#fdba74;}
   .poker-paytable-row.tier-8{background:linear-gradient(135deg, rgba(156,163,175,.2), rgba(156,163,175,.06)); border-color:rgba(156,163,175,.35); color:#d1d5db;}
-  .poker-paytable-row.tier-9{background:linear-gradient(135deg, rgba(205,127,50,.22), rgba(205,127,50,.06)); border-color:rgba(205,127,50,.4); color:#e3ac7a;}
 
   /* ---------- Poker double-up ladder — a pyramid, narrowest (highest multiplier) on top ---------- */
   .poker-ladder{display:flex; flex-direction:column; align-items:center; gap:4px; width:100%;}
@@ -1518,7 +1437,6 @@
   .game-turnover:empty{visibility:hidden;}
   .game-turnover .gem-icon-inline{width:12px; height:12px;}
   .pvp-title-row{margin:0 4px 10px;}
-  .poker-idle{display:flex; flex-direction:column; gap:12px;}
   .poker-bet-row{display:flex; align-items:center; gap:8px; background:#161616; border:1px solid var(--card-border); border-radius:12px; padding:10px 12px;}
   .poker-bet-label{font-size:12.5px; color:#ccc; font-weight:700;}
   .poker-bet-value{font-size:15px; font-weight:800; margin-left:auto;}
@@ -1534,7 +1452,6 @@
     background:linear-gradient(135deg,#3b82f6,#1d4ed8); color:#fff; font-weight:800; font-size:15px; cursor:pointer;
   }
   .poker-deal-btn:disabled, .poker-draw-btn:disabled{opacity:.5; cursor:not-allowed;}
-  .poker-hand-wrap{display:flex; flex-direction:column; gap:10px;}
   .poker-hand{display:flex; gap:4px; justify-content:center; overflow-x:auto; padding-top:10px;}
   .poker-card-slot{display:flex; flex-direction:column; align-items:center; gap:4px;}
   .poker-playing-card{
@@ -1862,15 +1779,14 @@
   .top-badge.top-2{background:linear-gradient(135deg,#a855f7,#6d28d9); box-shadow:0 0 8px rgba(168,85,247,.7);}
   .top-badge.top-3{background:linear-gradient(135deg,#3b82f6,#1d4ed8); box-shadow:0 0 8px rgba(59,130,246,.7);}
   /* "NEW" / "PvP" badges, top-right corner of the game button */
-  .new-badge, .pvp-badge{
+  .new-badge{
     position:absolute; top:0; right:1px; padding:1px 4px; border-radius:5px;
     background:linear-gradient(135deg,#22c55e,#16a34a); color:#fff;
     font-size:7px; font-weight:900; letter-spacing:.3px; line-height:1.3;
     box-shadow:0 0 8px rgba(34,197,94,.7); pointer-events:none; z-index:2;
   }
-  .pvp-badge{background:linear-gradient(135deg,#ec1490,#a21caf); box-shadow:0 0 8px rgba(236,20,144,.7);}
   /* a button that carries two badges: TOP moves to the left corner */
-  .new-badge ~ .top-badge, .pvp-badge ~ .top-badge{right:auto; left:1px;}
+  .new-badge ~ .top-badge{right:auto; left:1px;}
   /* ---------- Roulette ---------- */
   .rt-table{display:grid; grid-template-columns:repeat(12,1fr); gap:2px; margin:6px 0;}
   .rt-cell{position:relative; display:flex; align-items:center; justify-content:center; height:30px; border-radius:5px; font-size:11px; font-weight:800; color:#fff; cursor:pointer; user-select:none; border:1px solid rgba(255,255,255,.08); box-sizing:border-box;}
@@ -1953,7 +1869,6 @@
     padding:18px 16px; display:flex; flex-direction:column; align-items:stretch; gap:12px;
   }
   .rb-title{font-weight:800; font-size:16px;}
-  .rb-sub{font-size:12px; color:#888; line-height:1.4; margin-top:-6px;}
   .rb-bet-row{display:flex; align-items:center; gap:8px; background:#161616; border:1px solid var(--card-border); border-radius:12px; padding:10px 12px;}
   .rb-bet-label{color:#888; font-size:13px;}
   .rb-bet-value{font-weight:800; font-size:16px; margin-left:auto;}
@@ -2049,7 +1964,6 @@
     padding:18px 16px; display:flex; flex-direction:column; align-items:stretch; gap:12px;
   }
   .av-title{font-weight:800; font-size:16px;}
-  .av-sub{font-size:12px; color:#888; line-height:1.4; margin-top:-6px;}
   .av-idle{display:flex; flex-direction:column; gap:12px;}
   .av-bet-row{display:flex; align-items:center; gap:8px; background:#161616; border:1px solid var(--card-border); border-radius:12px; padding:10px 12px;}
   .av-bet-label{color:#888; font-size:13px;}
@@ -2105,6 +2019,10 @@
   .number-row .info .lbl{font-size:11px; color:#888; margin-bottom:2px;}
   .number-row .info .val{font-size:13px; font-weight:800; color:var(--accent2); display:flex; align-items:center; gap:3px;}
   .number-row .info .val img{width:13px; height:13px;}
+  .number-row.mine{border-color:#22c55e;}
+  .auc-timer{display:inline-flex; align-items:center; gap:4px; margin-bottom:4px; padding:2px 8px; border-radius:8px; background:rgba(250,204,21,.14); border:1px solid rgba(250,204,21,.45); color:#facc15; font-size:12px; font-weight:800; font-variant-numeric:tabular-nums; letter-spacing:.3px;}
+  .auc-timer.soon{background:rgba(239,68,68,.16); border-color:rgba(239,68,68,.55); color:#f87171;}
+  .number-row .my-bid{font-size:10px; font-weight:800; color:#22c55e; background:rgba(34,197,94,.15); border-radius:6px; padding:1px 6px; margin-left:4px;}
   .number-row .act{
     flex-shrink:0; border:none; border-radius:10px; padding:9px 12px;
     font-size:12px; font-weight:800; cursor:pointer; color:#fff;
@@ -2650,8 +2568,6 @@
   .btn-swap.active{background:var(--accent2); color:#1a1400; cursor:pointer;}
   .btn-swap.listed{background:rgba(239,68,68,.15); color:var(--danger); cursor:pointer;}
   .btn-stake{background:#1f1f1f; color:#666; display:flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap; overflow:hidden;}
-  .btn-stake .stake-bonus{display:inline-flex; align-items:center; gap:2px; white-space:nowrap;}
-  #modal-card .btn-stake .stake-bonus img{width:12px; height:12px; aspect-ratio:auto; object-fit:contain; margin-bottom:0; flex-shrink:0; display:block;}
   .btn-stake.active{background:#ec4899; color:#fff; cursor:pointer;}
   .btn-stake.staked{background:rgba(239,68,68,.15); color:var(--danger); cursor:pointer;}
   .nav-pulse-dot{
@@ -3902,7 +3818,7 @@
 
   <div id="gram-picker-overlay">
     <div id="gram-picker-card">
-      <div id="gram-picker-title">Выбери Diamond карты для обмена на 100 Stars</div>
+      <div id="gram-picker-title">Выбери Diamond карты для обмена на 50 Stars</div>
       <div id="gram-picker-sub">Выбрано: 0 — нужно кратно 10</div>
       <div class="grid" id="gram-picker-grid"></div>
       <div id="input-actions">
@@ -4692,6 +4608,15 @@ async function refreshGems(){
 }
 refreshGems();
 
+// Time-in-app tracking for the admin /top: ping every 30s while the app is open and on
+// screen; the server sums the gaps (a gap over 90s = app was closed, not counted).
+function sendHeartbeat(){
+  if(document.visibilityState === "visible") api("/heartbeat").catch(()=>{});
+}
+sendHeartbeat();
+setInterval(sendHeartbeat, 30000);
+document.addEventListener("visibilitychange", sendHeartbeat);
+
 // Read-once in-app popup for "you earned 25 gems for a referral" — replaces the old
 // bot-DM notifications, auto-closes on its own after 3s (no button to tap).
 function showReferralRewardModal(whoName, amount){
@@ -4812,7 +4737,7 @@ document.getElementById("gems-choice-withdrawals").addEventListener("click", asy
 
 // ---------- GRAM withdrawal picker (10 Diamond cards = 1 GRAM, multiples of 10 only) ----------
 const GRAM_CARDS_PER_UNIT = 10;
-const STARS_PER_UNIT = 100;
+const STARS_PER_UNIT = 50;
 let gramPickerSelected = new Set();
 
 function gramPickerUpdateSub(){
@@ -8771,16 +8696,6 @@ document.getElementById("farm-mode").addEventListener("click", (e)=>{
   setFarmMode(b.dataset.mode);
 });
 
-async function waitForNewVilla(beforeUcId){
-  for(let i = 0; i < 20; i++){
-    try{
-      const r = await api("/villa/latest");
-      if(r.card && r.card.user_card_id !== beforeUcId) return r.card;
-    }catch(e){ /* retry */ }
-    await new Promise(res => setTimeout(res, 800));
-  }
-  return null;
-}
 async function waitForNewVillas(afterId, want){
   let got = [];
   for(let i = 0; i < 25; i++){
@@ -8900,7 +8815,9 @@ async function buyVilla(){
     const isVilla = (img.getAttribute("src") || "").includes("/villa/");
     // Villa borders follow the villa tier colours (blue / green / red) instead of gold / platinum / diamond.
     const bEl = img.closest('[class*="rarity-border-"]');
-    const bm = isVilla && bEl ? bEl.className.match(/rarity-border-(gold|platinum|diamond)/) : null;
+    // the card's frame follows its own picture, not other <img>s inside it (e.g. the gem icon on the price tag)
+    const villaCard = bEl && (bEl === img ? isVilla : !!bEl.querySelector('img[src*="/villa/"]'));
+    const bm = villaCard ? bEl.className.match(/rarity-border-(gold|platinum|diamond)/) : null;
     const tier = bm ? TIER_OF[bm[1]] : null;
     if(bEl) paintBorder(bEl, tier);
     if(bEl !== img && img.className && /rarity-border-/.test(img.className)) paintBorder(img, tier);
@@ -9949,7 +9866,6 @@ document.getElementById("modal-swap").addEventListener("click", async ()=>{
 // Mirrors database.py's STAKE_DAILY_RATES/MAX_STAKE_DAYS/MAX_STAKED_CARDS — client-side
 // copy for the fee pre-check + confirm/toast text.
 const STAKE_DAILY_RATES = { bronze: 5, silver: 10, gold: 25, platinum: 50, diamond: 100 };
-const STAKE_MAX_DAYS = 20;
 const STAKE_MAX_CARDS = 5;
 document.getElementById("modal-stake").addEventListener("click", async ()=>{
   if(!selectedItem) return;
@@ -10128,14 +10044,25 @@ let numbersBoard = { auctions: [], listings: [] };
 let numbersMine = [];
 let numbersOwners = [];
 
-function numberTimeLeftLabel(expiresAt){
-  if(!expiresAt) return "";
+// live countdown pill for auction rows (numbers + names); ticks every second
+function auctionTimerText(expiresAt){
   const ms = new Date(expiresAt).getTime() - Date.now();
   if(ms <= 0) return "завершается...";
-  const h = Math.floor(ms / 3600000);
-  const m = Math.floor((ms % 3600000) / 60000);
-  return h > 0 ? `осталось ${h}ч ${m}м` : `осталось ${m}м`;
+  const t = Math.floor(ms / 1000);
+  const pad = n => String(n).padStart(2, "0");
+  return `${pad(Math.floor(t / 3600))}:${pad(Math.floor(t % 3600 / 60))}:${pad(t % 60)}`;
 }
+function auctionTimerHtml(expiresAt){
+  if(!expiresAt) return "";
+  const soon = new Date(expiresAt).getTime() - Date.now() < 3600000;
+  return `<div class="auc-timer${soon ? " soon" : ""}" data-exp="${expiresAt}">⏱ ${auctionTimerText(expiresAt)}</div>`;
+}
+setInterval(()=>{
+  document.querySelectorAll(".auc-timer[data-exp]").forEach(el=>{
+    el.textContent = "⏱ " + auctionTimerText(el.dataset.exp);
+    el.classList.toggle("soon", new Date(el.dataset.exp).getTime() - Date.now() < 3600000);
+  });
+}, 1000);
 
 async function loadNumbers(){
   const board = await api("/numbers/board");
@@ -10153,6 +10080,12 @@ async function loadNumbers(){
   renderNumbersList();
 }
 
+// true when the current highest bid on an auction row belongs to the viewing user
+function isMyBid(a){
+  const me = myTelegramId ?? tg?.initDataUnsafe?.user?.id;
+  return me != null && a.highest_bidder_id != null && Number(a.highest_bidder_id) === Number(me);
+}
+
 function renderNumbersList(){
   const list = document.getElementById("numbers-list");
   const sub = document.getElementById("numbers-sub");
@@ -10165,10 +10098,10 @@ function renderNumbersList(){
     }
     list.innerHTML = numbersBoard.auctions.map(a=>{
       const leading = a.status === "auction"
-        ? `<div class="lbl">Ставка (${numberTimeLeftLabel(a.bid_expires_at)})</div><div class="val">${a.highest_bid} <img src="/static/icons/diamond.png" alt=""></div>`
+        ? `${auctionTimerHtml(a.bid_expires_at)}<div class="lbl">Ставка</div><div class="val">${a.highest_bid} <img src="/static/icons/diamond.png" alt="">${isMyBid(a) ? `<span class="my-bid">Ваша ставка</span>` : ""}</div>`
         : `<div class="lbl">Свободен</div><div class="val">от ${numbersBoard.min_bid || 25} <img src="/static/icons/diamond.png" alt=""></div>`;
       return `
-        <div class="number-row" data-number="${a.number}">
+        <div class="number-row${a.status === "auction" && isMyBid(a) ? " mine" : ""}" data-number="${a.number}">
           <div class="num">#${a.number}</div>
           <div class="info">${leading}</div>
           <button class="act bid" data-number="${a.number}" data-min="${Math.max(numbersBoard.min_bid || 25, (a.highest_bid||0)+1)}">Ставка</button>
@@ -10422,9 +10355,9 @@ function renderNamesList(){
       list.innerHTML = `<div class="empty-state">Пока никто не создал имя</div>`;
     }else{
       list.innerHTML = namesBoard.auctions.map(a => `
-        <div class="number-row" data-name="${a.name}">
+        <div class="number-row${isMyBid(a) ? " mine" : ""}" data-name="${a.name}">
           <div class="num">${capName(a.name)}</div>
-          <div class="info"><div class="lbl">Ставка (${numberTimeLeftLabel(a.bid_expires_at)})</div><div class="val">${a.highest_bid} <img src="/static/icons/diamond.png" alt=""></div></div>
+          <div class="info">${auctionTimerHtml(a.bid_expires_at)}<div class="lbl">Ставка</div><div class="val">${a.highest_bid} <img src="/static/icons/diamond.png" alt="">${isMyBid(a) ? `<span class="my-bid">Ваша ставка</span>` : ""}</div></div>
           <button class="act bid" data-name="${a.name}" data-min="${Math.max(namesBoard.min_bid || 25, (a.highest_bid||0)+1)}">Ставка</button>
         </div>`).join("");
       list.querySelectorAll(".act.bid").forEach(btn=>{
