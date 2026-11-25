@@ -31,7 +31,13 @@ logger = logging.getLogger("daily_reminder")
 REMINDER_TEXT = f"Зайди и забери сегодняшнюю награду! 💎 +{db.DAILY_BONUS_GEMS} гемов ждут тебя"
 
 
+BOT_PUSH_MESSAGES = False  # off on request: no daily bonus reminders
+
+
 async def main():
+    if not BOT_PUSH_MESSAGES:
+        logger.info("Daily reminders are disabled (BOT_PUSH_MESSAGES = False).")
+        return
     db.init_db()
     user_ids = db.get_users_missing_daily_bonus()
     if not user_ids:

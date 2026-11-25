@@ -173,6 +173,26 @@ CREATE TABLE IF NOT EXISTS villa_giveaway_entries (
     PRIMARY KEY (giveaway_id, user_id)
 );
 
+-- gem prize giveaway in the public chat: fixed prize ladder (1st place gets the most)
+CREATE TABLE IF NOT EXISTS gem_prize_giveaways (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id       TEXT,
+    message_id    INTEGER,
+    prizes        TEXT NOT NULL,
+    draw_at       TEXT NOT NULL,
+    drawn_at      TEXT,
+    created_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gem_prize_giveaway_entries (
+    giveaway_id   INTEGER NOT NULL REFERENCES gem_prize_giveaways(id),
+    user_id       INTEGER NOT NULL,
+    username      TEXT,
+    first_name    TEXT,
+    created_at    TEXT NOT NULL,
+    PRIMARY KEY (giveaway_id, user_id)
+);
+
 -- free villa "attempts" won in the villa giveaway; spent from Farm -> Villa
 CREATE TABLE IF NOT EXISTS villa_free_credits (
     user_id       INTEGER PRIMARY KEY,
@@ -1760,13 +1780,14 @@ _TURNOVER_CACHE = {"at": 0.0, "data": {}}
 
 
 def get_games_turnover_24h() -> dict:
-    """Turnover of every game over the last 24 hours, keyed by the front-end mode key: gems wagered for the
-    gem games, number of cards staked for PvP ("cards"). Dev/test accounts are left out; cached 60 s."""
+    """Turnover of every game over the last 7 days (name kept for callers), keyed by the front-end mode key: gems wagered for the
+    gem games, number of cards staked for PvP ("cards"). Only the test bot is left out (the admin's and family
+    accounts are real play and count); cached 60 s."""
     import time
     if time.time() - _TURNOVER_CACHE["at"] < 60:
         return _TURNOVER_CACHE["data"]
-    since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-    excl = list(LEADERBOARD_EXCLUDED_USERNAMES)
+    since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    excl = ["test_bot"]
     ph = ",".join("?" for _ in excl)
     tables = {
         "redblack": "redblack_rounds", "aviator": "aviator_rounds", "mines": "mines_rounds",
@@ -4451,6 +4472,83 @@ def draw_villa_giveaway(gid: int) -> list[dict]:
     return winners
 
 
+# ---- Gem prize giveaway: random places 1..N, each place has its own gem prize ----
+
+def create_gem_prize_giveaway(prizes: list[int], draw_at_iso: str) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO gem_prize_giveaways (prizes, draw_at, created_at) VALUES (?, ?, ?)",
+            (",".join(str(p) for p in prizes), draw_at_iso, _now()),
+        )
+        return cur.lastrowid
+
+
+def set_gem_prize_giveaway_message(gid: int, chat_id, message_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE gem_prize_giveaways SET chat_id = ?, message_id = ? WHERE id = ?", (str(chat_id), message_id, gid))
+
+
+def get_gem_prize_giveaway(gid: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM gem_prize_giveaways WHERE id = ?", (gid,)).fetchone()
+    return dict(row) if row else None
+
+
+def join_gem_prize_giveaway(gid: int, user_id: int, username: str | None, first_name: str | None) -> str:
+    """'joined' | 'already_joined' | 'drawn' | 'missing'."""
+    with get_conn() as conn:
+        g = conn.execute("SELECT drawn_at FROM gem_prize_giveaways WHERE id = ?", (gid,)).fetchone()
+        if g is None:
+            return "missing"
+        if g["drawn_at"] is not None:
+            return "drawn"
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO gem_prize_giveaway_entries (giveaway_id, user_id, username, first_name, created_at) "
+            "VALUES (?, ?, ?, ?, ?)", (gid, user_id, username, first_name, _now()),
+        )
+        return "joined" if cur.rowcount else "already_joined"
+
+
+def get_gem_prize_giveaway_entries(gid: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT user_id, username, first_name FROM gem_prize_giveaway_entries WHERE giveaway_id = ? ORDER BY created_at, user_id",
+            (gid,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_due_gem_prize_giveaways() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM gem_prize_giveaways WHERE drawn_at IS NULL AND draw_at <= ?", (_now(),)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def draw_gem_prize_giveaway(gid: int, exclude_user_id=None) -> list[dict]:
+    """Shuffles the entrants into places 1..len(prizes), credits each place's gems and marks the
+    giveaway drawn (once -- a second call returns []). Returns winner rows with 'place' and 'prize'."""
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        g = conn.execute("SELECT prizes, drawn_at FROM gem_prize_giveaways WHERE id = ?", (gid,)).fetchone()
+        if g is None or g["drawn_at"] is not None:
+            return []
+        prizes = [int(p) for p in g["prizes"].split(",")]
+        entries = [dict(r) for r in conn.execute(
+            "SELECT user_id, username, first_name FROM gem_prize_giveaway_entries WHERE giveaway_id = ?", (gid,)
+        ).fetchall() if exclude_user_id is None or str(r["user_id"]) != str(exclude_user_id)]
+        winners = random.sample(entries, min(len(prizes), len(entries)))
+        for place, w in enumerate(winners, start=1):
+            w["place"], w["prize"] = place, prizes[place - 1]
+            conn.execute(
+                "UPDATE users SET gems = gems + ?, gems_earned = gems_earned + ? WHERE telegram_id = ?",
+                (w["prize"], w["prize"], w["user_id"]),
+            )
+        conn.execute("UPDATE gem_prize_giveaways SET drawn_at = ? WHERE id = ?", (_now(), gid))
+    return winners
+
+
 def get_villa_free_credits(user_id: int) -> int:
     with get_conn() as conn:
         row = conn.execute("SELECT credits FROM villa_free_credits WHERE user_id = ?", (user_id,)).fetchone()
@@ -5199,7 +5297,7 @@ ADMIN_USERNAME_MASK = "rzabeyda"
 
 def _mask_username(username: str | None) -> str | None:
     if username and username.lower() == ADMIN_USERNAME_MASK:
-        return "Бот"
+        return "Админ"
     return username
 
 
@@ -7359,7 +7457,7 @@ def get_swap_history(limit: int = 50) -> list[dict]:
 # someone is actually looking at the PvP screen.
 # ---------------------------------------------------------------------------
 
-PVP_LOCK_SECONDS = 20
+PVP_LOCK_SECONDS = 5
 # Staking used to close a few seconds before the round resolved so a card couldn't be
 # thrown in right at the wire — removed by request, betting is now allowed right up to
 # the round actually resolving. Kept at 0 (not deleted) so join_pvp_round()'s "already
@@ -7367,8 +7465,8 @@ PVP_LOCK_SECONDS = 20
 PVP_JOIN_CUTOFF_SECONDS = 0
 # Rarity -> "power" in the pot. Mirrors real-world value tiers (bronze junk vs.
 # diamond-grade), not farm drop odds — a single Diamond outweighs many Bronze cards.
-PVP_RARITY_WEIGHTS = {"bronze": 1, "silver": 3, "gold": 8, "platinum": 20, "diamond": 50}
-PVP_VILLA_MULTIPLIER = 4  # Villa Rare/Epic/Legend = 32/80/200
+PVP_RARITY_WEIGHTS = {"bronze": 1, "silver": 1, "gold": 1, "platinum": 5, "diamond": 25}
+PVP_VILLA_WEIGHTS = {"gold": 50, "platinum": 100, "diamond": 500}  # Villa Rare/Epic/Legend
 
 
 class PvpCardNotOwned(Exception):
@@ -7461,7 +7559,7 @@ def join_pvp_round(user_id: int, user_card_ids: list[int], expected_round_id: in
             rarity = (card_row["rarity"] if card_row else None) or "bronze"
             weight = PVP_RARITY_WEIGHTS.get(rarity, 1)
             if card_row and card_row["series"] == "villa":
-                weight *= PVP_VILLA_MULTIPLIER  # villas are 4x as strong as a normal card of the same rarity
+                weight = PVP_VILLA_WEIGHTS.get(rarity, weight)
             conn.execute("UPDATE user_cards SET pvp_round_id = ? WHERE id = ?", (round_id, ucid))
             conn.execute(
                 "INSERT INTO pvp_entries (round_id, user_id, user_card_id, rarity, weight, created_at) "

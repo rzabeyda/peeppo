@@ -11,3 +11,10 @@ _verify_*.js
 
 villa_originals/
 _trash/
+
+# local-only: ssh keys, deploy backups, server snapshots
+claude_key
+claude_key.pub
+*.before_*
+webapp/index.html.server
+deploy/klondike/index.html

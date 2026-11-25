@@ -1,0 +1,22 @@
+=== HTML: вставить сразу после строки <section id="profile-screen" class="screen"> ===
+      <div class="farm-promo" id="farm-promo">
+        <img class="farm-promo-img" src="/static/icons/farm.jpg" alt="">
+        <div class="farm-promo-text"><div class="farm-promo-cap">НАШ ДРУГОЙ БОТ</div><div class="farm-promo-title">Ферма</div></div>
+        <div class="farm-promo-arrow">›</div>
+      </div>
+
+=== CSS: вставить перед строкой /* ---------- Profile ---------- */ ===
+  .farm-promo{display:flex; align-items:center; gap:14px; width:100%; box-sizing:border-box; padding:12px 16px 12px 12px; margin-bottom:12px; background:linear-gradient(160deg,rgba(74,222,128,.14) 0%,rgba(20,40,20,.55) 100%); border:1px solid rgba(134,239,172,.35); border-radius:22px; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .farm-promo:active{transform:scale(.98);}
+  .farm-promo-img{width:76px; height:76px; border-radius:14px; object-fit:cover; flex-shrink:0;}
+  .farm-promo-text{flex:1; min-width:0; text-align:left;}
+  .farm-promo-cap{font-size:12px; font-weight:800; letter-spacing:.6px; color:#86efac; text-transform:uppercase; margin-bottom:3px;}
+  .farm-promo-title{font-size:20px; font-weight:800; color:#fff;}
+  .farm-promo-arrow{font-size:30px; font-weight:700; color:#86efac; line-height:1;}
+
+=== JS: вставить перед строкой document.getElementById("brand-logo").addEventListener("click", ()=>{ ===
+document.getElementById("farm-promo").addEventListener("click", ()=>{
+  const url = "https://t.me/farm6bot";
+  if(tg?.openTelegramLink){ tg.openTelegramLink(url); }
+  else{ window.open(url, "_blank"); }
+});

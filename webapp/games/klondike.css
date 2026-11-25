@@ -1,0 +1,86 @@
+/* ---------- Косынка (Klondike) -- webapp/games/klondike.css ---------- */
+.kl-wrap{position:relative;}
+.kl-head{display:flex; align-items:center; gap:8px; margin:0 2px 8px;}
+.kl-head .rb-title{margin-right:auto;}
+.kl-stat{font-size:12px; font-weight:700; color:#aaa; font-variant-numeric:tabular-nums; white-space:nowrap;}
+.kl-draw-chip{font-size:11px; font-weight:800; color:#ddd; background:rgba(255,255,255,.08); border:1px solid #444; border-radius:9px; padding:5px 8px; cursor:pointer;}
+.kl-draw-chip:disabled{opacity:.5;}
+.kl-mode-chip{display:flex; align-items:center; gap:3px;}
+.kl-mode-chip .gem-icon-inline{width:12px; height:12px;}
+.kl-actions .market-filter-btn{color:#ccc;}
+.kl-actions .market-filter-btn:disabled{opacity:.35;}
+.kl-actions .market-filter-btn.kl-pulse{color:#fff; background:rgba(34,197,94,.25); animation:neonBlockPulse 1.6s ease-in-out infinite;}
+.kl-modes .market-filter-btn.active{background:rgba(255,255,255,.18); color:#fff; box-shadow:inset 0 0 0 1px rgba(255,255,255,.4);}
+.kl-gem-panel{display:flex; flex-direction:column; gap:8px; margin-bottom:10px;}
+.kl-gem-info{font-size:12px; color:#aaa; line-height:1.4; text-align:center;}
+.kl-gem-live{display:flex; align-items:center; gap:8px; background:#161616; border:1px solid var(--card-border); border-radius:12px; padding:8px 10px; font-size:13px; font-weight:700;}
+.kl-gem-live .kl-live-txt{flex:1; min-width:0; color:#ddd;}
+.kl-cash-btn{border:none; border-radius:10px; padding:9px 12px; font-weight:800; font-size:13px; color:#fff; background:linear-gradient(135deg,#22c55e,#15803d); cursor:pointer; white-space:nowrap;}
+.kl-cash-btn:disabled{opacity:.5;}
+.kl-deal-btn{width:100%; border:none; border-radius:14px; padding:13px 0; font-weight:800; font-size:15px; color:#fff; background:linear-gradient(135deg,#22c55e,#15803d); cursor:pointer;}
+.kl-board{
+  position:relative; width:100%;
+  background:radial-gradient(ellipse at 50% 30%, #15803d, #0f5a2b 60%, #0a3d1d);
+  border:1px solid #1f3d2b; border-radius:14px;
+  padding:6px; box-sizing:border-box;
+  touch-action:pan-y; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none;
+  overflow:hidden;
+}
+.kl-area{position:relative; width:100%;}
+.kl-slot{
+  position:absolute; left:0; top:0; width:var(--cw); height:var(--ch);
+  border:1.5px solid rgba(255,255,255,.22); border-radius:calc(var(--cw) * .17);
+  background:rgba(0,0,0,.12);
+  display:flex; align-items:center; justify-content:center;
+  color:rgba(255,255,255,.28); font-weight:800; font-size:calc(var(--cw) * .42);
+  box-sizing:border-box; font-family:-apple-system,'Segoe UI',Arial,sans-serif;
+}
+.kl-slot-stock{cursor:pointer; touch-action:none;}
+/* cards: same look as the poker cards */
+.kl-card{
+  position:absolute; left:0; top:0; width:var(--cw); height:var(--ch);
+  border-radius:calc(var(--cw) * .17);
+  transition:transform .2s ease;
+  will-change:transform; box-sizing:border-box; touch-action:none;
+}
+.kl-card.kl-drag{transition:none;}
+.kl-face, .kl-back{position:absolute; inset:0; border-radius:inherit; box-sizing:border-box;}
+.kl-face{
+  display:none;
+  background:linear-gradient(160deg,#ffffff,#eef0f2); color:#000;
+  border:1.5px solid rgba(0,0,0,.10);
+  box-shadow:0 1px 2px rgba(0,0,0,.25), 0 3px 6px rgba(0,0,0,.30), inset 0 0 0 1px rgba(255,255,255,.7);
+  font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-weight:900;
+}
+.kl-card.up.known .kl-face{display:block;}
+.kl-card.up.known .kl-back{display:none;}
+.kl-card.red .kl-face{color:#dc2626;}
+.kl-corner{position:absolute; left:calc(var(--cw) * .08); top:calc(var(--cw) * .05); line-height:1; white-space:nowrap; letter-spacing:-.5px; display:flex; align-items:center;}
+.kl-r{font-size:calc(var(--cw) * .34);}
+.kl-s{font-size:calc(var(--cw) * .28); margin-left:1px;}
+.kl-big{position:absolute; left:0; right:0; top:58%; transform:translateY(-50%); text-align:center; font-size:calc(var(--cw) * .62); line-height:1; text-shadow:0 1px 1px rgba(0,0,0,.12);}
+.kl-back{
+  background:
+    repeating-linear-gradient(45deg, rgba(255,255,255,.06) 0 5px, transparent 5px 10px),
+    linear-gradient(135deg, #1d4ed8, #1e3a8a);
+  border:2px solid #3b82f6; box-shadow:0 2px 6px rgba(0,0,0,.35);
+}
+.kl-card.kl-hint .kl-face, .kl-card.kl-hint .kl-back, .kl-slot.kl-hint{box-shadow:0 0 0 3px #facc15, 0 0 14px #facc15;}
+.kl-card.kl-shake{animation:klShake .3s ease;}
+@keyframes klShake{0%,100%{margin-left:0;}25%{margin-left:-4px;}75%{margin-left:4px;}}
+.kl-cascade{position:absolute; left:0; top:0; z-index:1500;}
+.kl-win{
+  position:absolute; inset:0; z-index:93; display:none;
+  align-items:center; justify-content:center; background:rgba(0,0,0,.55);
+}
+.kl-win.active{display:flex;}
+.kl-win-card{background:var(--card-bg); border:1px solid var(--card-border); border-radius:18px; padding:20px 18px; text-align:center; width:80%; max-width:280px;}
+.kl-win-title{font-size:22px; font-weight:800; margin-bottom:8px;}
+.kl-win-text{font-size:13px; color:#ccc; line-height:1.6; margin-bottom:14px;}
+.kl-win-btn{width:100%; border:none; border-radius:12px; padding:12px; font-weight:800; font-size:14px; color:#fff; background:linear-gradient(135deg,#22c55e,#15803d); cursor:pointer;}
+#kl-rules-overlay{position:absolute; inset:0; background:rgba(0,0,0,.92); display:none; align-items:center; justify-content:center; z-index:92; padding:24px;}
+#kl-rules-overlay.active{display:flex;}
+#kl-rules-card{position:relative; width:100%; max-width:320px; max-height:86vh; overflow-y:auto; background:var(--card-bg); border:1px solid var(--card-border); border-radius:20px; padding:22px 18px 18px; box-sizing:border-box;}
+#kl-rules-title{font-size:16px; font-weight:800; margin-bottom:12px;}
+#kl-rules-text{font-size:13px; color:#ccc; line-height:1.5;}
+#kl-rules-text p{margin:0 0 8px;}

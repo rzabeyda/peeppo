@@ -1741,3 +1741,12 @@ def wall_unpin(body: WallUnpinBody):
     user = _authenticate(body.initData)
     db.unpin_from_wall(user["telegram_id"], body.user_card_id)
     return {"cards": db.get_wall(user["telegram_id"])}
+
+
+import durak as _durak; _durak.register(app, _authenticate)
+
+
+# Косынка on gems -- see klondike_game.py
+import klondike_game  # noqa: E402
+app.include_router(klondike_game.make_router(_authenticate))
+import preferans as _pref; _pref.register(app, _authenticate)

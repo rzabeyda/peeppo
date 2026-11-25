@@ -38,9 +38,11 @@ from aiogram.types import (
     FSInputFile,
     InlineQuery,
     InlineQueryResultPhoto,
+    KeyboardButton,
     LabeledPrice,
     Message,
     PreCheckoutQuery,
+    ReplyKeyboardMarkup,
     WebAppInfo,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -68,7 +70,7 @@ ADMIN_USERNAME_MASK = "rzabeyda"
 
 def _mask_username(username: str | None) -> str | None:
     if username and username.lower() == ADMIN_USERNAME_MASK:
-        return "Бот"
+        return "Админ"
     return username
 
 
@@ -76,8 +78,8 @@ def _who_label(username: str | None, first_name: str | None, telegram_id: int) -
     """"@handle" (or first_name/id fallback) for a winner/player shown in a public
     announcement -- masked through _mask_username() first."""
     username = _mask_username(username)
-    if username == "Бот":
-        return "Бот"
+    if username == "Админ":
+        return "Админ"
     return f"@{username}" if username else (first_name or str(telegram_id))
 
 AVIATOR_MAX_CONCURRENT_PER_CHAT = 5  # see database.count_active_aviator_rounds_in_chat -- caps how many /go tickers can hammer edit_text in the same chat at once
@@ -95,6 +97,8 @@ _split = urlsplit(WEBAPP_URL)
 WEBAPP_ORIGIN = f"{_split.scheme}://{_split.netloc}"  # WEBAPP_URL minus any ?query — safe to append /static/... to
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "Peeppobot")  # no leading @
 ADMIN_ID = os.environ.get("ADMIN_ID")  # your own telegram_id — set in .env to get "new user" pings
+ADMIN_DM_NOTIFICATIONS = False  # off on request: bot sends no DMs to the admin (notify_admin_*)
+GEM_DROPS = False  # off on request: no gem drops at all -- auto, manual /gem, or claiming old ones
 PUBLIC_CHAT = os.environ.get("PUBLIC_CHAT_USERNAME", "@peeppo_chat")  # public chat: PvP stakes + admin /gem drops
 CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "@peeppo_channel")  # channel: admin /giveaway posts
 # The referral race end time lives in the DB (admin /refend) — see ref_race_scheduler().
@@ -105,6 +109,65 @@ logger = logging.getLogger("peeppo.bot")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+
+# ---------------------------------------------------------------------------
+# BOT_PUSH_MESSAGES = False: the bot never writes to anyone on its own. A new message
+# (send_*/copy/forward) goes out only to the user who triggered the update being handled
+# and to the chat it came from (tasks started by a handler inherit that). Everything sent
+# from schedulers, broadcasts or api.py is dropped with a "push blocked" log line. Edits of
+# existing posts are not affected. Updates from ADMIN_ID may still send anywhere.
+# ---------------------------------------------------------------------------
+BOT_PUSH_MESSAGES = False  # off on request: no reminders/broadcasts/pushes, only replies
+
+import contextvars as _contextvars
+from aiogram.client.session.middlewares.base import BaseRequestMiddleware as _BaseRequestMiddleware
+from aiogram.exceptions import TelegramAPIError as _TelegramAPIError
+
+_push_allowed = _contextvars.ContextVar("_push_allowed", default=None)
+
+
+def _allow_push_to(*chat_ids):
+    """Lets the current task send to these chats even outside a handler (api.py calls)."""
+    _push_allowed.set(frozenset(str(c).lower() for c in chat_ids if c is not None))
+
+
+class BotPushDisabled(_TelegramAPIError):
+    pass
+
+
+@dp.update.outer_middleware()
+async def _remember_reply_targets(handler, event, data):
+    chat, user = data.get("event_chat"), data.get("event_from_user")
+    allowed = set()
+    if chat:
+        allowed.add(str(chat.id))
+        if chat.username:
+            allowed.add("@" + chat.username.lower())
+    if user:
+        allowed.add(str(user.id))
+        if ADMIN_ID and str(user.id) == str(ADMIN_ID):
+            allowed.add("*")
+    token = _push_allowed.set(frozenset(allowed))
+    try:
+        return await handler(event, data)
+    finally:
+        _push_allowed.reset(token)
+
+
+class _NoBotPush(_BaseRequestMiddleware):
+    async def __call__(self, make_request, bot, method):
+        name = type(method).__name__
+        if not BOT_PUSH_MESSAGES and name.startswith(("Send", "Copy", "Forward")) and name != "SendChatAction":
+            allowed = _push_allowed.get()
+            target = str(getattr(method, "chat_id", "")).lower()
+            if allowed is None or ("*" not in allowed and target not in allowed):
+                logger.info("push blocked: %s -> %s", name, target)
+                raise BotPushDisabled(method=method, message="bot push messages are disabled")
+        return await make_request(bot, method)
+
+
+bot.session.middleware(_NoBotPush())
 
 
 @dp.message.outer_middleware()
@@ -125,6 +188,10 @@ async def _count_chat_messages(handler, event, data):
 # _count_chat_messages so the message still counts for /top. The bot needs the
 # "Delete messages" admin right in the chat.
 # ---------------------------------------------------------------------------
+
+# Master switch for automatic moderation of PUBLIC_CHAT (link deletion and мат mutes
+# below). Off: the chat is moderated by another bot; the code stays for turning back on.
+CHAT_MODERATION = False
 
 _LINK_ENTITY_TYPES = {"url", "text_link"}
 _LINK_RE = re.compile(
@@ -152,22 +219,43 @@ def _message_mentions_protected(message: Message) -> bool:
     return False
 
 
+# Links to these bots stay allowed: t.me/<bot>... (any ?start=), tg://resolve?domain=<bot>,
+# and anything posted "via @<bot>" (inline mode, buttons included). Lowercase, no "@".
+ALLOWED_LINK_BOTS = {"gift20bot"}
+_ALLOWED_LINK_RE = re.compile(
+    r"(?:https?://)?(?:www\.)?(?:t|telegram)\.(?:me|dog)/(?:" + "|".join(ALLOWED_LINK_BOTS) + r")\b\S*"
+    r"|tg://resolve\?domain=(?:" + "|".join(ALLOWED_LINK_BOTS) + r")\b\S*",
+    re.IGNORECASE,
+)
+
+
+def _is_allowed_link(url: str | None) -> bool:
+    return bool(url) and _ALLOWED_LINK_RE.fullmatch(url.strip()) is not None
+
+
 def _message_has_link(message: Message) -> bool:
-    for entities in (message.entities, message.caption_entities):
-        if entities and any(e.type in _LINK_ENTITY_TYPES for e in entities):
-            return True
+    if message.via_bot and (message.via_bot.username or "").lower() in ALLOWED_LINK_BOTS:
+        return False
     text = message.text or message.caption or ""
-    if text and _LINK_RE.search(text):
+    for entities in (message.entities, message.caption_entities):
+        for e in entities or ():
+            if e.type == "text_link" and not _is_allowed_link(e.url):
+                return True
+            if e.type == "url" and not _is_allowed_link(e.extract_from(text)):
+                return True
+    if text and _LINK_RE.search(_ALLOWED_LINK_RE.sub(" ", text)):
         return True
     markup = message.reply_markup
     if markup and getattr(markup, "inline_keyboard", None):
-        if any(btn.url for row in markup.inline_keyboard for btn in row):
+        if any(btn.url and not _is_allowed_link(btn.url) for row in markup.inline_keyboard for btn in row):
             return True
     return False
 
 
 async def _delete_if_forbidden_link(message: Message) -> bool:
     """True if the message was a forbidden link and got deleted (or should have been)."""
+    if not CHAT_MODERATION:
+        return False
     if message.chat.type not in ("group", "supergroup") or not _is_public_chat(message.chat):
         return False
     if message.is_automatic_forward:  # posts auto-forwarded from the linked channel
@@ -226,6 +314,8 @@ async def _delete_later(msg: Message, delay: int):
 
 async def _mute_if_mat(message: Message) -> bool:
     """True if the message had мат and got deleted (its author muted for MAT_MUTE_SECONDS)."""
+    if not CHAT_MODERATION:
+        return False
     if message.chat.type not in ("group", "supergroup") or not _is_public_chat(message.chat):
         return False
     if message.is_automatic_forward:
@@ -355,16 +445,19 @@ async def handle_start(message: Message):
         caption=(
             "Добро Пожаловать в <b>Peeppo</b>!\n\n"
             "Жми Фарм — собирай карточки, играй в PvP, обменивайся или продавай "
-            "на рынке. Обменивай Diamond карты на Telegram Stars."
+            "на рынке."
         ),
         reply_markup=_open_button(),
         parse_mode="HTML",
     )
+    await _maybe_send_gems_keyboard(message)
 
 
 async def notify_admin_new_user(tg_user, referrer_row=None):
     """Best-effort ping to you (ADMIN_ID in .env) whenever someone brand new starts the
     bot — names who invited them too, when they came via a referral link."""
+    if not ADMIN_DM_NOTIFICATIONS:
+        return  # admin DMs disabled
     if not ADMIN_ID:
         return
     who = f"@{tg_user.username}" if tg_user.username else (tg_user.first_name or str(tg_user.id))
@@ -391,6 +484,15 @@ def _is_admin(user_id: int) -> bool:
     return bool(ADMIN_ID) and str(user_id) == str(ADMIN_ID)
 
 
+def _admin_keyboard() -> ReplyKeyboardMarkup:
+    """Persistent bottom keyboard, only ever sent to the admin in the private chat with the bot."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="admin"), KeyboardButton(text="Гемы")]],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
 def _resolve_user(ref: str):
     """Admin commands accept either a numeric telegram_id or a @username."""
     ref = ref.strip()
@@ -398,6 +500,100 @@ def _resolve_user(ref: str):
     if bare.isdigit():
         return db.get_user(int(bare))
     return db.find_user_by_username(ref)
+
+
+# ---------------------------------------------------------------------------
+# «Гемы» button: only for GEMS_SELF_USERNAMES and ADMIN_ID, private chat only.
+# Tap «Гемы» -> type a number -> «ОК» -> the gems go to the tapper's own balance.
+# ---------------------------------------------------------------------------
+GEMS_SELF_USERNAMES = {"zzabeyda"}
+GEMS_SELF_MAX = 1_000_000  # per operation, only against typos
+GEMS_SELF_BUTTON = "Гемы"
+_gems_self_waiting: set = set()
+
+
+def _can_self_gems(tg_user) -> bool:
+    if tg_user is None:
+        return False
+    if _is_admin(tg_user.id):
+        return True
+    if (tg_user.username or "").lower() in GEMS_SELF_USERNAMES:
+        return True
+    row = db.get_user(tg_user.id)
+    return bool(row and (row["username"] or "").lower() in GEMS_SELF_USERNAMES)
+
+
+def _gems_self_keyboard(tg_user) -> ReplyKeyboardMarkup:
+    if _is_admin(tg_user.id):
+        return _admin_keyboard()
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=GEMS_SELF_BUTTON)]],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
+async def _maybe_send_gems_keyboard(message: Message):
+    if message.chat.type != "private" or not _can_self_gems(message.from_user):
+        return
+    await message.answer(
+        "Кнопка «Гемы» внизу: нажми, введи сумму и подтверди «ОК».",
+        reply_markup=_gems_self_keyboard(message.from_user),
+    )
+
+
+@dp.message(Command("gems"), F.chat.type == "private")
+@dp.message(F.chat.type == "private", F.text == GEMS_SELF_BUTTON)
+async def handle_gems_self_button(message: Message):
+    if not _can_self_gems(message.from_user):
+        return
+    _gems_self_waiting.add(message.from_user.id)
+    await message.answer(
+        f"Сколько гемов начислить? Напиши число (от 1 до {GEMS_SELF_MAX:,}).".replace(",", " "),
+        reply_markup=_gems_self_keyboard(message.from_user),
+    )
+
+
+@dp.message(F.chat.type == "private", F.text,
+            lambda m: m.from_user and m.from_user.id in _gems_self_waiting and not m.text.startswith("/"))
+async def handle_gems_self_amount(message: Message):
+    if not _can_self_gems(message.from_user):
+        _gems_self_waiting.discard(message.from_user.id)
+        return
+    text = message.text.strip().replace(" ", "").replace("\u00a0", "")
+    if not text.isdigit() or not 1 <= int(text) <= GEMS_SELF_MAX:
+        await message.answer(f"Нужно целое число от 1 до {GEMS_SELF_MAX:,}".replace(",", " "))
+        return
+    _gems_self_waiting.discard(message.from_user.id)
+    amount = int(text)
+    kb = InlineKeyboardBuilder()
+    kb.button(text="ОК", callback_data=f"gemsself:ok:{amount}")
+    kb.button(text="Отмена", callback_data="gemsself:no")
+    kb.adjust(2)
+    await message.answer(f"Начислить {amount} 💎?", reply_markup=kb.as_markup())
+
+
+@dp.callback_query(F.data.startswith("gemsself:"))
+async def handle_gems_self_confirm(call: CallbackQuery):
+    if not _can_self_gems(call.from_user) or call.message is None or call.message.chat.type != "private":
+        await call.answer()
+        return
+    parts = call.data.split(":")
+    if parts[1] != "ok":
+        await call.message.edit_text("Отменено")
+        await call.answer()
+        return
+    amount = int(parts[2])
+    if not 1 <= amount <= GEMS_SELF_MAX:
+        await call.answer("Неверная сумма", show_alert=True)
+        return
+    if db.get_user(call.from_user.id) is None:
+        await call.answer("Сначала нажми /start", show_alert=True)
+        return
+    new_balance = db.add_gems(call.from_user.id, amount)
+    logger.info("gems self-credit: %s +%s -> %s", call.from_user.id, amount, new_balance)
+    await call.message.edit_text(f"✅ Начислено {amount} 💎\nБаланс: {new_balance} 💎")
+    await call.answer()
 
 
 @dp.message(Command("admin"))
@@ -422,7 +618,8 @@ async def handle_admin_panel(message: Message):
         lines.append(_house_stats_line(key, all_stats[key]))
     lost = f"{db.get_total_gems_lost():,}".replace(",", " ")
     lines += ["", f"Проиграно: <b>{lost}</b> гемов"]
-    await message.answer("\n".join(lines), parse_mode="HTML")
+    kb = _admin_keyboard() if message.chat.type == "private" else None
+    await message.answer("\n".join(lines), parse_mode="HTML", reply_markup=kb)
 
 
 @dp.message(Command("top"))
@@ -644,23 +841,24 @@ GEM_DROP_AMOUNT = 25  # still the default for the manual /gem command when no am
 GEM_DROP_MIN_AMOUNT = 15
 GEM_DROP_MAX_AMOUNT = 25
 
-# Auto-scheduler: fires roughly once every hour, around the clock (window 00:00-24:00
-# Tallinn time -- the old quiet 02:00-06:00 night gap was removed on request; set
-# START/END back to 6/2 to restore it, the window then WRAPS past midnight, see
-# the hour check below). GEM_DROP_MIN_GAP_SECONDS guards against firing a second drop
-# too soon if the bot process restarts a few times in a row (e.g. during a deploy) --
-# kept a bit below GEM_DROP_INTERVAL_SECONDS so the +/-180s jitter on the sleep below
-# never causes a legitimate hourly drop to be skipped.
-GEM_DROP_TZ = ZoneInfo("Europe/Tallinn")
-GEM_DROP_START_HOUR = 0   # window opens 00:00
-GEM_DROP_END_HOUR = 24    # window closes 24:00 -> drops all day and night (start > end would wrap past midnight)
-GEM_DROP_INTERVAL_SECONDS = 3600
-GEM_DROP_MIN_GAP_SECONDS = 3000
+# Auto-scheduler: ~20 drops a day, only between 05:00 and 02:00 Moscow time (a 21h
+# window that WRAPS past midnight, see the hour check below; quiet 02:00-05:00).
+# 21h / 20 drops = 3780s between drops. GEM_DROP_MIN_GAP_SECONDS guards against firing
+# a second drop too soon if the bot process restarts a few times in a row (e.g. during
+# a deploy) -- kept a bit below GEM_DROP_INTERVAL_SECONDS so the +/-180s jitter on the
+# sleep below never causes a legitimate drop to be skipped.
+GEM_DROP_TZ = ZoneInfo("Europe/Moscow")
+GEM_DROP_START_HOUR = 5   # window opens 05:00 MSK
+GEM_DROP_END_HOUR = 2     # window closes 02:00 MSK (start > end -> wraps past midnight)
+GEM_DROP_INTERVAL_SECONDS = 3780
+GEM_DROP_MIN_GAP_SECONDS = 3400
 
 
 async def _post_gem_drop(amount: int = GEM_DROP_AMOUNT, label: str = "💎 Дроп") -> bool:
     """Creates a gem drop and posts the "Забрать" button into PUBLIC_CHAT. Shared by
     the manual /gem command and the automatic hourly scheduler."""
+    if not GEM_DROPS:
+        return False  # gem drops disabled
     drop_id = db.create_gem_drop(amount)
     kb = InlineKeyboardBuilder()
     kb.button(text="Забрать", callback_data=f"gem_claim:{drop_id}")
@@ -872,12 +1070,14 @@ async def handle_unmute(message: Message):
 
 
 async def gem_drop_scheduler():
-    """Background loop living for the lifetime of the bot process: roughly once every
-    hour, round the clock — if no drop went out too recently — posts an automatic
+    """Background loop living for the lifetime of the bot process: ~20 times a day,
+    05:00-02:00 MSK — if no drop went out too recently — posts an automatic
     gem drop (a random amount between GEM_DROP_MIN_AMOUNT and GEM_DROP_MAX_AMOUNT,
     rolled fresh each time) into PUBLIC_CHAT."""
+    if not GEM_DROPS:
+        return  # gem drops disabled
     logger.info(
-        "gem drop scheduler started (24h, ~every 1h, %d-%d gems)",
+        "gem drop scheduler started (05:00-02:00 MSK, ~20/day, %d-%d gems)",
         GEM_DROP_MIN_AMOUNT, GEM_DROP_MAX_AMOUNT,
     )
     while True:
@@ -900,7 +1100,7 @@ async def gem_drop_scheduler():
                     ok = await _post_gem_drop(amount=amount)
                     if ok:
                         logger.info(
-                            "auto gem drop posted at %s Tallinn time (%d gems)",
+                            "auto gem drop posted at %s MSK (%d gems)",
                             now_local.strftime("%H:%M"), amount,
                         )
         except Exception:
@@ -927,6 +1127,8 @@ async def gem_drop_100_scheduler():
     random moment between 06:00 and 10:00 Tallinn time, posts an automatic
     GEM_DROP_100_AMOUNT-gem drop into PUBLIC_CHAT -- independent of (and does not
     replace) the regular hourly GEM_DROP_AMOUNT-gem drops from gem_drop_scheduler()."""
+    if not GEM_DROPS:
+        return  # gem drops disabled
     logger.info(
         "100-gem daily airdrop scheduler started (06:00-10:00 Tallinn, once/day, %d gems)",
         GEM_DROP_100_AMOUNT,
@@ -960,6 +1162,9 @@ async def gem_drop_100_scheduler():
 
 @dp.callback_query(F.data.startswith("gem_claim:"))
 async def handle_gem_claim(call: CallbackQuery):
+    if not GEM_DROPS:
+        await call.answer("Дропы выключены", show_alert=True)
+        return
     drop_id = int(call.data.split(":")[1])
     # Register the claimer even if they've never DM'd the bot before — anyone in the
     # group chat can tap "Забрать", not just people who already opened the webapp.
@@ -1570,6 +1775,136 @@ async def villa_giveaway_scheduler():
         await asyncio.sleep(30)
 
 
+# ---------------------------------------------------------------------------
+# Gem prize giveaway (/gemgiveaway, admin): post in PUBLIC_CHAT with an "Участвовать" button.
+# At draw time the bot shuffles entrants into places 1..5 and credits each place's gems.
+# Change the prizes / time here before sending the command.
+# ---------------------------------------------------------------------------
+GEM_GIVEAWAY_PRIZES = [5000, 2000, 1000, 500, 100]
+GEM_GIVEAWAY_DRAW_AT = datetime(2026, 10, 18, 15, 0, tzinfo=timezone.utc)  # 18.10.2026 18:00 MSK
+GEM_GIVEAWAY_DRAW_LABEL = "18 октября 2026, 18:00 по Москве"
+
+
+def _gem_giveaway_prizes_text() -> str:
+    return "\n".join(f"{i} место -- {p} 💎" for i, p in enumerate(GEM_GIVEAWAY_PRIZES, start=1))
+
+
+def _gem_giveaway_text(entries: list[dict]) -> str:
+    text = (
+        "💎 РОЗЫГРЫШ ГЕМОВ\n\n"
+        f"{_gem_giveaway_prizes_text()}\n\n"
+        "Жми «Участвовать» -- места распределит бот случайно, гемы начислятся победителям сами.\n\n"
+        f"Итоги: {GEM_GIVEAWAY_DRAW_LABEL}.\n\n"
+        f"Участников: {len(entries)}"
+    )
+    if entries:
+        names = [_who_label(e["username"], e["first_name"], e["user_id"]) for e in entries]
+        shown, used = [], len(text) + 1
+        for n in names:
+            if used + len(n) + 2 > 3800:
+                break
+            shown.append(n)
+            used += len(n) + 2
+        text += "\n" + ", ".join(shown)
+        if len(shown) < len(names):
+            text += f" и ещё {len(names) - len(shown)}"
+    return text
+
+
+def _gem_giveaway_kb(gid: int):
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🎟 Участвовать", callback_data=f"ggw_join:{gid}")
+    return kb.as_markup()
+
+
+@dp.message(Command("gemgiveaway"))
+async def handle_gem_giveaway(message: Message):
+    if not _is_admin(message.from_user.id):
+        return
+    if datetime.now(timezone.utc) >= GEM_GIVEAWAY_DRAW_AT:
+        await message.answer("Время итогов уже прошло -- поменяй GEM_GIVEAWAY_DRAW_AT.")
+        return
+    gid = db.create_gem_prize_giveaway(GEM_GIVEAWAY_PRIZES, GEM_GIVEAWAY_DRAW_AT.isoformat())
+    try:
+        sent = await bot.send_message(PUBLIC_CHAT, _gem_giveaway_text([]), reply_markup=_gem_giveaway_kb(gid))
+    except Exception:
+        await message.answer(f"Не удалось опубликовать в {PUBLIC_CHAT} -- бот точно там состоит?")
+        return
+    db.set_gem_prize_giveaway_message(gid, sent.chat.id, sent.message_id)
+    await message.answer(f"Розыгрыш гемов опубликован в {PUBLIC_CHAT}. Итоги: {GEM_GIVEAWAY_DRAW_LABEL}.")
+
+
+@dp.callback_query(F.data.startswith("ggw_join:"))
+async def handle_gem_giveaway_join(call: CallbackQuery):
+    gid = int(call.data.split(":")[1])
+    db.get_or_create_user(
+        telegram_id=call.from_user.id,
+        username=call.from_user.username,
+        first_name=call.from_user.first_name,
+        ref_by=None,
+    )
+    status = db.join_gem_prize_giveaway(gid, call.from_user.id, call.from_user.username, call.from_user.first_name)
+    if status == "joined":
+        await call.answer("Ты участвуешь! Удачи 🍀", show_alert=True)
+        g = db.get_gem_prize_giveaway(gid)
+        if g and g.get("message_id"):
+            try:
+                await bot.edit_message_text(
+                    chat_id=g["chat_id"], message_id=g["message_id"],
+                    text=_gem_giveaway_text(db.get_gem_prize_giveaway_entries(gid)),
+                    reply_markup=_gem_giveaway_kb(gid),
+                )
+            except Exception:
+                logger.warning("could not update gem giveaway %s post", gid)
+    elif status == "already_joined":
+        await call.answer("Ты уже участвуешь", show_alert=True)
+    elif status == "drawn":
+        await call.answer("Розыгрыш уже завершён", show_alert=True)
+    else:
+        await call.answer("Розыгрыш не найден", show_alert=True)
+
+
+async def gem_giveaway_scheduler():
+    """Draws due gem prize giveaways: credits the gems, edits the post with the places, DMs winners."""
+    logger.info("gem giveaway scheduler started")
+    while True:
+        try:
+            for g in db.get_due_gem_prize_giveaways():
+                total = len(db.get_gem_prize_giveaway_entries(g["id"]))
+                winners = db.draw_gem_prize_giveaway(g["id"], exclude_user_id=ADMIN_ID)
+                if winners:
+                    lines = [
+                        f"{w['place']} место -- {_who_label(w['username'], w['first_name'], w['user_id'])} -- {w['prize']} 💎"
+                        for w in winners
+                    ]
+                    text = (
+                        "🏁 Розыгрыш гемов завершён!\n\n" + "\n".join(lines) +
+                        f"\n\nУчастников: {total}\nГемы уже начислены победителям."
+                    )
+                else:
+                    text = "🏁 Розыгрыш гемов завершён -- участников не набралось, увы."
+                if g.get("message_id"):
+                    try:
+                        await bot.edit_message_text(chat_id=g["chat_id"], message_id=g["message_id"], text=text)
+                    except Exception:
+                        try:
+                            await bot.send_message(g["chat_id"] or PUBLIC_CHAT, text)
+                        except Exception:
+                            logger.warning("could not post gem giveaway %s results", g["id"])
+                for w in winners:
+                    try:
+                        await bot.send_message(
+                            w["user_id"],
+                            f"🎉 Ты занял {w['place']} место в розыгрыше гемов! +{w['prize']} 💎 уже на балансе.",
+                            reply_markup=_open_button(),
+                        )
+                    except Exception:
+                        logger.info("could not DM gem giveaway winner %s", w["user_id"])
+        except Exception:
+            logger.exception("gem giveaway scheduler iteration failed")
+        await asyncio.sleep(30)
+
+
 async def giveaway_scheduler():
     """Background loop living for the lifetime of the bot process: every few minutes,
     checks for giveaways whose draw time has passed and draws them — both the regular
@@ -1762,6 +2097,8 @@ async def notify_admin_payment(tg_user, stars: int, description: str):
     """Best-effort ping to you (ADMIN_ID in .env) whenever anyone spends Telegram
     Stars in the bot -- gems or a rank, chat command or webapp, same as the existing
     new-user/withdrawal admin pings."""
+    if not ADMIN_DM_NOTIFICATIONS:
+        return  # admin DMs disabled
     if not ADMIN_ID:
         return
     who = f"@{tg_user.username}" if tg_user.username else (tg_user.first_name or str(tg_user.id))
@@ -1814,6 +2151,8 @@ async def handle_successful_payment(message: Message):
                 await message.answer(f"🏠 Тебе выпало вилл: {len(res)}\n{lines}{more}")
                 db.log_stars_payment(uid, stars, f"виллы ×{len(res)}")
                 await notify_admin_payment(message.from_user, stars, f"{len(res)} вилл")
+    elif payload.startswith("donate:"):
+        await message.answer(f"Спасибо! Задоначено {stars} ⭐")
 
 
 # ---------------------------------------------------------------------------
@@ -2012,6 +2351,7 @@ async def send_share_message(user_id: int, photo_path: str, card_name: str | Non
     """Called from api.py (imports this module directly, same BOT_TOKEN) after /api/share.
     Kept as a fallback for clients where tg.switchInlineQuery isn't available (see
     handle_inline_share below for the main "Поделиться" flow, which skips this chat entirely)."""
+    _allow_push_to(user_id)  # the user's own button tap
     ref_link = f"https://t.me/{BOT_USERNAME}?start=ref{user_id}"
     caption = (
         f"Смотри что мне выпало «{card_name}» 🎁 Залетай в Peeppo и фарми карты → {ref_link}"
@@ -2048,6 +2388,8 @@ def _withdrawal_text(withdrawal_id: int, card_count: int, gram_amount: int, wall
 
 async def notify_admin_withdrawal_request(withdrawal_id: int, user_id: int, display_name: str,
                                            card_count: int, gram_amount: int, wallet_address: str):
+    if not ADMIN_DM_NOTIFICATIONS:
+        return  # admin DMs disabled
     if not ADMIN_ID:
         logger.warning("ADMIN_ID not set — cannot notify admin of withdrawal request %s", withdrawal_id)
         return
@@ -2175,12 +2517,13 @@ async def handle_inline_share(inline_query: InlineQuery):
 
 def _display_name(username: str | None, first_name: str | None) -> str:
     username = _mask_username(username)
-    if username == "Бот":
-        return "Бот"
+    if username == "Админ":
+        return "Админ"
     return f"@{username}" if username else (first_name or "Игрок")
 
 
 async def share_redblack_result(round_id: int) -> bool:
+    _allow_push_to(PUBLIC_CHAT)  # the user's own button tap
     round_row = db.get_redblack_round(round_id)
     if round_row is None:
         return False
@@ -2200,6 +2543,7 @@ async def share_redblack_result(round_id: int) -> bool:
 
 
 async def share_mines_result(round_id: int) -> bool:
+    _allow_push_to(PUBLIC_CHAT)  # the user's own button tap
     round_row = db.get_mines_round(round_id)
     if round_row is None or round_row["status"] not in ("won", "lost"):
         return False
@@ -2228,6 +2572,7 @@ _POKER_CATEGORY_LABEL = {
 
 
 async def share_poker_result(round_id: int) -> bool:
+    _allow_push_to(PUBLIC_CHAT)  # the user's own button tap
     round_row = db.get_poker_round(round_id)
     # "won" is included (not just "collected") so the player can share straight from the
     # double-up screen before tapping "Забрать" -- gems are already credited live at
@@ -2251,6 +2596,7 @@ async def share_poker_result(round_id: int) -> bool:
 
 
 async def share_aviator_result(round_id: int) -> bool:
+    _allow_push_to(PUBLIC_CHAT)  # the user's own button tap
     round_row = db.get_aviator_round(round_id)
     if round_row is None or round_row["status"] not in ("won", "lost"):
         return False
@@ -2272,6 +2618,7 @@ async def share_aviator_result(round_id: int) -> bool:
 
 
 async def share_pvp_result(round_id: int) -> bool:
+    _allow_push_to(PUBLIC_CHAT)  # the user's own button tap
     round_row = db.get_last_resolved_pvp_round(round_id)
     if round_row is None:
         return False
@@ -2291,6 +2638,7 @@ async def send_pvp_invite(name: str) -> bool:
     """"Позвать игрока" button in the PvP lobby -- one ping into PUBLIC_CHAT inviting
     others to join the open bank. Cooldown is enforced server-side by
     db.try_pvp_invite() before this is ever called."""
+    _allow_push_to(PUBLIC_CHAT)  # the user's own button tap
     text = f"⚔️ {name} зовёт в PvP"
     try:
         await bot.send_message(PUBLIC_CHAT, text)
@@ -2387,14 +2735,111 @@ def format_ref_leaderboard(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _gift20_raffle_text() -> str:
+    """/ref в общем чате: «Розыгрыш 4 NFT» бота @gift20bot (данные берём из его базы только на чтение).
+    Билеты считаются так же, как в самом gift20bot: друг с NFT x6, Premium x3, вошёл в чат x1, пришёл в бота x1."""
+    import sqlite3 as _sq
+    owner = 7308147004
+    con = _sq.connect("file:/root/gifts/gifts.db?mode=ro", uri=True, timeout=10)
+    try:
+        stats = con.execute("""SELECT r.inviter_id, COUNT(*) AS n, SUM(r.in_chat) AS chat, SUM(r.premium) AS prm,
+            SUM(CASE WHEN EXISTS (SELECT 1 FROM ref_credits c WHERE c.invited_id = r.invited_id) THEN 1 ELSE 0 END) AS nft, u.pf_user, u.pf_name
+            FROM referrals r LEFT JOIN users u ON u.tg_id = r.inviter_id
+            WHERE r.inviter_id != ? AND r.ts >= 0 GROUP BY r.inviter_id""", (owner,)).fetchall()
+    finally:
+        con.close()
+    rows = sorted(((r[0], r[4] * 6 + r[3] * 3 + r[2] + r[1], r[5], r[6]) for r in stats), key=lambda x: -x[1])[:7]
+    def nm(r):
+        return "@" + r[2] if r[2] else ((r[3] or "").strip() or f"id{r[0]}")
+    lines = ["Розыгрыш 4 NFT", ""]
+    lines += [f"{i}. {nm(r)} — {r[1]}" for i, r in enumerate(rows, 1)] or ["Пока никого"]
+    lines += ["", "Итоги 1 ноября в 15:00 МСК"]
+    return chr(10).join(lines)
+
+
+_ref_last_reply: dict = {}   # chat_id -> время последнего ответа на /ref (защита чата от повторов)
+
+
 @dp.message(Command("ref"))
 async def handle_ref_command(message: Message):
-    """Works the same in PUBLIC_CHAT or in a private DM with the bot — no chat-type
-    filter, and Telegram always delivers slash commands to bots regardless of the
-    bot's privacy-mode setting."""
-    await sync_referral_chat_verification()
-    rows = db.get_ref_leaderboard(5, exclude_id=int(ADMIN_ID) if ADMIN_ID else None)
-    await message.answer(format_ref_leaderboard(rows))
+    """/ref в общем чате показывает «Розыгрыш 4 NFT» бота @gift20bot (реферальная гонка Фермы завершилась 25.10)."""
+    # в общем чате отвечаем на /ref не чаще раза в 10 минут (повторные команды игнорируем), админу можно всегда
+    if message.chat.type in ("group", "supergroup") and str(message.from_user.id) != str(ADMIN_ID):
+        import time as _time
+        now_ = _time.time()
+        if now_ - _ref_last_reply.get(message.chat.id, 0) < 600:
+            return
+        _ref_last_reply[message.chat.id] = now_
+    try:
+        text = _gift20_raffle_text()
+    except Exception:
+        logger.exception("could not build the gift20bot raffle top")
+        text = "Не удалось получить данные розыгрыша, попробуй чуть позже"
+    await message.answer(text)
+
+
+# Bottom keyboard buttons from _admin_keyboard(): "admin" -> /admin, "ref" -> /ref.
+@dp.message(F.chat.type == "private", F.text.in_({"admin", "ref"}))
+async def handle_admin_keyboard_button(message: Message):
+    if not _is_admin(message.from_user.id):
+        return
+    if message.text == "admin":
+        await handle_admin_panel(message)
+    else:
+        await handle_ref_command(message)
+
+
+# "Задонатить" button from _admin_keyboard(): admin-only Stars donation, preset amounts or own number.
+DONATE_PRESETS = (10, 50, 100, 500, 1000)
+_donate_waiting: set = set()  # admin ids who tapped "Своё число" and owe us a number
+
+
+async def _send_donate_invoice(chat_id: int, user_id: int, stars: int):
+    await bot.send_invoice(
+        chat_id=chat_id,
+        title="Донат Peeppo",
+        description=f"Донат {stars} ⭐",
+        payload=f"donate:{user_id}:{stars}",
+        provider_token="",  # empty provider_token is required for Telegram Stars
+        currency="XTR",
+        prices=[LabeledPrice(label=f"Донат {stars} ⭐", amount=stars)],
+    )
+
+
+@dp.message(F.chat.type == "private", F.text == "Задонатить")
+async def handle_donate_button(message: Message):
+    if not _is_admin(message.from_user.id):
+        return
+    kb = InlineKeyboardBuilder()
+    for n in DONATE_PRESETS:
+        kb.button(text=f"{n} ⭐", callback_data=f"donate:{n}")
+    kb.button(text="Своё число", callback_data="donate:custom")
+    kb.adjust(3)
+    await message.answer("Сколько звёзд задонатить?", reply_markup=kb.as_markup())
+
+
+@dp.callback_query(F.data.startswith("donate:"))
+async def handle_donate_choice(call: CallbackQuery):
+    if not _is_admin(call.from_user.id):
+        await call.answer()
+        return
+    value = call.data.split(":", 1)[1]
+    if value == "custom":
+        _donate_waiting.add(call.from_user.id)
+        await call.message.answer("Напиши число звёзд (от 1 до 10000)")
+    else:
+        await _send_donate_invoice(call.message.chat.id, call.from_user.id, int(value))
+    await call.answer()
+
+
+@dp.message(F.chat.type == "private", F.text, lambda m: m.from_user.id in _donate_waiting and not m.text.startswith("/"))
+async def handle_donate_custom_amount(message: Message):
+    text = message.text.strip()
+    if not text.isdigit() or not 1 <= int(text) <= 10000:
+        await message.answer("Нужно целое число от 1 до 10000")
+        return
+    _donate_waiting.discard(message.from_user.id)
+    await _send_donate_invoice(message.chat.id, message.from_user.id, int(text))
 
 
 GEMS_PER_STAR = 10  # keep in sync with api.py's GEMS_PER_STAR
@@ -3015,6 +3460,24 @@ async def ref_race_scheduler():
         await asyncio.sleep(30)  # tight enough that the 5-minute checkpoint stays meaningful
 
 
+async def farm_race_reminder_loop():
+    """Раз в минуту спрашивает у бота Ферма, пора ли слать напоминание о реферальной гонке «Ферма»
+    (за 3 дня, 2 дня, 1 день, 12 ч, 4 ч, 1 ч и 15 мин до конца), и публикует его в общий чат."""
+    import aiohttp
+    from aiogram.types import LinkPreviewOptions
+    while True:
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=8)) as sess:
+                async with sess.post("http://127.0.0.1:8021/api/race/pop") as resp:
+                    text = (await resp.text()).strip() if resp.status == 200 else ""
+            if text:
+                await bot.send_message(PUBLIC_CHAT, text, parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
+                logger.info("farm race reminder posted to %s", PUBLIC_CHAT)
+        except Exception:
+            logger.exception("farm race reminder iteration failed")
+        await asyncio.sleep(60)
+
+
 async def referral_chat_verification_scheduler():
     """Background loop living for the lifetime of the bot process: periodically runs
     sync_referral_chat_verification() so a referral's queued gems pay out the moment
@@ -3057,11 +3520,16 @@ async def main():
     _background_tasks.add(asyncio.create_task(gem_drop_100_scheduler()))
     _background_tasks.add(asyncio.create_task(giveaway_scheduler()))
     _background_tasks.add(asyncio.create_task(villa_giveaway_scheduler()))
+    _background_tasks.add(asyncio.create_task(gem_giveaway_scheduler()))
     _background_tasks.add(asyncio.create_task(ref_race_scheduler()))
     _background_tasks.add(asyncio.create_task(referral_chat_verification_scheduler()))
+    # Ферма удалена с сервера, напоминания о её гонке больше не опрашиваем
+    # _background_tasks.add(asyncio.create_task(farm_race_reminder_loop()))
     _background_tasks.add(asyncio.create_task(giveaway_reminder_scheduler()))
     _background_tasks.add(asyncio.create_task(aviator_watchdog()))
     # asyncio.create_task(daily_help_broadcast_scheduler())  # disabled on request: no daily /help post in the chat
+    from pvp_ai import pvp_ai_loop  # «Бот» -- соперник в PvP
+    _background_tasks.add(asyncio.create_task(pvp_ai_loop()))
     await dp.start_polling(bot)
 
 

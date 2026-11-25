@@ -1,0 +1,74 @@
+  /* ---------- Косынка (Klondike) ---------- */
+  #pvp-mode-switch .mode-switch-btn[data-mode="klondike"]{grid-column:1 / -1;}
+  .kl-wrap{position:relative;}
+  .kl-head{display:flex; align-items:center; gap:8px; margin:0 2px 8px;}
+  .kl-head .rb-title{margin-right:auto;}
+  .kl-stat{font-size:12px; font-weight:700; color:#aaa; font-variant-numeric:tabular-nums;}
+  .kl-draw-chip{font-size:11px; font-weight:800; color:#ddd; background:rgba(255,255,255,.08); border:1px solid #444; border-radius:9px; padding:5px 8px; cursor:pointer;}
+  .kl-actions .market-filter-btn{color:#ccc;}
+  .kl-actions .market-filter-btn:disabled{opacity:.35;}
+  .kl-actions .market-filter-btn.kl-pulse{color:#fff; background:rgba(34,197,94,.25); animation:neonBlockPulse 1.6s ease-in-out infinite;}
+  .kl-board{
+    position:relative; width:100%;
+    background:radial-gradient(ellipse at 50% 30%, #14532d, #0b2e1a 70%, #071d11);
+    border:1px solid #1f3d2b; border-radius:14px;
+    padding:6px; box-sizing:border-box;
+    touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none;
+    overflow:hidden;
+  }
+  .kl-area{position:relative; width:100%;}
+  .kl-slot{
+    position:absolute; width:var(--cw); height:var(--ch);
+    border:1.5px dashed rgba(255,255,255,.22); border-radius:calc(var(--cw) * .12);
+    display:flex; align-items:center; justify-content:center;
+    color:rgba(255,255,255,.25); font-weight:800; font-size:calc(var(--cw) * .42);
+    box-sizing:border-box;
+  }
+  .kl-slot-stock{cursor:pointer;}
+  .kl-card{
+    position:absolute; left:0; top:0; width:var(--cw); height:var(--ch);
+    border-radius:calc(var(--cw) * .12);
+    transition:transform .2s ease;
+    will-change:transform;
+    box-sizing:border-box;
+  }
+  .kl-card.kl-drag{transition:none;}
+  .kl-face, .kl-back{position:absolute; inset:0; border-radius:inherit; box-sizing:border-box;}
+  .kl-face{
+    display:none; background:#fbfbf7; border:1px solid #c9c9c2; color:#151515;
+    box-shadow:0 1px 2px rgba(0,0,0,.45);
+    font-family:Georgia,'Times New Roman',serif;
+  }
+  .kl-card.up .kl-face{display:block;}
+  .kl-card.up .kl-back{display:none;}
+  .kl-card.red .kl-face{color:#d1123f;}
+  .kl-corner{position:absolute; left:calc(var(--cw) * .07); top:calc(var(--cw) * .02); font-weight:700; line-height:1; white-space:nowrap; letter-spacing:-.5px;}
+  .kl-r{font-size:calc(var(--cw) * .36);}
+  .kl-s{font-size:calc(var(--cw) * .30); margin-left:1px;}
+  .kl-big{position:absolute; left:0; right:0; bottom:calc(var(--ch) * .10); text-align:center; font-size:calc(var(--cw) * .66); line-height:1;}
+  .kl-back{
+    background:
+      repeating-linear-gradient(45deg, rgba(255,255,255,.10) 0 3px, transparent 3px 7px),
+      linear-gradient(135deg, #8b5cf6, #5b21b6);
+    border:2px solid #f5f3ff; box-shadow:0 1px 2px rgba(0,0,0,.5);
+  }
+  .kl-card.kl-hint .kl-face{box-shadow:0 0 0 3px #facc15, 0 0 14px #facc15;}
+  .kl-slot.kl-hint, .kl-card.kl-hint .kl-back{box-shadow:0 0 0 3px #facc15, 0 0 14px #facc15;}
+  .kl-card.kl-shake{animation:klShake .3s ease;}
+  @keyframes klShake{0%,100%{margin-left:0;}25%{margin-left:-4px;}75%{margin-left:4px;}}
+  .kl-win{
+    position:absolute; inset:0; z-index:2000; display:none;
+    align-items:center; justify-content:center; background:rgba(0,0,0,.72); border-radius:14px;
+  }
+  .kl-win.active{display:flex;}
+  .kl-win-card{background:var(--card-bg); border:1px solid var(--card-border); border-radius:18px; padding:20px 18px; text-align:center; width:80%; max-width:280px;}
+  .kl-win-title{font-size:22px; font-weight:800; margin-bottom:8px;}
+  .kl-win-text{font-size:13px; color:#ccc; line-height:1.6; margin-bottom:14px;}
+  .kl-win-btn{width:100%; border:none; border-radius:12px; padding:12px; font-weight:800; font-size:14px; color:#fff; background:linear-gradient(135deg,#22c55e,#15803d); cursor:pointer;}
+  #kl-rules-overlay{position:absolute; inset:0; background:rgba(0,0,0,.92); display:none; align-items:center; justify-content:center; z-index:92; padding:24px;}
+  #kl-rules-overlay.active{display:flex;}
+  #kl-rules-card{position:relative; width:100%; max-width:320px; max-height:86vh; overflow-y:auto; background:var(--card-bg); border:1px solid var(--card-border); border-radius:20px; padding:22px 18px 18px; box-sizing:border-box;}
+  #kl-rules-title{font-size:16px; font-weight:800; margin-bottom:12px;}
+  #kl-rules-text{font-size:13px; color:#ccc; line-height:1.5;}
+  #kl-rules-text p{margin:0 0 8px;}
+  .kl-cascade{position:absolute; left:0; top:0; z-index:1500;}

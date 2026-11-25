@@ -436,6 +436,18 @@
   .villa-wrap{display:block; position:relative; width:56px; height:56px; border-radius:12px; flex-shrink:0;}
   .villa-wrap img{width:100%; height:100%; display:block;}
 
+  .farm-promo{display:flex; align-items:center; gap:12px; width:100%; box-sizing:border-box; padding:6px 12px 6px 6px; flex:1; min-width:0;background:linear-gradient(160deg,rgba(74,222,128,.14) 0%,rgba(20,40,20,.55) 100%); border:1px solid rgba(134,239,172,.35); border-radius:18px; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .farm-promo:active{transform:scale(.98);}
+  .farm-promo-img{width:42px; height:42px; max-width:42px; border-radius:10px; object-fit:cover; flex-shrink:0; display:block;}
+  .farm-promo-text{flex:1; min-width:0; text-align:left;}
+  .farm-promo-cap{font-size:10px; font-weight:800; letter-spacing:.5px; color:#86efac; text-transform:uppercase; margin-bottom:1px;}
+  .farm-promo-title{font-size:15px; font-weight:800; color:#fff;}
+  .farm-promo-arrow{font-size:24px; font-weight:700; color:#86efac; line-height:1;}
+  .farm-row{display:flex; gap:10px; margin-bottom:12px; align-items:stretch;}
+  .chat-promo{width:110px; flex-shrink:0; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; background:rgba(10,20,12,.55); border:1px solid rgba(134,239,172,.3); border-radius:18px; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .chat-promo:active{transform:scale(.98);}
+  .chat-promo-icon{width:22px; height:22px; display:block; color:#86efac;}
+  .chat-promo-label{font-size:14px; font-weight:800; color:#fff; line-height:1;}
   /* ---------- Profile ---------- */
   .profile-card{
     position:relative;
@@ -2831,6 +2843,7 @@
   #toast{z-index:200;}
   #toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
 </style>
+<link rel="stylesheet" href="/games/klondike.css">
 </head>
 <body>
 <div id="app">
@@ -2890,10 +2903,13 @@
         <button class="mode-switch-btn" data-mode="mines"><img class="mode-switch-icon" src="/static/icons/blast.png" alt="Мины"><span class="mode-switch-label">Мины</span></button>
         <button class="mode-switch-btn" data-mode="poker"><img class="mode-switch-icon" src="/static/icons/joker.png" alt="Покер"><span class="mode-switch-label">Покер</span></button>
         <button class="mode-switch-btn" data-mode="plinko"><img class="mode-switch-icon" src="/static/icons/coin.png" alt="Плинко"><span class="mode-switch-label">Плинко</span></button>
-        <button class="mode-switch-btn" data-mode="roulette"><img class="mode-switch-icon" src="/static/icons/roulette.png" alt="Рулетка"><span class="mode-switch-label">Рулетка</span><span class="new-badge">NEW</span></button>
-        <button class="mode-switch-btn" data-mode="slots"><img class="mode-switch-icon" src="/static/icons/slot.png" alt="Слоты"><span class="mode-switch-label">Слоты</span><span class="new-badge">NEW</span></button>
-        <button class="mode-switch-btn" data-mode="dice"><img class="mode-switch-icon" src="/static/icons/dice.png" alt="Dice"><span class="mode-switch-label">Кости</span><span class="new-badge">NEW</span></button>
+        <button class="mode-switch-btn" data-mode="roulette"><img class="mode-switch-icon" src="/static/icons/roulette.png" alt="Рулетка"><span class="mode-switch-label">Рулетка</span></button>
+        <button class="mode-switch-btn" data-mode="slots"><img class="mode-switch-icon" src="/static/icons/slot.png" alt="Слоты"><span class="mode-switch-label">Слоты</span></button>
+        <button class="mode-switch-btn" data-mode="dice"><img class="mode-switch-icon" src="/static/icons/dice.png" alt="Dice"><span class="mode-switch-label">Кости</span></button>
         <button class="mode-switch-btn" data-mode="redblack"><img class="mode-switch-icon" src="/static/icons/red.png" alt="R&amp;B"><span class="mode-switch-label">Red&amp;Black</span></button>
+        <button class="mode-switch-btn" data-mode="durak"><img class="mode-switch-icon" src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='4' width='12' height='17' rx='2' fill='%23fff' stroke='%23999' stroke-width='.6' transform='rotate(-14 9 12)'/%3E%3Cpath d='M8.2 9.3c-1 1.3-2.3 2-2.3 3.1 0 .9 1 1.4 1.8.8.2-.2.4-.2.5 0 .7.6 1.8.1 1.8-.8 0-1.1-1.3-1.8-1.8-3.1z' fill='%23d1123f' transform='rotate(-14 9 12)'/%3E%3Crect x='9' y='3' width='12' height='17' rx='2' fill='%23fff' stroke='%23999' stroke-width='.6' transform='rotate(10 15 11)'/%3E%3Cpath d='M15 7.5c-2 2.3-3.6 3.4-3.6 5.2 0 1.3 1.6 2 2.8 1.1l-.6 2.4h2.8l-.6-2.4c1.2.9 2.8.2 2.8-1.1 0-1.8-1.6-2.9-3.6-5.2z' fill='%23111' transform='rotate(10 15 11)'/%3E%3C/svg%3E" alt="Дурак"><span class="mode-switch-label">Дурак</span></button>
+        <button class="mode-switch-btn" data-mode="pref"><img class="mode-switch-icon" src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='1.5' y='5' width='10' height='15' rx='2' fill='%23fff' stroke='%23999' stroke-width='.6' transform='rotate(-18 6.5 12.5)'/%3E%3Crect x='7' y='3' width='10' height='15' rx='2' fill='%23fff' stroke='%23999' stroke-width='.6'/%3E%3Crect x='12.5' y='5' width='10' height='15' rx='2' fill='%23fff' stroke='%23999' stroke-width='.6' transform='rotate(18 17.5 12.5)'/%3E%3Cpath d='M17.5 9.2l2.3 3.3-2.3 3.3-2.3-3.3z' fill='%23d1123f' transform='rotate(18 17.5 12.5)'/%3E%3Ctext x='12' y='12.5' font-size='6.5' font-weight='bold' text-anchor='middle' fill='%237c3aed' font-family='Arial'%3E10%3C/text%3E%3C/svg%3E" alt="Преферанс"><span class="mode-switch-label">Преферанс</span></button>
+        <button class="mode-switch-btn" data-mode="klondike"><img class="mode-switch-icon" src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='2' y='4' width='12' height='17' rx='2' fill='%23ddd' transform='rotate(-12 8 12)'/%3E%3Crect x='8' y='2' width='13' height='18' rx='2' fill='%23fff' stroke='%23999' stroke-width='.6'/%3E%3Cpath d='M14.5 6c-2.2 2.4-4 3.6-4 5.6 0 1.4 1.8 2.3 3.2 1.2l-.7 2.7h3l-.7-2.7c1.4 1.1 3.2.2 3.2-1.2 0-2-1.8-3.2-4-5.6z' fill='%23d1123f'/%3E%3C/svg%3E" alt="Косынка"><span class="mode-switch-label">Косынка</span></button>
       </div>
 
       <div id="pvp-cards-block">
@@ -3235,6 +3251,7 @@
           <div class="rb-result" id="dice-result"></div>
         </div>
       </div>
+      <div id="pvp-klondike-block" style="display:none"></div>
     </section>
 
     <section id="market-screen" class="screen">
@@ -3685,7 +3702,7 @@
     <div id="gems-choice-card">
       <div id="gems-choice-title"><img src="/static/icons/diamond.png" alt="">Гемы</div>
       <button id="gems-choice-buy">Купить Гемы за Звёзды</button>
-      <button id="gems-choice-sell">Продать Diamond за Звёзды</button>
+      <button id="gems-choice-sell" style="display:none">Продать Diamond за Звёзды</button>
       <button id="gems-choice-withdrawals">История выплат</button>
       <button id="gems-choice-cancel">Закрыть</button>
     </div>
@@ -3926,14 +3943,14 @@
         Шанс на победу зависит от того, какие карты ты поставил — у каждой редкости свой «вес»:
       </div>
       <div id="pvp-rules-weights">
-        <div class="pvp-rules-row"><span class="rarity-tag gold">gold</span><span class="w">8</span></div>
-        <div class="pvp-rules-row"><span class="rarity-tag platinum">platinum</span><span class="w">20</span></div>
-        <div class="pvp-rules-row"><span class="rarity-tag diamond">diamond</span><span class="w">50</span></div>
-        <div class="pvp-rules-row" style="margin-top:16px; padding-top:12px; border-top:1px solid rgba(255,255,255,.12);"><span class="rarity-tag vt-rare">rare</span><span class="w">32</span></div>
-        <div class="pvp-rules-row"><span class="rarity-tag vt-epic">epic</span><span class="w">80</span></div>
-        <div class="pvp-rules-row"><span class="rarity-tag vt-legend">legend</span><span class="w">200</span></div>
+        <div class="pvp-rules-row"><span class="rarity-tag gold">gold</span><span class="w">1</span></div>
+        <div class="pvp-rules-row"><span class="rarity-tag platinum">platinum</span><span class="w">5</span></div>
+        <div class="pvp-rules-row"><span class="rarity-tag diamond">diamond</span><span class="w">25</span></div>
+        <div class="pvp-rules-row" style="margin-top:16px; padding-top:12px; border-top:1px solid rgba(255,255,255,.12);"><span class="rarity-tag vt-rare">rare</span><span class="w">50</span></div>
+        <div class="pvp-rules-row"><span class="rarity-tag vt-epic">epic</span><span class="w">100</span></div>
+        <div class="pvp-rules-row"><span class="rarity-tag vt-legend">legend</span><span class="w">500</span></div>
       </div>
-      <div id="pvp-rules-footnote">Например, одна Diamond-карта по шансам равна примерно 6 Gold-картам. Твой шанс на победу = твой вес ÷ суммарный вес всех карт в банке.</div>
+      <div id="pvp-rules-footnote">Например, одна Diamond-карта по шансам равна 25 Gold-картам. Твой шанс на победу = твой вес ÷ суммарный вес всех карт в банке.</div>
     </div>
   </div>
 
@@ -4369,18 +4386,15 @@ function switchScreen(screenId){
   // starts at the top.
   mainEl.scrollTop = 0;
   if(screenId !== "pvp-screen") stopPvpPolling();
+  if(typeof window.klOnVisibility === "function") window.klOnVisibility();
   if(screenId === "farm-screen") loadStats(); // re-sync "Всего" — it drifts stale otherwise, since it only updates from THIS player's own farm/craft/case/burn actions
   if(screenId === "profile-screen") loadProfile();
   if(screenId === "market-screen"){ resetMarketSort(); refreshMarketScreen(); }
   if(screenId === "pvp-screen"){ pvpTabJustOpened = true; loadPvpState(); setPvpPulse(false); loadTopGameBadge(); loadTurnover(); }
 }
 
-// "NEW" badges (roulette + slots) disappear on their own two weeks after launch.
-if(Date.now() > Date.parse("2026-10-22T00:00:00+03:00")){
-  document.querySelectorAll(".new-badge").forEach(b => b.remove());
-}
 
-// Turnover over the last 24 h shown in every game's title row (PvP: cards staked).
+// Turnover over the last 7 days shown in every game's title row (PvP: cards staked).
 async function loadTurnover(){
   try{
     const r = await api("/games/turnover");
@@ -4389,8 +4403,8 @@ async function loadTurnover(){
       const v = t[el.dataset.game] ?? 0;
       const num = Number(v).toLocaleString("ru-RU");
       el.innerHTML = el.dataset.game === "cards"
-        ? `ОБОРОТ 24Ч: ${num} карт`
-        : `ОБОРОТ 24Ч: ${num} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">`;
+        ? `ОБОРОТ 7Д: ${num} карт`
+        : `ОБОРОТ 7Д: ${num} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">`;
     });
   }catch(e){ /* non-critical */ }
 }
@@ -4444,9 +4458,13 @@ document.querySelectorAll(".nav-btn").forEach(btn=>{
     switchScreen(btn.dataset.screen);
   });
 });
-document.querySelector('.nav-btn[data-screen="profile-screen"]').classList.add("active");
-document.getElementById("profile-screen").classList.add("active");
+// Default tab on open: «Игры» (pvp-screen). loadProfile() still runs for the balance/header;
+// switchScreen is deferred because the pvp state variables further down are not initialised yet.
+document.querySelectorAll(".nav-btn").forEach(b=>b.classList.remove("active"));
+document.querySelector('.nav-btn[data-screen="pvp-screen"]').classList.add("active");
+document.getElementById("pvp-screen").classList.add("active");
 loadProfile();
+setTimeout(()=>switchScreen("pvp-screen"), 0);
 
 // ---------- Farm ----------
 async function loadStats(){
@@ -5084,7 +5102,7 @@ function renderPvpHistory(rounds){
 // generic "Бот" label -- never applied to the player's OWN profile screen, where
 // they see their own real username as usual.
 function maskedName(u){
-  return (u && u.toLowerCase() === "rzabeyda") ? "Бот" : u;
+  return (u && u.toLowerCase() === "rzabeyda") ? "Админ" : u;
 }
 // Custom names (the "Имена" bank, and any card wearing one) are stored/matched in
 // lowercase canonical form server-side, but always DISPLAYED with a capitalized first
@@ -5785,6 +5803,8 @@ document.getElementById("pvp-mode-switch").addEventListener("click", (e)=>{
   document.getElementById("pvp-roulette-block").style.display = pvpMode === "roulette" ? "" : "none";
   document.getElementById("pvp-slots-block").style.display = pvpMode === "slots" ? "" : "none";
   document.getElementById("pvp-dice-block").style.display = pvpMode === "dice" ? "" : "none";
+  document.getElementById("pvp-klondike-block").style.display = pvpMode === "klondike" ? "" : "none";
+  if(typeof window.klOnVisibility === "function") window.klOnVisibility();
   if(pvpMode === "roulette"){
     if(!rouletteInited){ initRoulette(); rouletteInited = true; }
     loadRouletteLast();
@@ -8264,7 +8284,7 @@ function startFarmAnimation(cards, hintHTML){
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
 
-  const duration = 3000;
+  const duration = 2000;
   const frameMs = 180;
   // Only as many frames as the animation can actually show in `duration` (plus a small
   // buffer) need to be preloaded -- no point fetching the whole multi-hundred-card catalog
@@ -8553,14 +8573,15 @@ async function refreshVillaInfo(){
   try{ villaInfo = await api("/villa/status"); }catch(e){ /* non-critical */ }
   if(farmMode === "villa"){ document.getElementById("farm-result-name").innerHTML = villaCounterHTML(); updateFarmBatchUI(); }
 }
-// Countdown until villa sales end: 31 Oct 2026, 23:59:59 Tallinn time (display only for now).
+// Countdown until villa sales end: 31 Oct 2026, 23:59:59 Tallinn time (display only -- sales go on after it,
+// the countdown is just swapped for the plain "?" placeholder once it runs out).
 const VILLA_SALE_END = Date.parse("2026-10-31T23:59:59+02:00");
 function updateVillaTimer(){
   const el = document.getElementById("farm-villa-timer");
   if(!el) return;
   const daysEl = document.getElementById("farm-villa-days");
   let left = Math.floor((VILLA_SALE_END - Date.now()) / 1000);
-  if(left <= 0){ if(daysEl) daysEl.textContent = ""; el.textContent = "Продажа завершена"; return; }
+  if(left <= 0){ const ph = el.closest(".villa-timer-ph"); if(ph) ph.outerHTML = `<div class="placeholder villa-ph">?</div>`; return; }
   // Days line stays ("23 дня"); the timer below counts ALL the remaining time in hours, e.g. 565:12:03.
   const d = Math.floor(left / 86400);
   const h = Math.floor(left / 3600); left -= h * 3600;
@@ -8812,7 +8833,7 @@ async function loadProfile(){
     }
     document.getElementById("stat-refs").textContent = auth.referrals || 0;
     setGemsDisplay(auth.gems || 0);
-    document.getElementById("stat-income").textContent = auth.daily_bonus_amount || 25;
+    document.getElementById("stat-income").textContent = (auth.daily_bonus_amount || 25) + 1000; // +1000 free daily gems
     daysUntilNextIncome = auth.daily_bonus_days_until_next ?? null;
     applyPlayerRank(auth.player_rank, auth.player_rank_max);
 
@@ -9921,7 +9942,7 @@ function renderNumbersList(){
       return;
     }
     list.innerHTML = numListings.map(l=>{
-      const seller = l.username ? (maskedName(l.username) === "Бот" ? "Бот" : `@${l.username}`) : (l.first_name || "Игрок");
+      const seller = l.username ? (maskedName(l.username) === "Админ" ? "Админ" : `@${l.username}`) : (l.first_name || "Игрок");
       return `
         <div class="number-row" data-number="${l.number}">
           <div class="num">#${l.number}</div>
@@ -9976,7 +9997,7 @@ function renderNumbersList(){
       return;
     }
     list.innerHTML = numbersOwners.map(n=>{
-      const owner = n.username ? (maskedName(n.username) === "Бот" ? "Бот" : `@${n.username}`) : (n.first_name || "Игрок");
+      const owner = n.username ? (maskedName(n.username) === "Админ" ? "Админ" : `@${n.username}`) : (n.first_name || "Игрок");
       const status = n.user_card_id
         ? "закреплён за картой"
         : (n.list_price ? `продаётся за ${n.list_price} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">` : "не закреплён");
@@ -10173,7 +10194,7 @@ function renderNamesList(){
       list.innerHTML = `<div class="empty-state">Пока никто ничего не продаёт</div>`;
     }else{
       list.innerHTML = nameListings.map(l=>{
-        const seller = l.username ? (maskedName(l.username) === "Бот" ? "Бот" : `@${l.username}`) : (l.first_name || "Игрок");
+        const seller = l.username ? (maskedName(l.username) === "Админ" ? "Админ" : `@${l.username}`) : (l.first_name || "Игрок");
         return `
         <div class="number-row" data-name="${l.name}">
           <div class="num">${capName(l.name)}</div>
@@ -10224,7 +10245,7 @@ function renderNamesList(){
       list.innerHTML = `<div class="empty-state">Пока ни одно имя никому не принадлежит</div>`;
     }else{
       list.innerHTML = namesOwners.map(n=>{
-        const owner = n.username ? (maskedName(n.username) === "Бот" ? "Бот" : `@${n.username}`) : (n.first_name || "Игрок");
+        const owner = n.username ? (maskedName(n.username) === "Админ" ? "Админ" : `@${n.username}`) : (n.first_name || "Игрок");
         const status = n.user_card_id
           ? "используется на карте"
           : (n.list_price ? `продаётся за ${n.list_price} <img class="gem-icon-inline" src="/static/icons/diamond.png" alt="">` : "в банке, не используется");
@@ -10698,7 +10719,7 @@ document.getElementById("profile-info-overlay").addEventListener("click", (e)=>{
 });
 
 document.getElementById("stat-income-tile").addEventListener("click", ()=>{
-  const amount = parseInt(document.getElementById("stat-income").textContent, 10) || 25;
+  const amount = (parseInt(document.getElementById("stat-income").textContent, 10) - 1000) || 25; // minus free daily 1000
   const tierIndex = Math.min(4, Math.max(0, Math.round((amount - 25) / 25)));
   document.querySelectorAll("#income-rows .income-info-row").forEach(row=>{
     const isCurrent = parseInt(row.dataset.tier, 10) === tierIndex;
@@ -10771,5 +10792,10 @@ document.getElementById("invite-btn").addEventListener("click", ()=>{
 // initial load
 loadProfile();
 </script>
+<link rel="stylesheet" href="/games/durak.css?v=1">
+<script src="/games/durak.js?v=1"></script>
+<script src="/games/klondike.js"></script>
+<link rel="stylesheet" href="/games/preferans.css?v=1">
+<script src="/games/preferans.js?v=1"></script>
 </body>
 </html>
